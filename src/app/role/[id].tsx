@@ -42,6 +42,7 @@ export default function RoleScreen() {
   const organization = organizationQuery.data;
   const handoffs = handoffsQuery.data ?? [];
   const current = handoffs[0];
+  const publishedCount = handoffs.filter((handoff) => handoff.status === 'published').length;
   const refreshing = roleQuery.isRefetching || organizationQuery.isRefetching || handoffsQuery.isRefetching;
   const refresh = () => void Promise.all([roleQuery.refetch(), organizationQuery.refetch(), handoffsQuery.refetch()]);
 
@@ -104,6 +105,14 @@ export default function RoleScreen() {
             tone="secondary"
             onPress={() => router.push((`/handoff-new?organizationId=${organization.id}&roleId=${role.id}`) as Href)}
           />
+          {publishedCount ? (
+            <Button
+              icon="book-open-page-variant-outline"
+              label={publishedCount > 1 ? 'Open What Changed' : 'Open Organization Memory'}
+              tone="ghost"
+              onPress={() => router.push((`/organization-memory?roleId=${role.id}`) as Href)}
+            />
+          ) : null}
         </>
       ) : null}
     </Screen>

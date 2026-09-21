@@ -88,6 +88,8 @@ export default function RootLayout() {
               <Stack.Screen name="handoff-review" options={{ title: 'Review' }} />
               <Stack.Screen name="handoff-preflight" options={{ title: 'Preflight' }} />
               <Stack.Screen name="handoff-preview" options={{ title: 'Preview & share' }} />
+              <Stack.Screen name="organization-memory" options={{ title: 'Organization Memory' }} />
+              <Stack.Screen name="memory-reason" options={{ title: 'Confirm reason' }} />
               <Stack.Screen name="preflight-resolve" options={{ title: 'Resolve finding' }} />
               <Stack.Screen name="capture-text" options={{ title: 'Typed capture' }} />
               <Stack.Screen name="capture-voice" options={{ title: 'Voice capture' }} />

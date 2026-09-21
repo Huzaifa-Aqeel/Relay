@@ -50,6 +50,9 @@ verify_jwt = true
 [functions.run-preflight]
 verify_jwt = true
 
+[functions.compare-handoffs]
+verify_jwt = true
+
 [functions.ask-relay]
 verify_jwt = false
 

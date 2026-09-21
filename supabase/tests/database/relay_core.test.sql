@@ -1,6 +1,6 @@
 begin;
 
-select plan(184);
+select plan(206);
 
 insert into auth.users (id, email)
 values
@@ -1550,6 +1550,342 @@ select is(
   (select count(*) from public.organization_subscriptions where revenuecat_app_user_id = '33333333-3333-4333-8333-333333333333'),
   1::bigint,
   'reconciliation does not create a duplicate subscription association'
+);
+
+insert into public.handoffs (
+  id, organization_id, role_id, created_by, service_period, status, stage
+) values (
+  '10101010-1010-4010-8010-101010101010',
+  (select organization_id from public.roles where id = '55555555-5555-4555-8555-555555555555'),
+  '55555555-5555-4555-8555-555555555555',
+  '33333333-3333-4333-8333-333333333333',
+  '2027–2028', 'draft', 'capture'
+);
+
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"33333333-3333-4333-8333-333333333333","role":"authenticated"}',
+  true
+);
+
+select lives_ok(
+  $$
+    insert into public.sources (
+      id, organization_id, handoff_id, created_by, kind, title, text_content,
+      mime_type, processing_status, normalized_filename, content_hash
+    ) values (
+      '11111111-1010-4010-8010-101010101010',
+      (select organization_id from public.handoffs where id = '10101010-1010-4010-8010-101010101010'),
+      '10101010-1010-4010-8010-101010101010',
+      '33333333-3333-4333-8333-333333333333',
+      'document', 'RoboFest guide', 'Book Engineering Hall twelve weeks before RoboFest.',
+      'application/pdf', 'ready', 'robofest-guide', repeat('a', 64)
+    )
+  $$,
+  'a first document becomes the root source version'
+);
+
+select lives_ok(
+  $$
+    insert into public.sources (
+      id, organization_id, handoff_id, created_by, kind, title, text_content,
+      mime_type, processing_status, normalized_filename, content_hash,
+      supersedes_source_id, version_match_basis
+    ) values (
+      '12121212-1010-4010-8010-101010101010',
+      (select organization_id from public.handoffs where id = '10101010-1010-4010-8010-101010101010'),
+      '10101010-1010-4010-8010-101010101010',
+      '33333333-3333-4333-8333-333333333333',
+      'document', 'RoboFest guide', 'Book Engineering Hall sixteen weeks before RoboFest.',
+      'application/pdf', 'ready', 'robofest-guide', repeat('b', 64),
+      '11111111-1010-4010-8010-101010101010', 'filename_and_type'
+    )
+  $$,
+  'a changed document can link to its prior version'
+);
+
+select is(
+  (select is_current from public.sources where id = '11111111-1010-4010-8010-101010101010'),
+  false,
+  'linking a new version preserves and marks the prior source historical'
+);
+
+select is(
+  (select version_number from public.sources where id = '12121212-1010-4010-8010-101010101010'),
+  2,
+  'the linked source receives the next version number'
+);
+
+select is(
+  (select is_current from public.sources where id = '12121212-1010-4010-8010-101010101010'),
+  true,
+  'the latest linked source is current'
+);
+
+select throws_like(
+  $$
+    insert into public.sources (
+      organization_id, handoff_id, created_by, kind, title, text_content,
+      mime_type, processing_status, normalized_filename, content_hash
+    ) values (
+      (select organization_id from public.handoffs where id = '10101010-1010-4010-8010-101010101010'),
+      '10101010-1010-4010-8010-101010101010',
+      '33333333-3333-4333-8333-333333333333',
+      'document', 'Duplicate', 'Duplicate bytes represented by the same digest.',
+      'application/pdf', 'ready', 'duplicate', repeat('b', 64)
+    )
+  $$,
+  '%duplicate key value%',
+  'an exact content hash cannot create or process a duplicate source'
+);
+
+insert into public.knowledge_items (
+  id, organization_id, handoff_id, created_by, knowledge_type, title, content, status, origin
+) values (
+  '13131313-1010-4010-8010-101010101010',
+  (select organization_id from public.handoffs where id = '10101010-1010-4010-8010-101010101010'),
+  '10101010-1010-4010-8010-101010101010',
+  '33333333-3333-4333-8333-333333333333',
+  'deadline', 'Book Engineering Hall', 'Book Engineering Hall twelve weeks before RoboFest.',
+  'approved', 'manual'
+);
+
+select isnt(
+  (select lineage_id from public.knowledge_items where id = '13131313-1010-4010-8010-101010101010'),
+  null,
+  'approved knowledge receives durable lineage metadata'
+);
+
+update public.sources set structuring_status = 'processing'
+where id = '12121212-1010-4010-8010-101010101010';
+
+select lives_ok(
+  $$select public.replace_source_knowledge_proposals(
+    '12121212-1010-4010-8010-101010101010',
+    '[{
+      "proposal_action":"update",
+      "target_knowledge_item_id":"13131313-1010-4010-8010-101010101010",
+      "knowledge_type":"deadline",
+      "title":"Book Engineering Hall",
+      "content":"Book Engineering Hall sixteen weeks before RoboFest.",
+      "uncertainty_note":null,
+      "source_excerpt":"Book Engineering Hall sixteen weeks before RoboFest.",
+      "source_locator":null
+    }]'::jsonb
+  )$$,
+  'new evidence can create a reviewable update proposal'
+);
+
+select is(
+  (select proposal_action from public.knowledge_items
+   where proposal_target_id = '13131313-1010-4010-8010-101010101010' and status = 'proposed'),
+  'update',
+  'the proposal explicitly targets existing approved knowledge'
+);
+
+select lives_ok(
+  $$select public.decide_knowledge_proposal(
+    (select id from public.knowledge_items
+     where proposal_target_id = '13131313-1010-4010-8010-101010101010' and status = 'proposed'),
+    'approved'
+  )$$,
+  'accepting an update proposal is atomic'
+);
+
+select is(
+  (select content from public.knowledge_items where id = '13131313-1010-4010-8010-101010101010'),
+  'Book Engineering Hall sixteen weeks before RoboFest.',
+  'accepting updates the existing canonical item instead of creating a duplicate'
+);
+
+select is(
+  (select count(*) from public.knowledge_item_revisions where knowledge_item_id = '13131313-1010-4010-8010-101010101010'),
+  1::bigint,
+  'the replaced canonical value remains in revision history'
+);
+
+select is(
+  (select count(*) from public.knowledge_items
+   where proposal_target_id = '13131313-1010-4010-8010-101010101010' and status = 'accepted'),
+  1::bigint,
+  'the accepted update proposal remains as decision history'
+);
+
+select is(
+  (select count(*) from public.knowledge_item_sources
+   where knowledge_item_id = '13131313-1010-4010-8010-101010101010'
+     and source_id = '12121212-1010-4010-8010-101010101010'),
+  1::bigint,
+  'accepted update evidence is copied onto canonical provenance'
+);
+
+insert into public.sources (
+  id, organization_id, handoff_id, created_by, kind, title, text_content,
+  processing_status, structuring_status
+) values (
+  '14141414-1010-4010-8010-101010101010',
+  (select organization_id from public.handoffs where id = '10101010-1010-4010-8010-101010101010'),
+  '10101010-1010-4010-8010-101010101010',
+  '33333333-3333-4333-8333-333333333333',
+  'typed_text', 'Venue retirement', 'The Engineering Hall booking instruction is retired.',
+  'ready', 'processing'
+);
+
+select lives_ok(
+  $$select public.replace_source_knowledge_proposals(
+    '14141414-1010-4010-8010-101010101010',
+    '[{
+      "proposal_action":"retire",
+      "target_knowledge_item_id":"13131313-1010-4010-8010-101010101010",
+      "knowledge_type":"deadline",
+      "title":"Book Engineering Hall",
+      "content":"Book Engineering Hall sixteen weeks before RoboFest.",
+      "uncertainty_note":null,
+      "source_excerpt":"The Engineering Hall booking instruction is retired.",
+      "source_locator":null
+    }]'::jsonb
+  )$$,
+  'explicit removal evidence creates a reviewable retirement proposal'
+);
+
+select lives_ok(
+  $$select public.decide_knowledge_proposal(
+    (select id from public.knowledge_items
+     where proposal_target_id = '13131313-1010-4010-8010-101010101010' and status = 'proposed'),
+    'approved'
+  )$$,
+  'accepting a retirement proposal is deliberate and atomic'
+);
+
+select is(
+  (select status from public.knowledge_items where id = '13131313-1010-4010-8010-101010101010'),
+  'retired',
+  'accepted retirement preserves but removes the canonical item from active knowledge'
+);
+
+insert into public.knowledge_items (
+  id, organization_id, handoff_id, created_by, knowledge_type, title, content, status, origin
+) values
+  (
+    '15151515-1010-4010-8010-101010101010',
+    (select organization_id from public.handoffs where id = '10101010-1010-4010-8010-101010101010'),
+    '10101010-1010-4010-8010-101010101010',
+    '33333333-3333-4333-8333-333333333333',
+    'lesson', 'Projector failure', 'The projector failure delayed the opening.', 'approved', 'manual'
+  ),
+  (
+    '16161616-1010-4010-8010-101010101010',
+    (select organization_id from public.handoffs where id = '10101010-1010-4010-8010-101010101010'),
+    '10101010-1010-4010-8010-101010101010',
+    '33333333-3333-4333-8333-333333333333',
+    'process', 'Test the projector', 'Test the projector before doors open.', 'approved', 'manual'
+  );
+
+set local role postgres;
+insert into public.handoff_publications (
+  id, organization_id, handoff_id, access_token, status, organization_name,
+  organization_institution, role_title, role_description, service_period,
+  published_by, published_at
+) values (
+  '17171717-1010-4010-8010-101010101010',
+  (select organization_id from public.handoffs where id = '10101010-1010-4010-8010-101010101010'),
+  '10101010-1010-4010-8010-101010101010', repeat('c', 64), 'active',
+  'University Robotics Club', 'Northbridge University', 'President',
+  'Coordinates the organization.', '2027–2028',
+  '33333333-3333-4333-8333-333333333333', now()
+);
+
+insert into public.handoff_publication_items (
+  id, publication_id, organization_id, handoff_id, source_knowledge_item_id,
+  knowledge_lineage_id, knowledge_type, title, content, sort_order, citation_sources
+) values (
+  '18181818-1010-4010-8010-101010101010',
+  '17171717-1010-4010-8010-101010101010',
+  (select organization_id from public.handoffs where id = '10101010-1010-4010-8010-101010101010'),
+  '10101010-1010-4010-8010-101010101010',
+  '16161616-1010-4010-8010-101010101010',
+  (select lineage_id from public.knowledge_items where id = '16161616-1010-4010-8010-101010101010'),
+  'process', 'Test the projector', 'Test the projector before doors open.', 1000, '[]'::jsonb
+);
+
+insert into public.role_memory_comparisons (
+  id, organization_id, role_id, previous_publication_id, current_publication_id,
+  previous_service_period, current_service_period, status, material_change_count,
+  created_by, completed_at
+) values (
+  '19191919-1010-4010-8010-101010101010',
+  (select organization_id from public.handoffs where id = '10101010-1010-4010-8010-101010101010'),
+  '55555555-5555-4555-8555-555555555555',
+  (select id from public.handoff_publications where handoff_id = '66666666-6666-4666-8666-666666666666'),
+  '17171717-1010-4010-8010-101010101010',
+  '2026–2027', '2027–2028', 'ready', 1,
+  '33333333-3333-4333-8333-333333333333', now()
+);
+
+insert into public.role_memory_changes (
+  id, comparison_id, organization_id, role_id, change_type, title, summary,
+  current_publication_item_id, match_basis, reason_category, reason_explanation,
+  after_snapshot
+) values (
+  '20202020-1010-4010-8010-101010101010',
+  '19191919-1010-4010-8010-101010101010',
+  (select organization_id from public.handoffs where id = '10101010-1010-4010-8010-101010101010'),
+  '55555555-5555-4555-8555-555555555555',
+  'added', 'Test the projector', 'A pre-opening equipment test was added.',
+  '18181818-1010-4010-8010-101010101010', 'not_applicable',
+  'unknown', 'Reason not established.',
+  jsonb_build_object(
+    'id', '18181818-1010-4010-8010-101010101010',
+    'sourceKnowledgeItemId', '16161616-1010-4010-8010-101010101010',
+    'knowledgeType', 'process',
+    'title', 'Test the projector',
+    'content', 'Test the projector before doors open.',
+    'citationSources', '[]'::jsonb
+  )
+);
+
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"33333333-3333-4333-8333-333333333333","role":"authenticated"}',
+  true
+);
+
+select lives_ok(
+  $$select public.confirm_memory_change_reason_v13(
+    '20202020-1010-4010-8010-101010101010',
+    'lesson_driven',
+    'The equipment test was added because the projector failure delayed opening.',
+    '15151515-1010-4010-8010-101010101010'
+  )$$,
+  'a human can explicitly confirm a lesson-to-practice relationship'
+);
+
+select is(
+  (select reason_category from public.role_memory_changes where id = '20202020-1010-4010-8010-101010101010'),
+  'lesson_driven',
+  'the human-confirmed reason is stored on the material change'
+);
+
+select is(
+  (select human_confirmed from public.role_memory_changes where id = '20202020-1010-4010-8010-101010101010'),
+  true,
+  'the reason remains distinguishable as human-confirmed metadata'
+);
+
+select is(
+  (select count(*) from public.knowledge_relationships
+   where from_knowledge_item_id = '15151515-1010-4010-8010-101010101010'
+     and to_knowledge_item_id = '16161616-1010-4010-8010-101010101010'),
+  1::bigint,
+  'human confirmation creates an explicit lesson-to-practice link'
+);
+
+set local role postgres;
+select lives_ok(
+  $$delete from public.handoffs where id = '10101010-1010-4010-8010-101010101010'$$,
+  'handoff deletion still cascades safely through version and knowledge lineage records'
 );
 
 select * from finish();

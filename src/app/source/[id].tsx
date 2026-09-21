@@ -14,12 +14,13 @@ import {
   useHandoffSource,
   useGenerateKnowledgeProposals,
   useRetrySourceProcessing,
+  useSourceVersionChanges,
   useUpdateSourceText,
 } from '@/features/relay/queries';
-import type { HandoffSource } from '@/features/relay/types';
+import type { HandoffSource, SourceVersionChange } from '@/features/relay/types';
 import { colors, radii, spacing } from '@/theme/tokens';
 
-function SourceEditor({ source }: { source: HandoffSource }) {
+function SourceEditor({ source, versionChanges }: { source: HandoffSource; versionChanges: SourceVersionChange[] }) {
   const [title, setTitle] = useState(source.title);
   const [textContent, setTextContent] = useState(source.textContent ?? '');
   const [localError, setLocalError] = useState<string | null>(null);
@@ -48,6 +49,58 @@ function SourceEditor({ source }: { source: HandoffSource }) {
         <AppText color={colors.inkMuted}>Source material stays private. Editing it does not automatically change approved knowledge.</AppText>
       </View>
 
+      {source.versionNumber > 1 || !source.isCurrent ? (
+        <View style={styles.versionCard}>
+          <MaterialCommunityIcons color={colors.moss} name="source-branch" size={24} />
+          <View style={styles.statusCopy}>
+            <AppText variant="label">Version {source.versionNumber}{source.isCurrent ? ' · Current' : ' · Historical'}</AppText>
+            <AppText variant="caption" color={colors.inkMuted}>
+              {source.isCurrent
+                ? 'Linked to the prior file. Earlier versions remain private and preserved.'
+                : 'This earlier version is preserved as immutable evidence.'}
+            </AppText>
+          </View>
+          {source.supersedesSourceId ? (
+            <Button
+              icon="history"
+              label="Prior"
+              tone="ghost"
+              onPress={() => router.push((`/source/${source.supersedesSourceId}`) as Href)}
+            />
+          ) : null}
+        </View>
+      ) : null}
+
+      {source.versionNumber > 1 ? (
+        <View style={styles.deltaSection}>
+          <View style={styles.deltaHeading}>
+            <AppText variant="caption" color={colors.moss} style={styles.eyebrow}>MEANINGFUL DELTA</AppText>
+            <AppText variant="heading">
+              {source.deltaStatus === 'ready'
+                ? `${versionChanges.length} relevant ${versionChanges.length === 1 ? 'change' : 'changes'} detected`
+                : source.deltaStatus === 'failed' ? 'Delta review needs attention' : 'Comparing operational content…'}
+            </AppText>
+            <AppText color={colors.inkMuted}>
+              Formatting, reordered rows, and wording-only edits are suppressed. Every surfaced change still requires review before canonical knowledge changes.
+            </AppText>
+          </View>
+          {versionChanges.map((change) => (
+            <View key={change.id} style={styles.deltaRow}>
+              <View style={styles.deltaBadge}>
+                <AppText variant="caption" color={change.changeType === 'removed' ? colors.emergency : colors.moss}>
+                  {change.changeType.toUpperCase()}
+                </AppText>
+              </View>
+              <View style={styles.statusCopy}>
+                <AppText variant="label">{change.title}</AppText>
+                <AppText variant="caption" color={colors.inkMuted}>{change.summary}</AppText>
+              </View>
+            </View>
+          ))}
+          {source.deltaFailureReason ? <AppText variant="caption" color={colors.emergency}>{source.deltaFailureReason}</AppText> : null}
+        </View>
+      ) : null}
+
       {source.processingStatus !== 'ready' ? (
         <View style={[styles.statusCard, source.processingStatus === 'failed' && styles.failedCard]}>
           <MaterialCommunityIcons color={source.processingStatus === 'failed' ? colors.emergency : colors.saffron} name={source.processingStatus === 'failed' ? 'alert-circle-outline' : 'progress-clock'} size={26} />
@@ -61,7 +114,7 @@ function SourceEditor({ source }: { source: HandoffSource }) {
       ) : null}
 
       <FormSection eyebrow="Private evidence" title="Original source content">
-        <FormInput label="Source title" maxLength={160} value={title} onChangeText={setTitle} />
+        <FormInput editable={source.isCurrent} label="Source title" maxLength={160} value={title} onChangeText={setTitle} />
         <FormInput
           helper={source.kind === 'voice' ? 'Correct transcription mistakes before using this as evidence.' : 'This text remains source evidence until knowledge is deliberately approved.'}
           label={textLabel}
@@ -71,6 +124,7 @@ function SourceEditor({ source }: { source: HandoffSource }) {
           style={styles.sourceText}
           value={textContent}
           onChangeText={setTextContent}
+          editable={source.isCurrent}
         />
       </FormSection>
 
@@ -84,8 +138,10 @@ function SourceEditor({ source }: { source: HandoffSource }) {
       ) : null}
 
       <View style={styles.actions}>
-        <Button disabled={updateMutation.isPending || retryMutation.isPending} icon="content-save-outline" label={updateMutation.isPending ? 'Saving…' : 'Save source text'} onPress={() => void save()} />
-        {source.kind !== 'typed_text' && source.processingStatus === 'failed' ? (
+        {source.isCurrent ? (
+          <Button disabled={updateMutation.isPending || retryMutation.isPending} icon="content-save-outline" label={updateMutation.isPending ? 'Saving…' : 'Save source text'} onPress={() => void save()} />
+        ) : null}
+        {source.isCurrent && source.kind !== 'typed_text' && source.processingStatus === 'failed' ? (
           <Button
             disabled={updateMutation.isPending || retryMutation.isPending}
             icon="refresh"
@@ -94,7 +150,7 @@ function SourceEditor({ source }: { source: HandoffSource }) {
             onPress={() => retryMutation.mutate({ id: source.id, handoffId: source.handoffId, kind: source.kind as 'voice' | 'document' })}
           />
         ) : null}
-        {source.processingStatus === 'ready' && source.textContent && source.structuringStatus !== 'ready' ? (
+        {source.isCurrent && source.processingStatus === 'ready' && source.textContent && source.structuringStatus !== 'ready' ? (
           <Button
             disabled={updateMutation.isPending || structureMutation.isPending || source.structuringStatus === 'processing'}
             icon={source.structuringStatus === 'failed' ? 'refresh' : 'creation-outline'}
@@ -130,11 +186,13 @@ function SourceEditor({ source }: { source: HandoffSource }) {
 export default function SourceScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const sourceQuery = useHandoffSource(id);
-  if (sourceQuery.isPending) return <Screen><LoadingState label="Opening source…" /></Screen>;
-  if (sourceQuery.error || !sourceQuery.data) {
+  const needsChanges = Boolean(sourceQuery.data && sourceQuery.data.versionNumber > 1);
+  const changesQuery = useSourceVersionChanges(needsChanges ? id : undefined);
+  if (sourceQuery.isPending || (needsChanges && changesQuery.isPending)) return <Screen><LoadingState label="Opening source…" /></Screen>;
+  if (sourceQuery.error || (needsChanges && changesQuery.error) || !sourceQuery.data) {
     return <Screen><MessageState icon="file-remove-outline" title="Source unavailable" body={sourceQuery.error?.message ?? 'This source no longer exists or you do not have access.'} /></Screen>;
   }
-  return <SourceEditor source={sourceQuery.data} />;
+  return <SourceEditor source={sourceQuery.data} versionChanges={changesQuery.data ?? []} />;
 }
 
 const styles = StyleSheet.create({
@@ -148,4 +206,10 @@ const styles = StyleSheet.create({
   errorCopy: { flex: 1 },
   actions: { gap: spacing.sm, marginTop: spacing.lg },
   structureStatus: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md, padding: spacing.md, borderRadius: radii.md, backgroundColor: colors.mossSoft },
+  versionCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.lg, padding: spacing.md, borderRadius: radii.md, backgroundColor: colors.mossSoft },
+  deltaSection: { gap: spacing.sm, marginBottom: spacing.lg, padding: spacing.lg, borderRadius: radii.lg, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface },
+  deltaHeading: { gap: spacing.xxs },
+  deltaRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, padding: spacing.md, borderRadius: radii.md, backgroundColor: colors.canvas },
+  deltaBadge: { minWidth: 74, alignItems: 'center', paddingHorizontal: spacing.xs, paddingVertical: spacing.xxs, borderRadius: radii.pill, backgroundColor: colors.mossSoft },
+  eyebrow: { letterSpacing: 1.1 },
 });

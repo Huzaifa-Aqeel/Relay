@@ -63,6 +63,11 @@ function SourceCard({
             </AppText>
           </View>
           <AppText variant="caption" color={colors.inkMuted}>{meta.label}</AppText>
+          {source.kind === 'document' ? (
+            <AppText variant="caption" color={source.isCurrent ? colors.moss : colors.inkMuted}>
+              Version {source.versionNumber} · {source.isCurrent ? 'Current' : 'Historical'}
+            </AppText>
+          ) : null}
           <AppText color={colors.inkMuted} numberOfLines={3}>{sourcePreview(source)}</AppText>
         </View>
         <MaterialCommunityIcons color={colors.inkMuted} name="chevron-right" size={22} />
@@ -72,7 +77,7 @@ function SourceCard({
           <Button disabled={retrying} icon="refresh" label={retrying ? 'Retrying…' : 'Retry processing'} tone="ghost" onPress={onRetry} />
         </View>
       ) : null}
-      {editable && source.processingStatus === 'ready' && source.textContent ? (
+      {editable && source.isCurrent && source.processingStatus === 'ready' && source.textContent ? (
         <View style={styles.sourceRetry}>
           {source.structuringStatus === 'ready' ? (
             <View style={styles.structureResult}>
@@ -323,13 +328,29 @@ export default function HandoffScreen() {
               <AppText variant="caption" color={colors.moss} style={styles.eyebrow}>CAPTURE</AppText>
               <AppText variant="heading">Add what only you know</AppText>
             </View>
-            <AppText color={colors.inkMuted}>Keep original evidence separate from the concise instructions your successor will receive.</AppText>
+            <AppText color={colors.inkMuted}>Return throughout the service period to capture new context while keeping evidence separate from approved knowledge.</AppText>
           </View>
           <View style={styles.captureActions}>
             <Button icon="microphone-outline" label="Record voice knowledge" onPress={() => router.push((`/capture-voice?handoffId=${handoff.id}`) as Href)} />
             <Button icon="text-box-plus-outline" label="Type or paste notes" tone="secondary" onPress={() => router.push((`/capture-text?handoffId=${handoff.id}`) as Href)} />
             <Button icon="file-upload-outline" label="Upload a document" tone="secondary" onPress={() => router.push((`/capture-document?handoffId=${handoff.id}`) as Href)} />
             <Button icon="playlist-edit" label="Add approved item manually" tone="ghost" onPress={() => router.push((`/knowledge-new?handoffId=${handoff.id}`) as Href)} />
+          </View>
+          <View style={styles.capturePrompts}>
+            <AppText variant="label">Optional prompts for real-world capture</AppText>
+            <AppText variant="caption" color={colors.inkMuted}>Use only what fits this role—these are guidance, not new modules or tasks.</AppText>
+            <View style={styles.promptList}>
+              {[
+                'Role responsibilities', 'Annual registration or training', 'Finances or budget handoff',
+                'Recurring events', 'Advisor or vendor contacts', 'Account and tool access',
+                'Calendars and deadlines', 'Constitution or policies', 'Lessons and common mistakes',
+              ].map((prompt) => (
+                <View key={prompt} style={styles.promptChip}>
+                  <MaterialCommunityIcons color={colors.moss} name="plus-circle-outline" size={16} />
+                  <AppText variant="caption" color={colors.moss}>{prompt}</AppText>
+                </View>
+              ))}
+            </View>
           </View>
         </>
       ) : null}
@@ -403,7 +424,7 @@ export default function HandoffScreen() {
           <View style={styles.list}>
             {sources.map((source) => (
               <SourceCard
-                editable={handoff.status === 'draft'}
+                editable={handoff.status === 'draft' && source.isCurrent}
                 key={source.id}
                 source={source}
                 retrying={retryMutation.isPending && retryMutation.variables?.id === source.id}
@@ -450,6 +471,9 @@ const styles = StyleSheet.create({
   sectionHeading: { gap: spacing.xs, marginBottom: spacing.md },
   sectionTitle: { gap: spacing.xxs },
   captureActions: { gap: spacing.sm },
+  capturePrompts: { gap: spacing.xs, marginTop: spacing.md, padding: spacing.md, borderRadius: radii.lg, backgroundColor: colors.mossSoft },
+  promptList: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
+  promptChip: { flexDirection: 'row', alignItems: 'center', gap: spacing.xxs, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs, borderRadius: radii.pill, backgroundColor: colors.surface },
   guardrailCard: {
     flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md,
     marginTop: spacing.md, padding: spacing.md,

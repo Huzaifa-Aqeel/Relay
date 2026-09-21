@@ -13,6 +13,8 @@ import {
   createOrganization,
   createRole,
   createTypedSource,
+  compareRoleHandoffs,
+  confirmMemoryChangeReason,
   deleteKnowledgeItem,
   decideKnowledgeProposal,
   decidePreflightFinding,
@@ -23,6 +25,7 @@ import {
   generateKnowledgeProposals,
   getKnowledgeItem,
   getLatestPreflightRun,
+  getLatestRoleMemoryComparison,
   getOrganization,
   getOrganizationPlan,
   getRole,
@@ -30,12 +33,16 @@ import {
   listHandoffPublicationItems,
   listKnowledgeItems,
   listKnowledgeProvenance,
+  listMemoryRoles,
   listPreflightEvidence,
   listPreflightFindings,
   listOrganizationHandoffs,
   listOrganizations,
   listRoleHandoffs,
+  listRoleMemoryChanges,
+  listRoleLessons,
   listRoles,
+  listSourceVersionChanges,
   moveKnowledgeItem,
   processSource,
   publishHandoff,
@@ -71,6 +78,7 @@ export const relayKeys = {
   knowledgeItems: (handoffId: string) => ['relay', 'knowledge-items', handoffId] as const,
   knowledgeItem: (id: string) => ['relay', 'knowledge-item', id] as const,
   source: (id: string) => ['relay', 'source', id] as const,
+  sourceVersionChanges: (id: string) => ['relay', 'source-version-changes', id] as const,
   knowledgeProvenance: (handoffId: string) => ['relay', 'knowledge-provenance', handoffId] as const,
   preflightRun: (handoffId: string) => ['relay', 'preflight-run', handoffId] as const,
   preflightFindings: (runId: string) => ['relay', 'preflight-findings', runId] as const,
@@ -78,6 +86,10 @@ export const relayKeys = {
   publication: (handoffId: string) => ['relay', 'publication', handoffId] as const,
   publicationItems: (publicationId: string) => ['relay', 'publication-items', publicationId] as const,
   sharedHandoff: (token: string) => ['relay', 'shared-handoff', token] as const,
+  memoryRoles: ['relay', 'memory-roles'] as const,
+  roleMemoryComparison: (roleId: string) => ['relay', 'role-memory-comparison', roleId] as const,
+  roleMemoryChanges: (comparisonId: string) => ['relay', 'role-memory-changes', comparisonId] as const,
+  roleLessons: (roleId: string) => ['relay', 'role-lessons', roleId] as const,
 };
 
 function useCloudQueryEnabled(extra = true) {
@@ -191,7 +203,10 @@ export function useHandoffSource(id: string | undefined) {
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'sources', filter: `id=eq.${id}` },
         (payload) => {
-          void queryClient.invalidateQueries({ queryKey: relayKeys.source(id) });
+          void Promise.all([
+            queryClient.invalidateQueries({ queryKey: relayKeys.source(id) }),
+            queryClient.invalidateQueries({ queryKey: relayKeys.sourceVersionChanges(id) }),
+          ]);
           const handoffId = typeof payload.new?.handoff_id === 'string' ? payload.new.handoff_id : null;
           if (handoffId) {
             void Promise.all([
@@ -212,6 +227,14 @@ export function useHandoffSource(id: string | undefined) {
     queryKey: relayKeys.source(id ?? ''),
     queryFn: () => getHandoffSource(id!),
     enabled,
+  });
+}
+
+export function useSourceVersionChanges(sourceId: string | undefined) {
+  return useQuery({
+    queryKey: relayKeys.sourceVersionChanges(sourceId ?? ''),
+    queryFn: () => listSourceVersionChanges(sourceId!),
+    enabled: useCloudQueryEnabled(Boolean(sourceId)),
   });
 }
 
@@ -337,6 +360,38 @@ export function useSharedHandoff(token: string | undefined) {
   });
 }
 
+export function useMemoryRoles() {
+  return useQuery({
+    queryKey: relayKeys.memoryRoles,
+    queryFn: listMemoryRoles,
+    enabled: useCloudQueryEnabled(),
+  });
+}
+
+export function useRoleMemoryComparison(roleId: string | undefined) {
+  return useQuery({
+    queryKey: relayKeys.roleMemoryComparison(roleId ?? ''),
+    queryFn: () => getLatestRoleMemoryComparison(roleId!),
+    enabled: useCloudQueryEnabled(Boolean(roleId)),
+  });
+}
+
+export function useRoleMemoryChanges(comparisonId: string | undefined) {
+  return useQuery({
+    queryKey: relayKeys.roleMemoryChanges(comparisonId ?? ''),
+    queryFn: () => listRoleMemoryChanges(comparisonId!),
+    enabled: useCloudQueryEnabled(Boolean(comparisonId)),
+  });
+}
+
+export function useRoleLessons(roleId: string | undefined) {
+  return useQuery({
+    queryKey: relayKeys.roleLessons(roleId ?? ''),
+    queryFn: () => listRoleLessons(roleId!),
+    enabled: useCloudQueryEnabled(Boolean(roleId)),
+  });
+}
+
 export function useAskRelay() {
   return useMutation({
     mutationFn: ({ token, question }: { token: string; question: string }) => askRelay(token, question),
@@ -396,9 +451,9 @@ export function useCreateFileSource() {
       if (!session?.user.id) throw new Error('Sign in again to save this source.');
       return createFileSource(input, session.user.id);
     },
-    onSuccess: (id, input) => Promise.all([
+    onSuccess: (result, input) => Promise.all([
       queryClient.invalidateQueries({ queryKey: relayKeys.handoffSources(input.handoffId) }),
-      queryClient.invalidateQueries({ queryKey: relayKeys.source(id) }),
+      queryClient.invalidateQueries({ queryKey: relayKeys.source(result.sourceId) }),
       queryClient.invalidateQueries({ queryKey: relayKeys.handoff(input.handoffId) }),
     ]),
   });
@@ -613,5 +668,31 @@ export function useReplaceHandoffLink() {
       queryClient.invalidateQueries({ queryKey: relayKeys.publication(variables.handoffId) }),
       queryClient.invalidateQueries({ queryKey: ['relay', 'shared-handoff'] }),
     ]),
+  });
+}
+
+export function useCompareRoleHandoffs() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ roleId }: { roleId: string }) => compareRoleHandoffs(roleId),
+    onSuccess: (_, variables) => Promise.all([
+      queryClient.invalidateQueries({ queryKey: relayKeys.roleMemoryComparison(variables.roleId) }),
+      queryClient.invalidateQueries({ queryKey: ['relay', 'role-memory-changes'] }),
+      queryClient.invalidateQueries({ queryKey: relayKeys.memoryRoles }),
+    ]),
+  });
+}
+
+export function useConfirmMemoryChangeReason() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: {
+      changeId: string;
+      comparisonId: string;
+      reasonCategory: 'lesson_driven' | 'leadership_preference' | 'contact_resource' | 'unknown';
+      explanation: string;
+      lessonKnowledgeItemId?: string | null;
+    }) => confirmMemoryChangeReason(input),
+    onSuccess: (_, input) => queryClient.invalidateQueries({ queryKey: relayKeys.roleMemoryChanges(input.comparisonId) }),
   });
 }

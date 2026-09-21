@@ -101,7 +101,7 @@ export default function OrganizationsScreen() {
       {organizations.length ? (
         <View style={styles.promise}>
           <AppText variant="caption" color={colors.moss} style={styles.eyebrow}>THE RELAY PROMISE</AppText>
-          <AppText variant="heading">Your club should not forget how to run when its leaders graduate.</AppText>
+          <AppText variant="heading">Capture how the role actually works throughout the term, then publish a handoff the next leader can trust.</AppText>
         </View>
       ) : null}
     </Screen>

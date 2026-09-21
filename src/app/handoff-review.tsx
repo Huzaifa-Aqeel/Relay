@@ -46,12 +46,14 @@ function ProposalCard({
   onAccept,
   onReject,
   provenance,
+  existingItem,
 }: {
   item: KnowledgeItem;
   pending: boolean;
   onAccept: () => void;
   onReject: () => void;
   provenance: KnowledgeProvenance[];
+  existingItem: KnowledgeItem | null;
 }) {
   const meta = KNOWLEDGE_META[item.knowledgeType];
   return (
@@ -59,12 +61,24 @@ function ProposalCard({
       <View style={styles.proposalHeader}>
         <View style={styles.proposalBadge}>
           <MaterialCommunityIcons color={colors.saffron} name="creation-outline" size={17} />
-          <AppText variant="caption" color={colors.ink}>PROPOSED</AppText>
+          <AppText variant="caption" color={colors.ink}>
+            {item.proposalAction === 'update' ? 'PROPOSED UPDATE' : item.proposalAction === 'retire' ? 'PROPOSED RETIREMENT' : 'PROPOSED'}
+          </AppText>
         </View>
         <AppText variant="caption" color={colors.inkMuted}>{meta.label}</AppText>
       </View>
       <AppText variant="heading">{item.title}</AppText>
       <AppText color={colors.inkMuted}>{item.content}</AppText>
+      {existingItem ? (
+        <View style={styles.existingKnowledge}>
+          <AppText variant="caption" color={colors.moss} style={styles.eyebrow}>EXISTING APPROVED ITEM</AppText>
+          <AppText variant="label">{existingItem.title}</AppText>
+          <AppText variant="caption" color={colors.inkMuted}>{existingItem.content}</AppText>
+          {item.proposalAction === 'retire' ? (
+            <AppText variant="caption" color={colors.emergency}>Accepting retires this canonical item; it does not delete its history.</AppText>
+          ) : null}
+        </View>
+      ) : null}
       {provenance.map((evidence) => (
         <View key={`${evidence.knowledgeItemId}:${evidence.sourceId}`} style={styles.evidence}>
           <View style={styles.evidenceHeading}>
@@ -176,6 +190,9 @@ export default function HandoffReviewScreen() {
                 key={item.id}
                 pending={decisionMutation.isPending}
                 provenance={provenanceQuery.data.filter((evidence) => evidence.knowledgeItemId === item.id)}
+                existingItem={item.proposalTargetId
+                  ? approved.find((candidate) => candidate.id === item.proposalTargetId) ?? null
+                  : null}
                 onAccept={() => decide(item, 'approved')}
                 onReject={() => reject(item)}
               />
@@ -263,6 +280,7 @@ const styles = StyleSheet.create({
   uncertainty: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.xs, padding: spacing.sm, borderRadius: radii.md, backgroundColor: colors.saffronSoft },
   evidence: { gap: spacing.xs, padding: spacing.sm, borderRadius: radii.md, backgroundColor: colors.mossSoft },
   evidenceHeading: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  existingKnowledge: { gap: spacing.xxs, padding: spacing.md, borderWidth: 1, borderColor: colors.line, borderRadius: radii.md, backgroundColor: colors.surface },
   approvedRow: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.md,
     padding: spacing.md, borderWidth: 1, borderColor: colors.line,

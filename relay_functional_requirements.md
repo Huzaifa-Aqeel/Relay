@@ -1,6 +1,6 @@
 # Functional Requirements — Relay
 
-**Version:** 1.2 — Organization-scoped Relay Pro  
+**Version:** 1.3 — Living Handoffs & Organization Memory
 **Product:** Relay  
 **Category:** Student leadership handoff / institutional memory  
 **Target:** RevenueCat Shipaton 2026 — Next Gen Award  
@@ -12,25 +12,29 @@
 
 # 0. Product Definition
 
-Relay helps student organizations preserve operational knowledge when leadership changes.
+Relay is a living institutional-memory layer for student organizations. Leaders capture operational knowledge throughout their service period, deliberately approve what is true, and publish an intentional handoff snapshot for the next leader.
 
-The outgoing leader can speak, type, and upload existing material. Relay turns that information into reviewable knowledge and runs a **Handoff Preflight** that finds missing details, vague instructions, incomplete processes, and contradictions before the handoff is published.
+The current leader can return to a Draft Handoff during the year to speak, type, upload new or updated material, and maintain approved knowledge. Relay turns source evidence into reviewable knowledge and runs a **Handoff Preflight** that finds missing details, vague instructions, incomplete processes, and contradictions before publication.
 
-The incoming leader receives a focused handoff and can ask grounded questions from the approved knowledge and source material.
+The incoming leader receives a focused immutable publication and can ask grounded questions from its approved knowledge. Across service periods, Relay helps the organization see what materially changed and why—but only when approved evidence or a human confirmation establishes the reason.
+
+Documents remain evidence. Approved Knowledge Items remain product truth.
 
 ## Core promise
 
-> **Your club should not forget how to run when its leaders graduate.**
+> **Capture how the role actually works throughout the term, then pass on knowledge the next leader can trust.**
 
 ## Product principle
 
 > **Most AI summarizes what you told it. Relay finds what your successor still needs that you forgot to explain.**
 
+> **Relay never turns chronology, source churn, or AI speculation into organizational truth.**
+
 ## Core loop
 
 **Capture → Structure → Preflight → Resolve → Publish → Ask**
 
-Any v1 feature that does not strengthen this loop should be excluded.
+Any v1.3 feature that does not strengthen this loop should be excluded.
 
 ---
 
@@ -48,7 +52,7 @@ Relay is not a:
 - generic AI assistant
 - replacement for official university policy
 
-A feature belongs in Relay only if it helps **capture, verify, transfer, or retrieve knowledge during a leadership transition**.
+A feature belongs in Relay only if it helps **capture, structure, verify, transfer, retrieve, or learn from operational knowledge across a leader's term and transition**.
 
 ---
 
@@ -57,9 +61,9 @@ A feature belongs in Relay only if it helps **capture, verify, transfer, or retr
 | Actor | Description |
 |---|---|
 | **Organization Owner** | Authenticated user who creates and currently manages the organization. |
-| **Outgoing Leader** | Creates the role handoff, knowledge, and published share; normally also the Organization Owner in v1. |
+| **Current / Outgoing Leader** | Maintains the living role handoff during the term, approves knowledge, and publishes the successor snapshot; normally also the Organization Owner in v1.3. |
 | **Incoming Leader** | Reads the published handoff and asks questions without needing an account or paid plan. |
-| **Purchaser** | Authenticated user who completes a RevenueCat purchase for a selected organization. The Purchaser and Organization Owner may be the same person in v1, but are conceptually separate. |
+| **Purchaser** | Authenticated user who completes a RevenueCat purchase for a selected organization. The Purchaser and Organization Owner may be the same person in v1.3, but are conceptually separate. |
 | **System** | Processes sources, runs AI, retrieval, and entitlement checks. |
 
 ### Requirements
@@ -69,7 +73,7 @@ A feature belongs in Relay only if it helps **capture, verify, transfer, or retr
 | ACT-01 | Owners must authenticate to create or edit Relay data. | P0 |
 | ACT-02 | Incoming leaders can open and read a valid published handoff without installing Relay or creating an account. | P0 |
 | ACT-03 | A recipient can access only the handoff and knowledge explicitly published to that recipient link. | P0 |
-| ACT-04 | Purchaser identity, organization ownership, outgoing leadership, and incoming leadership remain separate concepts even when one person fills multiple roles in v1. | P0 |
+| ACT-04 | Purchaser identity, organization ownership, outgoing leadership, and incoming leadership remain separate concepts even when one person fills multiple roles in v1.3. | P0 |
 | ACT-05 | Organization ownership can later transfer without creating a new organization or losing its history, handoffs, or understandable subscription association. | P1 |
 
 ---
@@ -84,7 +88,7 @@ Relay uses five primary objects:
 - **Source**
 - **Knowledge Item**
 
-A Handoff belongs to one Role and may have a service period such as `2025–2026`.
+A Handoff belongs to one Role and has a service period such as `2025–2026`. A Role can retain multiple published Handoffs across service periods.
 
 A Source is original evidence such as:
 - voice transcript
@@ -95,7 +99,14 @@ A Source is original evidence such as:
 
 A Knowledge Item is a human-approved fact or instruction derived from one or more sources.
 
-v1 uses only seven knowledge types:
+Supporting lineage metadata connects:
+
+- versions of the same Source within a Handoff
+- revisions of canonical Knowledge Items
+- logically equivalent Knowledge Items across Handoffs for the same Role
+- an approved Lesson to a resulting Process, Warning, or Responsibility when evidence or human confirmation establishes the relationship
+
+v1.3 uses only seven knowledge types:
 
 1. Responsibility / Task
 2. Deadline
@@ -111,10 +122,11 @@ v1 uses only seven knowledge types:
 |---|---|---|
 | DOM-01 | User can create an organization with name, institution, and optional logo/description. | P0 |
 | DOM-02 | User can create one or more roles within an organization. | P0 |
-| DOM-03 | User can create a handoff for a role and optionally assign a service period. | P0 |
-| DOM-04 | A role can retain previous published handoffs over time. | P1 |
+| DOM-03 | User can create a handoff for a role and assign its service period. | P0 |
+| DOM-04 | A role can retain and open multiple immutable published handoffs across service periods. | P0 |
+| DOM-05 | Historical comparison and knowledge lineage are always scoped to the same Organization and same Role. | P0 |
 
-v1 assumes one authenticated owner manages the organization. Multi-admin collaboration and the ownership-transfer UI are later work; the data model must not make organization continuity depend permanently on the original purchaser.
+v1.3 assumes one authenticated owner manages the organization. Multi-admin collaboration is out of scope. The ownership-transfer UI remains P1, but the data model must not make organization continuity depend permanently on the original purchaser.
 
 ---
 
@@ -124,6 +136,8 @@ A handoff moves through:
 
 **Draft → Review → Preflight → Ready → Published**
 
+Draft is not a one-time graduation form. It remains a usable working space throughout the service period. Publishing is a deliberate snapshot after Review and Preflight; later working-source changes never silently alter an existing publication.
+
 ### Requirements
 
 | ID | Requirement | Priority |
@@ -132,6 +146,8 @@ A handoff moves through:
 | HAND-02 | User can add knowledge through voice, typed text, documents, and manual structured entry. | P0 |
 | HAND-03 | User can manually edit, reorder, and delete approved knowledge items. | P0 |
 | HAND-04 | Publishing requires the handoff to pass through Review and Preflight. | P0 |
+| HAND-05 | A Draft Handoff can be reopened throughout the service period to add voice notes, typed notes, new or updated files, and maintain approved contacts, deadlines, processes, warnings, resources, responsibilities, and lessons. | P0 |
+| HAND-06 | Publishing creates an intentional immutable recipient snapshot; continued Draft work or source replacement must not silently change a published Handoff. | P0 |
 
 ---
 
@@ -157,10 +173,11 @@ Users can upload common organizational documents.
 |---|---|---|
 | CAP-01 | User can record spoken knowledge and receive an editable transcript. | P0 |
 | CAP-02 | User can type or paste free-form knowledge. | P0 |
-| CAP-03 | User can upload supported documents such as PDF, DOCX, PPTX, text/Markdown, and common images. | P0 |
+| CAP-03 | User can upload supported documents such as PDF, DOCX, PPTX, XLSX, text/Markdown/CSV, and common images. | P0 |
 | CAP-04 | Original voice/text/document sources remain linked to any knowledge derived from them. | P0 |
 | CAP-05 | Capture failures never block manual entry. | P0 |
 | CAP-06 | Document UI shows Processing, Ready, or Failed and allows retry after failure. | P0 |
+| CAP-07 | Capture may show optional prompts for responsibilities, registration/training, finances, recurring events, advisor/vendor contacts, account/tool access, calendars/deadlines, policies, and lessons/common mistakes without creating new knowledge types or separate operational modules. | P0 |
 
 ---
 
@@ -206,6 +223,27 @@ Relay uses managed infrastructure rather than custom document/vector plumbing.
 | RAG-03 | Retrieval records are scoped with enough metadata to enforce organization/handoff access before generation. | P0 |
 | RAG-04 | Relay does not build a custom parser, OCR stack, semantic chunker, embedding store, or vector index when the managed stack already satisfies the requirement. It may apply bounded text segmentation required by the selected embedding model. | P0 |
 | RAG-05 | Table/image enrichment may be enabled later when it materially improves retrieval quality. | P1 |
+| RAG-06 | Current working retrieval prefers current Source versions and prevents historical/current versions from producing duplicate active evidence. | P0 |
+| RAG-07 | Historical Source versions remain available for provenance and comparison but do not silently affect an already published Ask Relay snapshot. | P0 |
+
+## Source versioning and meaningful deltas
+
+File versioning exists only to improve operational knowledge maintenance. Relay is not a generic document version-control product.
+
+### Requirements
+
+| ID | Requirement | Priority |
+|---|---|---|
+| SRC-01 | Before expensive processing, Relay calculates a content hash and checks existing document Sources in the same Organization/Handoff. | P0 |
+| SRC-02 | If the content hash is identical, Relay does not create another active version, upload/process the file again, or create duplicate retrieval evidence; the user is told the file already exists. | P0 |
+| SRC-03 | If bytes differ and filename/type or established lineage strongly indicates a newer version, Relay processes it through the existing ingestion pipeline and links it to the prior Source. | P0 |
+| SRC-04 | Ambiguous matches require explicit confirmation such as “This looks like an updated version of RoboFest Budget.xlsx. Treat it as a new version?” Unrelated files are never silently linked. | P0 |
+| SRC-05 | A linked Source stores minimal lineage metadata including its predecessor/root, version number, current status, content hash, and match basis. Older versions remain immutable. | P0 |
+| SRC-06 | Linked versions are compared using extracted/normalized content rather than binary DOCX/XLSX/PDF bytes. | P0 |
+| SRC-07 | Only operationally material added, changed, or removed information is surfaced: responsibilities, contacts, deadlines, procedures, policy requirements, warnings, resources, lessons, and operational budget/resource facts. | P0 |
+| SRC-08 | Formatting changes, reordered rows, duplicate wording, synonymous rewrites, and other source churn are suppressed. Closely related changes are grouped where practical. | P0 |
+| SRC-09 | Every surfaced delta retains exact old/new evidence where applicable and is converted into a reviewable create, update, or retirement proposal only when its canonical knowledge target is sufficiently grounded. | P0 |
+| SRC-10 | Disappearing text never automatically deletes approved knowledge. Removal becomes a reviewable retirement/update proposal. | P0 |
 
 Implementation details such as chunk size, Unstructured processing/pipeline configuration, embedding model, and Astra collection configuration belong in `technical_spec.md`, not this file.
 
@@ -228,6 +266,10 @@ Relay must distinguish **evidence** from **human-approved truth**.
 | KNOW-03 | User can Accept, Edit, or Reject each proposal. | P0 |
 | KNOW-04 | Only accepted or manually created items appear as approved canonical knowledge. | P0 |
 | KNOW-05 | Rejected proposals never appear in the published handoff. | P0 |
+| KNOW-06 | New voice/text/file evidence can propose an update to or retirement of an existing approved Knowledge Item instead of creating a duplicate when the intent is clearly the same. | P0 |
+| KNOW-07 | Update/retirement review shows the affected approved item, proposed result, and new evidence before the human decides. | P0 |
+| KNOW-08 | Accepting an update changes the existing canonical Knowledge Item rather than creating a competing approved duplicate, while preserving revision history, lineage, and provenance. | P0 |
+| KNOW-09 | AI and source processing never automatically mutate, retire, or delete approved knowledge. | P0 |
 
 ---
 
@@ -252,11 +294,13 @@ Do not leave venue booking too late
 
 | ID | Requirement | Priority |
 |---|---|---|
-| AI-01 | Relay converts source material into proposed knowledge using the seven v1 knowledge types. | P0 |
+| AI-01 | Relay converts source material into proposed knowledge using the seven v1.3 knowledge types. | P0 |
 | AI-02 | Model output is validated against an allow-listed structured schema before it can become product data. | P0 |
 | AI-03 | Relay must not invent names, dates, contact details, policies, or procedures absent from evidence. | P0 |
 | AI-04 | Uncertain information is surfaced for human review instead of being silently guessed. | P0 |
 | AI-05 | User can always add or correct knowledge manually. | P0 |
+| AI-06 | Proposal reasoning receives relevant approved Knowledge Items so it can distinguish genuinely new knowledge from a supported correction, replacement, or retirement. | P0 |
+| AI-07 | Model-selected update targets and evidence excerpts are independently validated before proposals are stored. Low-confidence targets are rejected or omitted. | P0 |
 
 ---
 
@@ -266,7 +310,7 @@ Preflight asks:
 
 > **“Could a new person successfully take over this role using what has been documented, without having to guess?”**
 
-v1 detects four problem types.
+v1.3 detects four problem types.
 
 ## Missing information
 
@@ -319,7 +363,8 @@ Preflight:
 | PRE-07 | Relay asks the human to resolve the issue; it never invents or silently chooses the answer. | P0 |
 | PRE-08 | User can Resolve, Edit, Skip, or mark a finding Unknown. | P0 |
 | PRE-09 | Preflight reruns after material handoff changes. | P0 |
-| PRE-10 | More advanced stale-policy detection remains an extension of Preflight rather than a separate v1 subsystem. | P1 |
+| PRE-10 | More advanced stale-policy detection remains an extension of Preflight rather than a separate v1.3 subsystem. | P1 |
+| PRE-11 | For versioned working Sources, Preflight uses the current version as active evidence and retains historical versions only for provenance/history. | P0 |
 
 ---
 
@@ -357,6 +402,8 @@ Example:
 | PUB-04 | Published handoff opens in a mobile browser without account creation. | P0 |
 | PUB-05 | Owner can revoke a published link without deleting the underlying handoff. | P0 |
 | PUB-06 | Draft-only source material is never automatically exposed to recipients. | P0 |
+| PUB-07 | A published Handoff snapshots approved knowledge, safe citation metadata, service period, and knowledge lineage without exposing raw Sources or proposals. | P0 |
+| PUB-08 | Updating a working Source or approved Knowledge Item never silently changes a prior published snapshot. | P0 |
 
 ---
 
@@ -383,6 +430,7 @@ Default information order:
 | REC-03 | Warnings are visually prominent. | P0 |
 | REC-04 | Recipient can browse the handoff without reading every item sequentially. | P0 |
 | REC-05 | Published approved content still renders if AI services are temporarily unavailable. | P0 |
+| REC-06 | Start Here surfaces immediate transition obligations already present in approved published knowledge, including registration/training, financial closeout, key introductions, upcoming deadlines, and account/tool access steps. It does not invent tasks or become a task manager. | P0 |
 
 ---
 
@@ -415,17 +463,66 @@ Unsupported question:
 |---|---|---|
 | ASK-01 | Recipient can ask natural-language questions from the published handoff. | P0 |
 | ASK-02 | Retrieval is permission-filtered before evidence is provided to the LLM. | P0 |
-| ASK-03 | Ask Relay uses Astra retrieval plus approved knowledge as grounding evidence. | P0 |
+| ASK-03 | Ask Relay may use permission-filtered Astra matches to rank immutable published Knowledge Items, but generation is grounded in the publication snapshot and never receives raw/private Source chunks. | P0 |
 | ASK-04 | Every factual organization-specific answer includes source references. | P0 |
 | ASK-05 | If evidence is insufficient, Relay explicitly says the handoff does not contain a reliable answer. | P0 |
 | ASK-06 | Relay must not fabricate organization-specific answers from general model knowledge. | P0 |
 | ASK-07 | Ask Relay never modifies approved knowledge. | P0 |
 
-Public internet search is out of scope for Ask Relay v1.
+Public internet search is out of scope for Ask Relay v1.3.
 
 ---
 
-# 14. RevenueCat Monetization
+# 14. Organization Memory
+
+Organization Memory answers one focused historical question for a Role:
+
+> **What materially changed from the previous leadership handoff, and why when we actually know why?**
+
+Approved Knowledge Items and immutable published Handoffs are the authoritative comparison basis. Relay compares adjacent service periods for the same Organization and Role by default, such as `2026–2027 → 2027–2028`.
+
+## Relevant change types
+
+- **Added** — new operational knowledge appears in the later publication.
+- **Changed** — confidently equivalent knowledge materially changed.
+- **Retired** — prior operational knowledge no longer appears and is confidently understood as retired.
+- **Unchanged** — may be stored internally but normally remains hidden.
+
+Material means the difference could affect how the successor performs the role, understands a risk, meets a deadline, contacts someone, uses a resource, or follows a process. Punctuation, formatting, reordered content, duplicated wording, and equivalent rewrites are noise.
+
+## Grounded reason categories
+
+- **Policy-driven change** — approved evidence explicitly establishes that a policy, rule, constitution, regulation, or institutional requirement caused the change.
+- **Lesson-driven change** — approved evidence or attributable human confirmation explicitly links a documented Lesson/incident to the resulting practice.
+- **Leadership preference** — approved evidence or attributable human confirmation explicitly says leadership chose or preferred the change.
+- **Contact/resource change** — the approved evidence directly shows a person, vendor, venue, tool, form, link, or other operational resource changed.
+- **Unknown / not established** — Relay can establish the change but cannot reliably establish why.
+
+Chronology is not causality. A 2026 projector failure followed by a 2027 equipment-test process is **not** Lesson-driven unless evidence or a human explicitly links them.
+
+### Requirements
+
+| ID | Requirement | Priority |
+|---|---|---|
+| MEM-01 | Organization Memory compares only published Handoffs for the same Organization and same Role. | P0 |
+| MEM-02 | The default comparison uses the latest adjacent published service periods and allows the owner to open preserved historical Handoffs. | P0 |
+| MEM-03 | Relay matches equivalent knowledge across years using existing lineage or conservative same-type/topic/entity evidence. It never forces an uncertain match. | P0 |
+| MEM-04 | Low-confidence matches are omitted or require human confirmation rather than being presented as facts. | P0 |
+| MEM-05 | The What Changed view normally shows only material Added, Changed, and Retired items and suppresses unchanged/noisy differences. | P0 |
+| MEM-06 | Every displayed change allows inspection of the before/after approved knowledge and safe source provenance from the immutable publications. | P0 |
+| MEM-07 | Relay never invents a reason for change or infers causality merely because events occurred in sequence. Unsupported reasons display `Unknown / not established`. | P0 |
+| MEM-08 | Policy-driven requires explicit approved policy/requirement evidence; human assertion alone cannot relabel a change as policy-driven without that evidence. | P0 |
+| MEM-09 | Lesson-driven requires explicit approved causal evidence or attributable human confirmation selecting an approved Lesson and resulting Process, Warning, or Responsibility. | P0 |
+| MEM-10 | Leadership preference requires an explicit approved statement or attributable human confirmation that leadership chose the approach. | P0 |
+| MEM-11 | Contact/resource change requires directly changed Contact or Resource knowledge. | P0 |
+| MEM-12 | An evidence-backed or human-confirmed `Lesson → Process/Warning/Responsibility` relationship is stored explicitly as lineage metadata; AI speculation never creates the link. | P0 |
+| MEM-13 | Organization Memory does not rank leaders/years, claim improvement without supplied factual metrics, or expose health, quality, completeness, or performance scores. | P0 |
+
+Organization Memory is a focused learning view, not a generic analytics dashboard.
+
+---
+
+# 15. RevenueCat Monetization
 
 RevenueCat supports the real paid value: preserving continuity across more roles and more years. A human user completes the store purchase, but Relay Pro benefits belong to the selected Organization. RevenueCat determines whether the purchaser's entitlement is active; Supabase records which Relay Organization receives it.
 
@@ -449,7 +546,8 @@ An authenticated owner account can create one organization on Free. Creating an 
 - additional/current handoffs
 - larger AI/document allowances
 - historical handoffs
-- future advanced history/Preflight features
+- Organization Memory comparison across adjacent service periods
+- future advanced Preflight features
 
 ### Requirements
 
@@ -464,12 +562,13 @@ An authenticated owner account can create one organization on Free. Creating an 
 | MON-07 | Expiration or downgrade returns the Organization to Free without deleting its roles, handoffs, sources, approved knowledge, publications, or institutional history; premium creation may become gated or existing premium data read-only. | P0 |
 | MON-08 | Purchaser, Organization Owner, Outgoing Leader, and Incoming Leader are conceptually separate roles; subscription association must not require the Purchaser to remain the Organization Owner. | P0 |
 | MON-09 | A complete Organization ownership-transfer flow remains P1. Transfer must preserve the Organization identity, history, handoffs, and understandable subscription association. | P1 |
+| MON-10 | Living Handoffs and Organization Memory do not introduce add-ons or new subscription products. Relay Pro remains annual-only and Organization-scoped. | P0 |
 
 Do not build a complex credit/currency system unless actual usage costs later justify it.
 
 ---
 
-# 15. Privacy, Security & Trust
+# 16. Privacy, Security & Trust
 
 ### Requirements
 
@@ -480,12 +579,13 @@ Do not build a complex credit/currency system unless actual usage costs later ju
 | SEC-03 | Unstructured, Astra, transcription, and LLM credentials remain server-side and are never exposed in the Expo client. | P0 |
 | SEC-04 | Raw source content and generated answers are not logged by default. | P0 |
 | SEC-05 | Relay warns users not to store passwords, recovery codes, or private keys as handoff knowledge. | P0 |
-| SEC-06 | AI-generated information remains proposed until accepted; AI never silently modifies approved knowledge or resolves contradictions. | P0 |
+| SEC-06 | AI-generated information remains proposed until accepted; AI never silently modifies/retires approved knowledge, resolves contradictions, links unrelated Sources, or changes a published snapshot. | P0 |
 | SEC-07 | Relay prefers “I don't know” over unsupported organization-specific answers. | P0 |
+| SEC-08 | Historical Source versions, canonical revision history, and internal lineage remain private; recipient access exposes only the safe immutable publication payload. | P0 |
 
 ---
 
-# 16. Design & Accessibility
+# 17. Design & Accessibility
 
 Reuse the existing polished design system from the previous project wherever practical.
 
@@ -500,12 +600,13 @@ Relay should feel like a calm transition tool, not an AI dashboard.
 | UI-03 | Preflight findings use plain language and citations/source context are easy to open. | P0 |
 | UI-04 | Shared handoff is optimized for fast mobile scanning and core controls support accessibility semantics. | P0 |
 | UI-05 | AI failure never prevents manual capture, editing, publishing of already-approved content, or reading a published handoff. | P0 |
+| UI-06 | Source-version and Organization Memory views emphasize material changes, human decisions, and inspectable provenance rather than scores, activity noise, or AI confidence theater. | P0 |
 
 No special “AI aesthetic” is required.
 
 ---
 
-# 17. Technical Direction
+# 18. Technical Direction
 
 ## Client
 - Expo / React Native
@@ -522,23 +623,25 @@ No special “AI aesthetic” is required.
 - Unstructured API for document parsing, OCR, layout, and chunking
 - Astra DB Vectorize for document and Ask Relay query embeddings
 - Astra DB managed retrieval
+- Supabase Source lineage/current-version metadata controls which indexed evidence is active
 
 ## AI
 - Groq server-side reasoning with strict structured output
 - Groq server-side speech-to-text
+- independently validated proposal, source-delta, Preflight, Ask Relay, and Organization Memory outputs
 
 ## Monetization
 - RevenueCat
 
 ### Architectural principle
 
-> **Unstructured owns document transformation. Astra owns retrieval. Supabase owns product truth. Relay owns reasoning and user experience.**
+> **Unstructured owns document transformation. Astra owns retrieval. Supabase owns canonical truth, history, and lineage. Relay owns reasoning and user experience.**
 
 All lower-level provider configuration belongs in `technical_spec.md`.
 
 ---
 
-# 18. Shipaton Demo Path
+# 19. Shipaton Demo Path
 
 The demo should tell one complete story.
 
@@ -550,7 +653,7 @@ The demo should tell one complete story.
 
 ### Sequence
 
-1. Maya opens the President handoff.
+1. Early in her term, Maya opens the living Draft President handoff.
 2. Maya records:
    > “RoboFest happens in March. Sarah in Facilities handles the hall. Make sure you book it early. Last year we nearly lost the venue.”
 3. Relay transcribes it.
@@ -559,40 +662,52 @@ The demo should tell one complete story.
    - Process: reserve RoboFest venue
    - Warning: do not leave booking too late
 5. Maya Accepts/Edits the proposals.
-6. Maya uploads a planning guide or university event-policy document.
-7. Unstructured processing completes.
-8. Preflight asks:
+6. Months later, Maya records:
+   > “Sarah moved departments. Mike now handles Engineering Hall.”
+7. Relay proposes an update to the existing Facilities Contact instead of creating a duplicate; Maya reviews and accepts it.
+8. Maya uploads the RoboFest planning guide. Uploading the identical file again is detected without reprocessing.
+9. Maya uploads a revised guide. Relay links it as a new Source version, preserves the old version, and surfaces only material operational changes.
+10. A changed venue deadline and added sponsor-approval step become reviewable knowledge changes; nothing canonical changes until Maya accepts or edits them.
+11. Preflight asks:
    > “You said to book the hall ‘early.’ How early should Alex book it?”
-9. Maya answers:
+12. Maya answers:
    > “12 weeks before RoboFest.”
-10. If source evidence conflicts, Preflight shows the disagreement and asks Maya to resolve it.
-11. Maya previews and publishes.
-12. Alex opens the QR/link without an account.
-13. Alex sees Start Here, responsibilities, deadlines, contacts, warnings, and resources.
-14. Alex asks:
+13. If source evidence conflicts, Preflight shows the disagreement and asks Maya to resolve it.
+14. Maya previews and intentionally publishes the `2026–2027` snapshot.
+15. Alex opens the QR/link without an account.
+16. Alex sees Start Here obligations, responsibilities, deadlines, contacts, warnings, and resources.
+17. Alex asks:
    > “When should I book RoboFest?”
-15. Relay answers with the approved instruction and citation.
-16. Alex asks:
+18. Relay answers with the approved instruction and citation.
+19. Alex asks:
    > “Can we use club money to buy laptops?”
-17. Relay says:
+20. Relay says:
    > “This handoff does not contain a reliable answer.”
-18. Maya attempts a premium action such as adding another role to University Robotics Club.
-19. RevenueCat paywall identifies University Robotics Club as the Organization being upgraded.
+21. Alex later maintains and publishes the President `2027–2028` Handoff.
+22. Organization Memory compares the adjacent President periods and shows grounded material changes such as `Facilities contact: Sarah → Mike` and `Venue booking: 12 weeks → 16 weeks`.
+23. Relay labels the contact reason as Contact/resource change. It labels the deadline Policy-driven only if approved policy evidence explicitly establishes the cause; otherwise it says `Unknown / not established`.
+24. If Alex confirms that a documented projector failure caused the new equipment-test process, Relay records the explicit `Lesson → Process` relationship. It never infers that relationship from sequence alone.
+25. Maya attempts another premium Organization action. RevenueCat identifies University Robotics Club as the Organization being upgraded and retains annual-only Organization scope.
 
 ### Demo must prove
 
 - Relay is more than a summarizer.
 - Preflight discovers missing knowledge.
 - Human approval controls truth.
+- A Draft Handoff remains useful throughout the term.
+- Voice/text context can update existing approved knowledge without automatic mutation.
 - Ask Relay cites evidence.
 - Ask Relay refuses unsupported answers.
 - Document ingestion is real.
+- Exact duplicate files avoid reprocessing; linked versions preserve evidence and surface meaningful deltas.
+- Organization Memory compares only the same Role across adjacent published periods.
+- Change reasons are grounded or explicitly shown as not established.
 - Recipient needs no account.
 - RevenueCat gates a logical Organization feature without gating Alex's recipient path.
 
 ---
 
-# 19. P0 Cut Line
+# 20. v1.3 Release Cut Line
 
 The Shipaton build is not complete unless these work:
 
@@ -615,42 +730,45 @@ The Shipaton build is not complete unless these work:
 17. RevenueCat Organization entitlement/paywall
 18. secure server-side provider credentials
 19. manual fallback
+20. living Draft Handoff that can be resumed throughout the term
+21. voice/text proposals that update or retire existing approved knowledge through review
+22. exact duplicate upload detection and conservative Source-version linking
+23. normalized meaningful deltas that become reviewable knowledge changes
+24. current-version working retrieval without historical duplicate evidence
+25. multiple preserved published Handoffs for the same Role
+26. adjacent-period Organization Memory with material Added/Changed/Retired results
+27. grounded reason categories with `Unknown / not established` fallback
+28. explicit evidence-backed or human-confirmed Lesson-to-Practice relationships
+29. recipient Start Here obligations derived only from approved publication content
 
-Do not cut **Preflight, citations, or “I don't know” behavior** to make room for secondary features.
+Do not cut **Preflight, human review, citations, immutable publication snapshots, current-version retrieval, or “I don't know / reason not established” behavior** to make room for secondary features.
 
 ---
 
-# 20. P1
+# 21. P1
 
 Only after the core loop is polished:
 
-- multiple historical handoffs per role
-- previous-year viewing
-- simple “what changed?” comparison
 - richer table retrieval
 - image-description enrichment
 - more advanced stale-policy detection
 - role archiving
 - organization ownership transfer without replacing the organization or losing its history
+- optional human review for borderline cross-year lineage candidates that Relay currently omits
 
 ---
 
-# 21. P2
+# 22. P2
 
 Post-launch:
 
 - successor feedback-to-update loop
-- multiple admins
-- member invitations
 - organization-wide search
-- cloud-drive connectors
-- deadline reminders
 - activity/audit-feed UI
-- advanced year-to-year analytics
 
 ---
 
-# 22. Explicitly Out of Scope for v1
+# 23. Explicitly Out of Scope for v1.3
 
 - social feed
 - club discovery
@@ -659,7 +777,19 @@ Post-launch:
 - attendance
 - member CRM
 - generic project management
+- calendars, reminders, task management, or notifications
 - password storage
+- finance, event-management, registration, or training modules
+- in-app DOCX/XLSX or Google Sheets editing
+- Google Drive, OneDrive, or other live cloud-file synchronization
+- generic document version-control features
+- generic analytics dashboards or broad year-to-year analytics
+- organization health, improvement, leadership-quality, or AI-completeness scores
+- leader/year rankings or unsupported claims that an organization improved
+- comparisons across unrelated Organizations or Roles
+- causal claims without explicit approved evidence or attributable human confirmation
+- multiple administrators or elaborate multi-user permissions
+- new subscription products, add-ons, monthly plans, lifetime plans, credits, or consumables
 - financial integrations
 - autonomous emails/messages
 - automatic modification of approved knowledge
@@ -668,19 +798,18 @@ Post-launch:
 - custom OCR/parser
 - custom chunking engine
 - custom embedding/index infrastructure
-- elaborate multi-user permissions
 - notification subsystem
 - generic AI assistant
 
 ---
 
-# 23. Product Rule
+# 24. Product Rule
 
 Before adding a feature, ask:
 
-> **Does this help capture, verify, transfer, or retrieve knowledge during a leadership transition?**
+> **Does this help capture, structure, verify, transfer, retrieve, or responsibly learn from operational knowledge across the leader's term and transition?**
 
-If not, it does not belong in Relay v1.
+If not, it does not belong in Relay v1.3.
 
 ---
 

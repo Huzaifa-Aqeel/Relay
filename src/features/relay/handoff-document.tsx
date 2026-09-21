@@ -82,6 +82,11 @@ export function HandoffDocument({
   const groups = useMemo(() => KNOWLEDGE_TYPES
     .map((type) => ({ type, items: items.filter((item) => item.knowledgeType === type) }))
     .filter((group) => group.items.length), [items]);
+  const startItems = useMemo(() => items.filter((item) => {
+    const text = `${item.title} ${item.content}`.toLocaleLowerCase();
+    return item.knowledgeType === 'deadline'
+      || /\b(re-?registration|register|training|required training|closeout|reimbursement|financial handoff|introduc|advisor|faculty|vendor|account access|tool access|login|credential|deadline|due|before|first week|first month)\b/.test(text);
+  }).slice(0, 6), [items]);
   const visibleGroups = selectedType === 'all'
     ? groups
     : groups.filter((group) => group.type === selectedType);
@@ -125,6 +130,28 @@ export function HandoffDocument({
           <View style={styles.summaryMetric}><AppText variant="title">{items.length}</AppText><AppText variant="caption" color={colors.inkMuted}>approved items</AppText></View>
           <View style={styles.summaryMetric}><AppText variant="title">{groups.length}</AppText><AppText variant="caption" color={colors.inkMuted}>sections</AppText></View>
         </View>
+        {startItems.length ? (
+          <View style={styles.transitionSection}>
+            <View style={styles.transitionHeading}>
+              <MaterialCommunityIcons color={colors.saffron} name="lightning-bolt-outline" size={20} />
+              <View style={styles.itemCopy}>
+                <AppText variant="label">Immediate transition obligations</AppText>
+                <AppText variant="caption" color={colors.inkMuted}>Pulled only from the approved published handoff.</AppText>
+              </View>
+            </View>
+            <View style={styles.transitionList}>
+              {startItems.map((item) => (
+                <View key={item.id} style={styles.transitionItem}>
+                  <MaterialCommunityIcons color={colors.moss} name="arrow-right-circle-outline" size={18} />
+                  <View style={styles.itemCopy}>
+                    <AppText variant="label">{item.title}</AppText>
+                    <AppText variant="caption" color={colors.inkMuted}>{item.content}</AppText>
+                  </View>
+                </View>
+              ))}
+            </View>
+          </View>
+        ) : null}
         {publishedAt ? (
           <AppText variant="caption" color={colors.inkMuted}>Published {new Date(publishedAt).toLocaleDateString()}</AppText>
         ) : null}
@@ -198,6 +225,10 @@ const styles = StyleSheet.create({
   itemCopy: { flex: 1, gap: spacing.xxs },
   summaryRow: { flexDirection: 'row', gap: spacing.sm },
   summaryMetric: { flex: 1, gap: spacing.xxs, padding: spacing.md, borderRadius: radii.md, backgroundColor: colors.canvas },
+  transitionSection: { gap: spacing.sm, paddingTop: spacing.sm, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.line },
+  transitionHeading: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
+  transitionList: { gap: spacing.xs },
+  transitionItem: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, padding: spacing.md, borderRadius: radii.md, backgroundColor: colors.canvas },
   browseSection: { gap: spacing.sm },
   filters: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
   filter: { minHeight: 40, justifyContent: 'center', paddingHorizontal: spacing.md, borderWidth: 1, borderColor: colors.line, borderRadius: radii.pill, backgroundColor: colors.surface },

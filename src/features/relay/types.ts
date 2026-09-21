@@ -94,12 +94,24 @@ export type HandoffSource = {
   structuringFailureReason: string | null;
   structuredAt: string | null;
   structuredProposalCount: number | null;
+  normalizedFilename: string | null;
+  contentHash: string | null;
+  supersedesSourceId: string | null;
+  sourceRootId: string | null;
+  versionNumber: number;
+  isCurrent: boolean;
+  versionMatchBasis: 'filename_and_type' | 'human_confirmed' | null;
+  deltaStatus: 'not_applicable' | 'pending' | 'processing' | 'ready' | 'failed';
+  deltaFailureReason: string | null;
+  deltaChangeCount: number | null;
+  deltaAnalyzedAt: string | null;
   createdAt: string;
   updatedAt: string;
 };
 
-export type KnowledgeStatus = 'proposed' | 'approved' | 'rejected';
+export type KnowledgeStatus = 'proposed' | 'approved' | 'rejected' | 'accepted' | 'retired';
 export type KnowledgeOrigin = 'manual' | 'ai';
+export type KnowledgeProposalAction = 'create' | 'update' | 'retire';
 
 export type KnowledgeItem = {
   id: string;
@@ -113,6 +125,11 @@ export type KnowledgeItem = {
   origin: KnowledgeOrigin;
   uncertaintyNote: string | null;
   sortOrder: number;
+  lineageId: string;
+  proposalAction: KnowledgeProposalAction;
+  proposalTargetId: string | null;
+  decidedBy: string | null;
+  decidedAt: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -143,6 +160,26 @@ export type SourceFileInput = {
     mimeType: string;
     size?: number | null;
   };
+  versionDecision?: 'new_version' | 'separate';
+  supersedesSourceId?: string | null;
+};
+
+export type SourceUploadResult =
+  | { status: 'created'; sourceId: string }
+  | { status: 'duplicate'; sourceId: string; title: string }
+  | { status: 'confirmation_required'; sourceId: string; title: string };
+
+export type SourceVersionChange = {
+  id: string;
+  sourceId: string;
+  priorSourceId: string;
+  changeType: 'added' | 'changed' | 'removed';
+  title: string;
+  summary: string;
+  oldExcerpt: string | null;
+  newExcerpt: string | null;
+  affectedKnowledgeItemId: string | null;
+  proposalItemId: string | null;
 };
 
 export type SourceTextInput = {
@@ -252,6 +289,61 @@ export type SharedHandoff = {
   servicePeriod: string;
   publishedAt: string;
   items: PublishedHandoffItem[];
+};
+
+export type MemoryRole = {
+  organizationId: string;
+  organizationName: string;
+  roleId: string;
+  roleTitle: string;
+  publishedHandoffCount: number;
+  latestServicePeriod: string;
+};
+
+export type MemorySnapshot = {
+  id: string;
+  sourceKnowledgeItemId: string;
+  knowledgeType: KnowledgeType;
+  title: string;
+  content: string;
+  citationSources: Array<{ label: string; locator: string | null }>;
+};
+
+export type RoleMemoryComparison = {
+  id: string;
+  organizationId: string;
+  roleId: string;
+  previousPublicationId: string;
+  currentPublicationId: string;
+  previousServicePeriod: string;
+  currentServicePeriod: string;
+  status: 'processing' | 'ready' | 'failed';
+  failureReason: string | null;
+  materialChangeCount: number | null;
+  completedAt: string | null;
+};
+
+export type MemoryReasonCategory =
+  | 'policy_driven'
+  | 'lesson_driven'
+  | 'leadership_preference'
+  | 'contact_resource'
+  | 'unknown';
+
+export type RoleMemoryChange = {
+  id: string;
+  comparisonId: string;
+  changeType: 'added' | 'changed' | 'retired';
+  title: string;
+  summary: string;
+  matchBasis: 'same_lineage' | 'strong_semantic' | 'not_applicable';
+  reasonCategory: MemoryReasonCategory;
+  reasonExplanation: string;
+  reasonEvidence: string[];
+  beforeSnapshot: MemorySnapshot | null;
+  afterSnapshot: MemorySnapshot | null;
+  supportingProvenance: Array<{ label: string; locator: string | null }>;
+  humanConfirmed: boolean;
 };
 
 export type AskRelayCitation = {

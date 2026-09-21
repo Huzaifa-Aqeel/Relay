@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { requireSupabase } from '@/lib/supabase';
 import type { Database } from '@/types/database';
 import { KNOWLEDGE_TYPES } from '@/features/relay/types';
+import { classifySourceVersion, normalizeSourceFilename } from '@/features/relay/source-versioning';
 import type {
   AskRelayAnswer,
   Handoff,
@@ -25,8 +26,14 @@ import type {
   PreflightRun,
   RoleInput,
   SharedHandoff,
+  MemoryRole,
+  MemorySnapshot,
+  RoleMemoryChange,
+  RoleMemoryComparison,
   SourceFileInput,
+  SourceUploadResult,
   SourceTextInput,
+  SourceVersionChange,
   TypedSourceInput,
 } from '@/features/relay/types';
 
@@ -40,6 +47,9 @@ type PreflightFindingRow = Database['public']['Tables']['preflight_findings']['R
 type PreflightEvidenceRow = Database['public']['Tables']['preflight_finding_evidence']['Row'];
 type HandoffPublicationRow = Database['public']['Tables']['handoff_publications']['Row'];
 type HandoffPublicationItemRow = Database['public']['Tables']['handoff_publication_items']['Row'];
+type SourceVersionChangeRow = Database['public']['Tables']['source_version_changes']['Row'];
+type RoleMemoryComparisonRow = Database['public']['Tables']['role_memory_comparisons']['Row'];
+type RoleMemoryChangeRow = Database['public']['Tables']['role_memory_changes']['Row'];
 
 const LOGO_BUCKET = 'organization-logos';
 const SOURCE_BUCKET = 'handoff-sources';
@@ -142,6 +152,17 @@ function mapSource(row: SourceRow): HandoffSource {
     structuringFailureReason: row.structuring_failure_reason,
     structuredAt: row.structured_at,
     structuredProposalCount: row.structured_proposal_count,
+    normalizedFilename: row.normalized_filename,
+    contentHash: row.content_hash,
+    supersedesSourceId: row.supersedes_source_id,
+    sourceRootId: row.source_root_id,
+    versionNumber: row.version_number,
+    isCurrent: row.is_current,
+    versionMatchBasis: row.version_match_basis as HandoffSource['versionMatchBasis'],
+    deltaStatus: row.delta_status as HandoffSource['deltaStatus'],
+    deltaFailureReason: row.delta_failure_reason,
+    deltaChangeCount: row.delta_change_count,
+    deltaAnalyzedAt: row.delta_analyzed_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -160,6 +181,11 @@ function mapKnowledgeItem(row: KnowledgeItemRow): KnowledgeItem {
     origin: row.origin as KnowledgeItem['origin'],
     uncertaintyNote: row.uncertainty_note,
     sortOrder: row.sort_order,
+    lineageId: row.lineage_id,
+    proposalAction: row.proposal_action as KnowledgeItem['proposalAction'],
+    proposalTargetId: row.proposal_target_id,
+    decidedBy: row.decided_by,
+    decidedAt: row.decided_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -329,6 +355,14 @@ function safeFileName(name: string) {
   return cleaned.slice(-100) || 'source';
 }
 
+function hexDigest(buffer: ArrayBuffer) {
+  return Array.from(new Uint8Array(buffer), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function sha256(buffer: ArrayBuffer) {
+  return hexDigest(await Crypto.digest(Crypto.CryptoDigestAlgorithm.SHA256, new Uint8Array(buffer)));
+}
+
 export async function listOrganizations() {
   const { data, error } = await requireSupabase()
     .from('organizations')
@@ -452,6 +486,27 @@ export async function getHandoffSource(id: string) {
   return mapSource(data);
 }
 
+export async function listSourceVersionChanges(sourceId: string): Promise<SourceVersionChange[]> {
+  const { data, error } = await requireSupabase()
+    .from('source_version_changes')
+    .select('*')
+    .eq('source_id', sourceId)
+    .order('created_at', { ascending: true });
+  throwDataError(error);
+  return data.map((row: SourceVersionChangeRow) => ({
+    id: row.id,
+    sourceId: row.source_id,
+    priorSourceId: row.prior_source_id,
+    changeType: row.change_type as SourceVersionChange['changeType'],
+    title: row.title,
+    summary: row.summary,
+    oldExcerpt: row.old_excerpt,
+    newExcerpt: row.new_excerpt,
+    affectedKnowledgeItemId: row.affected_knowledge_item_id,
+    proposalItemId: row.proposal_item_id,
+  }));
+}
+
 export async function createTypedSource(input: TypedSourceInput, userId: string) {
   const { data, error } = await requireSupabase()
     .from('sources')
@@ -506,7 +561,7 @@ export async function processSource(sourceId: string, kind: SourceFileInput['kin
   }
 }
 
-export async function createFileSource(input: SourceFileInput, userId: string) {
+export async function createFileSource(input: SourceFileInput, userId: string): Promise<SourceUploadResult> {
   if (input.file.size && input.file.size > MAX_SOURCE_BYTES) {
     throw new Error('Choose a file smaller than 25 MB.');
   }
@@ -515,6 +570,47 @@ export async function createFileSource(input: SourceFileInput, userId: string) {
   const id = Crypto.randomUUID();
   const body = await readFileBody(input.file.uri);
   if (body.byteLength > MAX_SOURCE_BYTES) throw new Error('Choose a file smaller than 25 MB.');
+
+  const contentHash = input.kind === 'document' ? await sha256(body) : null;
+  const normalized = input.kind === 'document' ? normalizeSourceFilename(input.file.name) : null;
+  let supersedesSourceId = input.kind === 'document' ? input.supersedesSourceId ?? null : null;
+  let versionMatchBasis: 'filename_and_type' | 'human_confirmed' | null = null;
+
+  if (input.kind === 'document') {
+    const { data: existing, error: existingError } = await client
+      .from('sources')
+      .select('id, title, normalized_filename, content_hash, mime_type, is_current')
+      .eq('organization_id', input.organizationId)
+      .eq('handoff_id', input.handoffId)
+      .eq('kind', 'document')
+      .order('created_at', { ascending: false });
+    throwDataError(existingError);
+
+    const match = classifySourceVersion(input.file.name, input.file.mimeType, contentHash!, existing.map((source) => ({
+      id: source.id,
+      title: source.title,
+      normalizedFilename: source.normalized_filename,
+      contentHash: source.content_hash,
+      mimeType: source.mime_type,
+      isCurrent: source.is_current,
+    })));
+    if (match.kind === 'duplicate') {
+      return { status: 'duplicate', sourceId: match.source.id, title: match.source.title };
+    }
+
+    if (supersedesSourceId) {
+      const prior = existing.find((source) => source.id === supersedesSourceId && source.is_current);
+      if (!prior) throw new Error('The source you selected as the prior version is no longer current.');
+      versionMatchBasis = 'human_confirmed';
+    } else if (input.versionDecision !== 'separate') {
+      if (match.kind === 'new_version') {
+        supersedesSourceId = match.source.id;
+        versionMatchBasis = 'filename_and_type';
+      } else if (match.kind === 'confirmation_required') {
+        return { status: 'confirmation_required', sourceId: match.source.id, title: match.source.title };
+      }
+    }
+  }
 
   const path = `${input.organizationId}/${input.handoffId}/${id}/${safeFileName(input.file.name)}`;
   const uploaded = await client.storage.from(SOURCE_BUCKET).upload(path, body, {
@@ -534,9 +630,21 @@ export async function createFileSource(input: SourceFileInput, userId: string) {
     mime_type: input.file.mimeType,
     size_bytes: body.byteLength,
     processing_status: 'processing',
+    normalized_filename: normalized,
+    content_hash: contentHash,
+    supersedes_source_id: supersedesSourceId,
+    version_match_basis: versionMatchBasis,
   });
   if (inserted.error) {
     await client.storage.from(SOURCE_BUCKET).remove([path]);
+    if (inserted.error.code === '23505' && contentHash) {
+      const { data: duplicate } = await client.from('sources')
+        .select('id, title')
+        .eq('handoff_id', input.handoffId)
+        .eq('content_hash', contentHash)
+        .maybeSingle();
+      if (duplicate) return { status: 'duplicate', sourceId: duplicate.id, title: duplicate.title };
+    }
     throwDataError(inserted.error);
   }
 
@@ -545,7 +653,7 @@ export async function createFileSource(input: SourceFileInput, userId: string) {
   } catch {
     // The source and its plain-language failure state are intentionally retained.
   }
-  return id;
+  return { status: 'created', sourceId: id };
 }
 
 export async function updateSourceText(input: SourceTextInput) {
@@ -576,7 +684,7 @@ export async function listKnowledgeItems(handoffId: string) {
     .from('knowledge_items')
     .select('*')
     .eq('handoff_id', handoffId)
-    .neq('status', 'rejected')
+    .in('status', ['proposed', 'approved'])
     .order('sort_order', { ascending: true })
     .order('created_at', { ascending: true });
   throwDataError(error);
@@ -800,6 +908,176 @@ export async function getSharedHandoff(token: string): Promise<SharedHandoff | n
   const parsed = sharedHandoffSchema.safeParse(data);
   if (!parsed.success) throw new Error('This published handoff could not be verified safely.');
   return parsed.data;
+}
+
+function mapMemoryComparison(row: RoleMemoryComparisonRow): RoleMemoryComparison {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    roleId: row.role_id,
+    previousPublicationId: row.previous_publication_id,
+    currentPublicationId: row.current_publication_id,
+    previousServicePeriod: row.previous_service_period,
+    currentServicePeriod: row.current_service_period,
+    status: row.status as RoleMemoryComparison['status'],
+    failureReason: row.failure_reason,
+    materialChangeCount: row.material_change_count,
+    completedAt: row.completed_at,
+  };
+}
+
+function parseCitationSources(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((candidate) => {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return [];
+    const source = candidate as Record<string, unknown>;
+    if (typeof source.label !== 'string') return [];
+    return [{
+      label: source.label,
+      locator: typeof source.locator === 'string' ? source.locator : null,
+    }];
+  });
+}
+
+function parseMemorySnapshot(value: unknown): MemorySnapshot | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const snapshot = value as Record<string, unknown>;
+  if (typeof snapshot.id !== 'string'
+    || typeof snapshot.sourceKnowledgeItemId !== 'string'
+    || typeof snapshot.knowledgeType !== 'string'
+    || !KNOWLEDGE_TYPES.includes(snapshot.knowledgeType as typeof KNOWLEDGE_TYPES[number])
+    || typeof snapshot.title !== 'string'
+    || typeof snapshot.content !== 'string') return null;
+  return {
+    id: snapshot.id,
+    sourceKnowledgeItemId: snapshot.sourceKnowledgeItemId,
+    knowledgeType: snapshot.knowledgeType as MemorySnapshot['knowledgeType'],
+    title: snapshot.title,
+    content: snapshot.content,
+    citationSources: parseCitationSources(snapshot.citationSources ?? []),
+  };
+}
+
+function mapMemoryChange(row: RoleMemoryChangeRow): RoleMemoryChange {
+  return {
+    id: row.id,
+    comparisonId: row.comparison_id,
+    changeType: row.change_type as RoleMemoryChange['changeType'],
+    title: row.title,
+    summary: row.summary,
+    matchBasis: row.match_basis as RoleMemoryChange['matchBasis'],
+    reasonCategory: row.reason_category as RoleMemoryChange['reasonCategory'],
+    reasonExplanation: row.reason_explanation,
+    reasonEvidence: Array.isArray(row.reason_evidence)
+      ? row.reason_evidence.filter((item): item is string => typeof item === 'string')
+      : [],
+    beforeSnapshot: parseMemorySnapshot(row.before_snapshot),
+    afterSnapshot: parseMemorySnapshot(row.after_snapshot),
+    supportingProvenance: parseCitationSources(row.supporting_provenance),
+    humanConfirmed: row.human_confirmed,
+  };
+}
+
+export async function listMemoryRoles(): Promise<MemoryRole[]> {
+  const client = requireSupabase();
+  const { data: handoffs, error: handoffError } = await client
+    .from('handoffs')
+    .select('id, organization_id, role_id, service_period, published_at')
+    .eq('status', 'published')
+    .order('published_at', { ascending: false });
+  throwDataError(handoffError);
+  if (!handoffs.length) return [];
+
+  const roleIds = [...new Set(handoffs.map((handoff) => handoff.role_id))];
+  const organizationIds = [...new Set(handoffs.map((handoff) => handoff.organization_id))];
+  const [{ data: roles, error: roleError }, { data: organizations, error: organizationError }] = await Promise.all([
+    client.from('roles').select('id, title').in('id', roleIds),
+    client.from('organizations').select('id, name').in('id', organizationIds),
+  ]);
+  throwDataError(roleError);
+  throwDataError(organizationError);
+  const roleTitles = new Map(roles.map((role) => [role.id, role.title]));
+  const organizationNames = new Map(organizations.map((organization) => [organization.id, organization.name]));
+  const grouped = new Map<string, MemoryRole>();
+  for (const handoff of handoffs) {
+    const existing = grouped.get(handoff.role_id);
+    if (existing) {
+      existing.publishedHandoffCount += 1;
+      continue;
+    }
+    grouped.set(handoff.role_id, {
+      organizationId: handoff.organization_id,
+      organizationName: organizationNames.get(handoff.organization_id) ?? 'Organization',
+      roleId: handoff.role_id,
+      roleTitle: roleTitles.get(handoff.role_id) ?? 'Role',
+      publishedHandoffCount: 1,
+      latestServicePeriod: handoff.service_period,
+    });
+  }
+  return [...grouped.values()];
+}
+
+export async function getLatestRoleMemoryComparison(roleId: string): Promise<RoleMemoryComparison | null> {
+  const { data, error } = await requireSupabase()
+    .from('role_memory_comparisons')
+    .select('*')
+    .eq('role_id', roleId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  throwDataError(error);
+  return data ? mapMemoryComparison(data) : null;
+}
+
+export async function listRoleMemoryChanges(comparisonId: string): Promise<RoleMemoryChange[]> {
+  const { data, error } = await requireSupabase()
+    .from('role_memory_changes')
+    .select('*')
+    .eq('comparison_id', comparisonId)
+    .order('created_at', { ascending: true });
+  throwDataError(error);
+  return data.map(mapMemoryChange);
+}
+
+export async function listRoleLessons(roleId: string): Promise<KnowledgeItem[]> {
+  const client = requireSupabase();
+  const { data: handoffs, error: handoffError } = await client
+    .from('handoffs')
+    .select('id')
+    .eq('role_id', roleId)
+    .eq('status', 'published');
+  throwDataError(handoffError);
+  if (!handoffs.length) return [];
+  const { data, error } = await client
+    .from('knowledge_items')
+    .select('*')
+    .in('handoff_id', handoffs.map((handoff) => handoff.id))
+    .eq('status', 'approved')
+    .eq('knowledge_type', 'lesson')
+    .order('created_at', { ascending: false });
+  throwDataError(error);
+  return data.map(mapKnowledgeItem);
+}
+
+export async function confirmMemoryChangeReason(input: {
+  changeId: string;
+  reasonCategory: 'lesson_driven' | 'leadership_preference' | 'contact_resource' | 'unknown';
+  explanation: string;
+  lessonKnowledgeItemId?: string | null;
+}) {
+  const { error } = await requireSupabase().rpc('confirm_memory_change_reason_v13', {
+    requested_change_id: input.changeId,
+    requested_reason_category: input.reasonCategory,
+    requested_explanation: input.explanation.trim(),
+    requested_lesson_knowledge_item_id: input.lessonKnowledgeItemId ?? null,
+  });
+  throwDataError(error);
+}
+
+export async function compareRoleHandoffs(roleId: string) {
+  const result = await requireSupabase().functions.invoke('compare-handoffs', { body: { roleId } });
+  if (result.error) throw new Error('Relay could not compare these handoffs safely. Please try again.');
+  return String(result.data?.comparisonId ?? '');
 }
 
 export async function askRelay(token: string, question: string): Promise<AskRelayAnswer> {

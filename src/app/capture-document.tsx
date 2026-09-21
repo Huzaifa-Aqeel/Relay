@@ -3,7 +3,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import type { Href } from 'expo-router';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Alert, StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/ui/app-text';
 import { LoadingState, MessageState } from '@/components/ui/async-state';
@@ -18,6 +18,7 @@ const SUPPORTED_TYPES = [
   'application/pdf',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'text/plain',
   'text/markdown',
   'text/csv',
@@ -31,6 +32,7 @@ const EXTENSION_MIME: Record<string, string> = {
   pdf: 'application/pdf',
   docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   txt: 'text/plain', md: 'text/markdown', csv: 'text/csv',
   bmp: 'image/bmp', heic: 'image/heic',
   jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
@@ -81,25 +83,50 @@ export default function CaptureDocumentScreen() {
     }
     if (!mimeFor(chosen.name, chosen.mimeType)) {
       setAsset(null);
-      return setLocalError('Choose a PDF, DOCX, PPTX, TXT, Markdown, CSV, JPEG, PNG, BMP, or HEIC file.');
+      return setLocalError('Choose a PDF, DOCX, PPTX, XLSX, TXT, Markdown, CSV, JPEG, PNG, BMP, or HEIC file.');
     }
     setAsset(chosen);
     setTitle(titleFor(chosen.name));
   }
 
-  async function save() {
+  async function save(versionDecision?: 'new_version' | 'separate', supersedesSourceId?: string) {
     setLocalError(null);
     if (!asset) return setLocalError('Choose a document first.');
     if (!title.trim()) return setLocalError('Give this source a title.');
     const mimeType = mimeFor(asset.name, asset.mimeType);
     if (!mimeType) return setLocalError('This file type is not supported.');
-    await mutation.mutateAsync({
+    const result = await mutation.mutateAsync({
       organizationId: handoffQuery.data!.organizationId,
       handoffId,
       kind: 'document',
       title,
       file: { uri: asset.uri, name: asset.name, mimeType, size: asset.size },
+      versionDecision,
+      supersedesSourceId,
     });
+    if (result.status === 'duplicate') {
+      Alert.alert(
+        'This file already exists',
+        `${result.title} has the same content, so Relay did not upload or process it again.`,
+        [
+          { text: 'Stay here', style: 'cancel' },
+          { text: 'Open existing source', onPress: () => router.replace((`/source/${result.sourceId}`) as Href) },
+        ],
+      );
+      return;
+    }
+    if (result.status === 'confirmation_required') {
+      Alert.alert(
+        'Possible updated version',
+        `This looks like an updated version of ${result.title}. Treat it as a new version?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Keep separate', onPress: () => void save('separate') },
+          { text: 'New version', onPress: () => void save('new_version', result.sourceId) },
+        ],
+      );
+      return;
+    }
     router.replace((`/handoff/${handoffId}`) as Href);
   }
 
@@ -108,7 +135,7 @@ export default function CaptureDocumentScreen() {
       <View style={styles.heading}>
         <AppText variant="caption" color={colors.moss} style={styles.eyebrow}>{roleQuery.data.title.toUpperCase()}</AppText>
         <AppText variant="display">Add a source document</AppText>
-        <AppText color={colors.inkMuted}>Relay keeps the original file private and tracks its processing state separately from approved knowledge.</AppText>
+        <AppText color={colors.inkMuted}>Relay keeps the original file private, detects duplicates and likely updates, and keeps every linked version for evidence.</AppText>
       </View>
 
       <FormSection eyebrow="Document source" title="Choose existing material">

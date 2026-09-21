@@ -16,7 +16,7 @@ const POLL_INTERVAL_MS = 2_000;
 const MAX_POLL_MS = 110_000;
 
 const DIRECT_TEXT_EXTENSIONS = new Set(['txt', 'md', 'csv']);
-const UNSTRUCTURED_EXTENSIONS = new Set(['bmp', 'docx', 'heic', 'jpeg', 'jpg', 'pdf', 'png', 'pptx']);
+const UNSTRUCTURED_EXTENSIONS = new Set(['bmp', 'docx', 'heic', 'jpeg', 'jpg', 'pdf', 'png', 'pptx', 'xlsx']);
 
 type SourceRow = {
   id: string;
@@ -29,6 +29,10 @@ type SourceRow = {
   size_bytes: number | null;
   processing_status: string;
   provider_reference: string | null;
+  supersedes_source_id: string | null;
+  source_root_id: string | null;
+  version_number: number;
+  is_current: boolean;
 };
 
 type TransformElement = {
@@ -182,7 +186,7 @@ function transformError(status: number, body: unknown) {
     return new ProcessingError('This document is too large to process. Choose a file smaller than 25 MB.');
   }
   if (status === 415 || code === 'unsupported_file_type') {
-    return new ProcessingError('This document format is not supported. Use PDF, DOCX, PPTX, TXT, Markdown, CSV, JPEG, PNG, BMP, or HEIC.');
+    return new ProcessingError('This document format is not supported. Use PDF, DOCX, PPTX, XLSX, TXT, Markdown, CSV, JPEG, PNG, BMP, or HEIC.');
   }
   if (status === 422 || code === 'could_not_parse') {
     return new ProcessingError('Relay could not read this document. Check that the file opens correctly, then try again.');
@@ -349,6 +353,9 @@ async function indexChunks(
         source_id: source.id,
         source_title: source.title,
         source_kind: source.kind,
+        source_root_id: source.source_root_id,
+        source_version_number: source.version_number,
+        is_current: source.is_current,
         element_id: chunk.elementId,
         element_type: chunk.elementType,
         page_number: chunk.pageNumber,
@@ -411,11 +418,12 @@ async function processDocument(
   config: ServerConfig,
   admin: ReturnType<typeof createClient>,
   source: SourceRow,
+  authorization: string,
 ) {
   try {
     const extension = extensionFor(source.storage_path!);
     if (!DIRECT_TEXT_EXTENSIONS.has(extension) && !UNSTRUCTURED_EXTENSIONS.has(extension)) {
-      throw new ProcessingError('This document format is not supported. Use PDF, DOCX, PPTX, TXT, Markdown, CSV, JPEG, PNG, BMP, or HEIC.');
+      throw new ProcessingError('This document format is not supported. Use PDF, DOCX, PPTX, XLSX, TXT, Markdown, CSV, JPEG, PNG, BMP, or HEIC.');
     }
 
     const { data: file, error: downloadError } = await admin.storage
@@ -467,7 +475,21 @@ async function processDocument(
       .select('id')
       .maybeSingle();
     if (updateError) throw updateError;
-    if (!updated) await cleanupAstraRun(config, source.id, indexed.runId);
+    if (!updated) {
+      await cleanupAstraRun(config, source.id, indexed.runId);
+      return;
+    }
+    if (source.supersedes_source_id) {
+      await fetch(`${config.supabaseUrl}/functions/v1/generate-knowledge-proposals`, {
+        method: 'POST',
+        headers: {
+          Authorization: authorization,
+          apikey: config.anonKey,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ sourceId: source.id }),
+      }).catch(() => null);
+    }
   } catch (error) {
     console.error('Document source processing failed', error instanceof Error ? error.message : 'unknown error');
     await markFailed(admin, source.id, error);
@@ -508,7 +530,7 @@ Deno.serve(async (request) => {
 
   const { data: source, error: sourceError } = await userClient
     .from('sources')
-    .select('id, organization_id, handoff_id, kind, title, storage_path, mime_type, size_bytes, processing_status, provider_reference')
+    .select('id, organization_id, handoff_id, kind, title, storage_path, mime_type, size_bytes, processing_status, provider_reference, supersedes_source_id, source_root_id, version_number, is_current')
     .eq('id', sourceId)
     .maybeSingle();
   if (sourceError || !source) return json({ error: 'This source is unavailable.' }, 404);
@@ -528,7 +550,7 @@ Deno.serve(async (request) => {
     .eq('id', source.id);
   if (statusError) return json({ error: 'Relay could not start document processing.' }, 500);
 
-  const task = processDocument(config, admin, source as SourceRow);
+  const task = processDocument(config, admin, source as SourceRow, authorization);
   const edgeRuntime = (globalThis as typeof globalThis & {
     EdgeRuntime?: { waitUntil(promise: Promise<unknown>): void };
   }).EdgeRuntime;

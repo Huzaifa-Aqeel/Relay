@@ -140,10 +140,16 @@ async function documentEvidence(
   organizationId: string,
   handoffId: string,
   query: string,
+  currentSourceIds: string[],
 ) {
+  if (!currentSourceIds.length) return [];
   const result = await astraCommand(config, {
     find: {
-      filter: { organization_id: organizationId, handoff_id: handoffId },
+      filter: {
+        organization_id: organizationId,
+        handoff_id: handoffId,
+        source_id: { $in: currentSourceIds.slice(0, 500) },
+      },
       sort: { $vectorize: limitText(query, 1_500) },
       projection: {
         _id: 1,
@@ -320,10 +326,13 @@ Deno.serve(async (request) => {
     if (linkError) throw linkError;
     const linkedSourceIds = [...new Set((links ?? []).map((link) => link.source_id))];
     const { data: linkedSources, error: sourceError } = linkedSourceIds.length
-      ? await client.from('sources').select('id, title').in('id', linkedSourceIds)
+      ? await client.from('sources').select('id, title, is_current').in('id', linkedSourceIds)
       : { data: [], error: null };
     if (sourceError) throw sourceError;
     const sourceTitles = new Map((linkedSources ?? []).map((source) => [source.id, source.title]));
+    const currentLinkedSourceIds = new Set((linkedSources ?? [])
+      .filter((source) => source.is_current)
+      .map((source) => source.id));
 
     const evidence: Evidence[] = approved.map((item, index) => ({
       ref: `K${index + 1}`,
@@ -336,6 +345,7 @@ Deno.serve(async (request) => {
     }));
     const seenSourceEvidence = new Set<string>();
     for (const link of links ?? []) {
+      if (!currentLinkedSourceIds.has(link.source_id)) continue;
       const excerpt = link.source_excerpt?.trim();
       if (!excerpt) continue;
       const key = `${link.source_id}:${excerpt}`;
@@ -357,11 +367,20 @@ Deno.serve(async (request) => {
       role.description,
       ...approved.flatMap((item) => [item.title, item.content]),
     ].join(' ');
+    const { data: currentDocumentSources, error: currentSourcesError } = await client
+      .from('sources')
+      .select('id')
+      .eq('handoff_id', handoff.id)
+      .eq('kind', 'document')
+      .eq('is_current', true)
+      .eq('processing_status', 'ready');
+    if (currentSourcesError) throw currentSourcesError;
     const documents = await documentEvidence(
       config,
       handoff.organization_id,
       handoff.id,
       retrievalQuery,
+      (currentDocumentSources ?? []).map((source) => source.id),
     );
     for (const document of documents) {
       if (typeof document?.source_id !== 'string' || typeof document?.text !== 'string' || !document.text.trim()) continue;
