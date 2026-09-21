@@ -1,0 +1,130 @@
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import type { Href } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
+import { Pressable, RefreshControl, StyleSheet, View } from 'react-native';
+
+import { AppText } from '@/components/ui/app-text';
+import { LoadingState, MessageState } from '@/components/ui/async-state';
+import { Button } from '@/components/ui/button';
+import { InfoCard, InfoRow } from '@/components/ui/info-card';
+import { Screen } from '@/components/ui/screen';
+import { useOrganization, useRole, useRoleHandoffs } from '@/features/relay/queries';
+import { colors, radii, spacing } from '@/theme/tokens';
+
+function titleCase(value: string) {
+  return `${value[0]?.toUpperCase() ?? ''}${value.slice(1)}`;
+}
+
+export default function RoleScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const roleQuery = useRole(id);
+  const organizationQuery = useOrganization(roleQuery.data?.organizationId);
+  const handoffsQuery = useRoleHandoffs(id);
+  const pending = roleQuery.isPending || handoffsQuery.isPending || (roleQuery.data && organizationQuery.isPending);
+  const error = roleQuery.error ?? organizationQuery.error ?? handoffsQuery.error;
+
+  if (pending) return <Screen><LoadingState label="Opening role…" /></Screen>;
+  if (error || !roleQuery.data || !organizationQuery.data) {
+    return (
+      <Screen>
+        <MessageState
+          icon="account-alert-outline"
+          title="Role unavailable"
+          body={error?.message ?? 'This role does not exist or you do not have access.'}
+          actionLabel="Back to organizations"
+          onAction={() => router.replace('/')}
+        />
+      </Screen>
+    );
+  }
+
+  const role = roleQuery.data;
+  const organization = organizationQuery.data;
+  const handoffs = handoffsQuery.data ?? [];
+  const current = handoffs[0];
+  const refreshing = roleQuery.isRefetching || organizationQuery.isRefetching || handoffsQuery.isRefetching;
+  const refresh = () => void Promise.all([roleQuery.refetch(), organizationQuery.refetch(), handoffsQuery.refetch()]);
+
+  return (
+    <Screen scrollProps={{ refreshControl: <RefreshControl refreshing={refreshing} tintColor={colors.moss} onRefresh={refresh} /> }}>
+      <View style={styles.heading}>
+        <AppText variant="caption" color={colors.moss} style={styles.eyebrow}>{organization.name.toUpperCase()}</AppText>
+        <AppText variant="display">{role.title}</AppText>
+        <AppText color={colors.inkMuted}>{role.description || 'Role knowledge stays connected across leaders and service periods.'}</AppText>
+      </View>
+
+      {current ? (
+        <InfoCard eyebrow={current.servicePeriod} title={current.status === 'published' ? 'Published handoff' : 'Handoff in progress'}>
+          <InfoRow label="Status" value={titleCase(current.status)} />
+          <InfoRow label="Stage" value={titleCase(current.stage)} />
+          <InfoRow label="Updated" value={new Date(current.updatedAt).toLocaleDateString()} />
+          <Button
+            icon="arrow-right"
+            label={current.status === 'published' ? 'Open handoff' : 'Continue handoff'}
+            onPress={() => router.push((`/handoff/${current.id}`) as Href)}
+          />
+        </InfoCard>
+      ) : (
+        <View style={styles.emptyCard}>
+          <View style={styles.icon}><MaterialCommunityIcons color={colors.moss} name="file-document-plus-outline" size={34} /></View>
+          <AppText variant="heading">No handoff yet</AppText>
+          <AppText color={colors.inkMuted} style={styles.center}>Begin a private draft for this role and its current service period.</AppText>
+          <Button
+            icon="plus"
+            label="Start handoff"
+            onPress={() => router.push((`/handoff-new?organizationId=${organization.id}&roleId=${role.id}`) as Href)}
+          />
+        </View>
+      )}
+
+      {handoffs.length ? (
+        <>
+          <View style={styles.sectionHeading}>
+            <AppText variant="heading">Handoff history</AppText>
+            <AppText color={colors.inkMuted}>Earlier periods remain separate instead of silently becoming current truth.</AppText>
+          </View>
+          <View style={styles.historyList}>
+            {handoffs.map((handoff) => (
+              <Pressable
+                accessibilityRole="button"
+                key={handoff.id}
+                onPress={() => router.push((`/handoff/${handoff.id}`) as Href)}
+                style={({ pressed }) => [styles.historyRow, pressed && styles.pressed]}>
+                <View>
+                  <AppText variant="label">{handoff.servicePeriod}</AppText>
+                  <AppText variant="caption" color={colors.inkMuted}>{titleCase(handoff.stage)} · {titleCase(handoff.status)}</AppText>
+                </View>
+                <MaterialCommunityIcons color={colors.inkMuted} name="chevron-right" size={22} />
+              </Pressable>
+            ))}
+          </View>
+          <Button
+            icon="plus"
+            label="Start another service period"
+            tone="secondary"
+            onPress={() => router.push((`/handoff-new?organizationId=${organization.id}&roleId=${role.id}`) as Href)}
+          />
+        </>
+      ) : null}
+    </Screen>
+  );
+}
+
+const styles = StyleSheet.create({
+  heading: { gap: spacing.xs, marginTop: spacing.lg, marginBottom: spacing.xl },
+  eyebrow: { letterSpacing: 1.2 },
+  emptyCard: {
+    alignItems: 'center', gap: spacing.sm, padding: spacing.xl,
+    borderRadius: radii.lg, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface,
+  },
+  icon: { width: 64, height: 64, borderRadius: radii.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.mossSoft },
+  center: { textAlign: 'center' },
+  sectionHeading: { gap: spacing.xxs, marginTop: spacing.xl, marginBottom: spacing.sm },
+  historyList: { gap: spacing.xs, marginBottom: spacing.lg },
+  historyRow: {
+    minHeight: 66, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    gap: spacing.md, padding: spacing.md, borderWidth: 1, borderColor: colors.line,
+    borderRadius: radii.md, backgroundColor: colors.surface,
+  },
+  pressed: { opacity: 0.78 },
+});

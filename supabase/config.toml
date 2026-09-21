@@ -1,0 +1,60 @@
+project_id = "relay-leadership-handoff"
+
+[api]
+enabled = true
+port = 55321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 55322
+shadow_port = 55320
+major_version = 17
+
+[studio]
+enabled = true
+port = 55323
+
+[auth]
+enabled = true
+site_url = "http://localhost:8092"
+additional_redirect_urls = ["relay://auth/callback", "http://localhost:8092/auth/callback"]
+jwt_expiry = 3600
+enable_signup = true
+
+[storage]
+enabled = true
+file_size_limit = "25MiB"
+
+[local_smtp]
+enabled = true
+port = 55324
+smtp_port = 55325
+pop3_port = 55326
+
+[analytics]
+enabled = true
+port = 55327
+backend = "postgres"
+
+[functions.process-document-source]
+verify_jwt = true
+
+[functions.transcribe-source]
+verify_jwt = true
+
+[functions.generate-knowledge-proposals]
+verify_jwt = true
+
+[functions.run-preflight]
+verify_jwt = true
+
+[functions.ask-relay]
+verify_jwt = false
+
+[functions.sync-revenuecat-entitlement]
+verify_jwt = true
+
+[functions.revenuecat-webhook]
+verify_jwt = false
