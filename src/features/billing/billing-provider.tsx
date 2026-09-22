@@ -49,7 +49,7 @@ function purchaseMessage(error: unknown) {
   if (record?.userCancelled) return null;
   const originalMessage = record?.message ?? '';
   const message = originalMessage.toLocaleLowerCase();
-  if (message.includes('already associated')) return originalMessage;
+  if (message.includes('already associated') || message.includes('organization owner')) return originalMessage;
   if (message.includes('network')) return 'Check your connection and try again.';
   if (message.includes('not available') || message.includes('configuration')) {
     return 'Relay Pro is not available from this build yet.';
@@ -75,6 +75,11 @@ async function syncServerEntitlement(organizationId?: string): Promise<ServerEnt
     organizationIsPro: result.data?.organizationIsPro === true,
     expiresAt: typeof result.data?.expiresAt === 'string' ? result.data.expiresAt : null,
   };
+}
+
+async function requirePurchaseOwner(organizationId: string) {
+  const { data, error } = await requireSupabase().rpc('is_organization_admin', { requested_organization_id: organizationId });
+  if (error || !data) throw new Error('The Organization Owner must upgrade this Organization.');
 }
 
 export function BillingProvider({ children }: PropsWithChildren) {
@@ -149,6 +154,7 @@ export function BillingProvider({ children }: PropsWithChildren) {
     }
     let storePurchaseIsActive = false;
     try {
+      await requirePurchaseOwner(organizationId);
       await prepareNativeSdk();
       const result = await Purchases.purchasePackage(selectedPackage);
       const hasActiveEntitlement = Boolean(result.customerInfo.entitlements.active[ENTITLEMENT_ID]);
@@ -179,6 +185,7 @@ export function BillingProvider({ children }: PropsWithChildren) {
     }
     try {
       await prepareNativeSdk();
+      await requirePurchaseOwner(organizationId);
       const customerInfo = await Purchases.restorePurchases();
       const hasActiveEntitlement = Boolean(customerInfo.entitlements.active[ENTITLEMENT_ID]);
       const server = await syncServerEntitlement(organizationId);

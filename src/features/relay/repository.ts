@@ -182,6 +182,7 @@ function mapKnowledgeItem(row: KnowledgeItemRow): KnowledgeItem {
     uncertaintyNote: row.uncertainty_note,
     sortOrder: row.sort_order,
     lineageId: row.lineage_id,
+    inheritedFromServicePeriod: row.inherited_from_service_period,
     proposalAction: row.proposal_action as KnowledgeItem['proposalAction'],
     proposalTargetId: row.proposal_target_id,
     decidedBy: row.decided_by,
@@ -449,7 +450,7 @@ export async function listRoleHandoffs(roleId: string) {
     .from('handoffs')
     .select('*')
     .eq('role_id', roleId)
-    .order('updated_at', { ascending: false });
+    .order('service_period', { ascending: false });
   throwDataError(error);
   return data.map(mapHandoff);
 }
@@ -876,6 +877,14 @@ export async function listHandoffPublicationItems(publicationId: string) {
   return data.map(mapPublishedHandoffItem);
 }
 
+export async function listRolePublications(roleId: string) {
+  const handoffs = await listRoleHandoffs(roleId);
+  if (!handoffs.length) return [];
+  const { data, error } = await requireSupabase().from('handoff_publications').select('*')
+    .in('handoff_id', handoffs.map(h => h.id)).order('service_period', { ascending: false });
+  throwDataError(error); return data.map(mapHandoffPublication);
+}
+
 export async function publishHandoff(handoffId: string) {
   const { data, error } = await requireSupabase().rpc('publish_handoff', {
     requested_handoff_id: handoffId,
@@ -980,11 +989,14 @@ function mapMemoryChange(row: RoleMemoryChangeRow): RoleMemoryChange {
 
 export async function listMemoryRoles(): Promise<MemoryRole[]> {
   const client = requireSupabase();
+  const { data: publications, error: publicationError } = await client.from('handoff_publications').select('handoff_id');
+  throwDataError(publicationError);
+  if (!publications.length) return [];
   const { data: handoffs, error: handoffError } = await client
     .from('handoffs')
     .select('id, organization_id, role_id, service_period, published_at')
-    .eq('status', 'published')
-    .order('published_at', { ascending: false });
+    .in('id', publications.map(p => p.handoff_id))
+    .order('service_period', { ascending: false });
   throwDataError(handoffError);
   if (!handoffs.length) return [];
 
@@ -1039,24 +1051,18 @@ export async function listRoleMemoryChanges(comparisonId: string): Promise<RoleM
   return data.map(mapMemoryChange);
 }
 
-export async function listRoleLessons(roleId: string): Promise<KnowledgeItem[]> {
+export async function listRoleLessons(roleId: string): Promise<Array<Pick<KnowledgeItem, 'id' | 'title' | 'content'>>> {
   const client = requireSupabase();
-  const { data: handoffs, error: handoffError } = await client
-    .from('handoffs')
-    .select('id')
-    .eq('role_id', roleId)
-    .eq('status', 'published');
-  throwDataError(handoffError);
-  if (!handoffs.length) return [];
+  const publications = await listRolePublications(roleId);
+  if (!publications.length) return [];
   const { data, error } = await client
-    .from('knowledge_items')
-    .select('*')
-    .in('handoff_id', handoffs.map((handoff) => handoff.id))
-    .eq('status', 'approved')
+    .from('handoff_publication_items')
+    .select('source_knowledge_item_id, title, content')
+    .in('publication_id', publications.map(p => p.id))
     .eq('knowledge_type', 'lesson')
     .order('created_at', { ascending: false });
   throwDataError(error);
-  return data.map(mapKnowledgeItem);
+  return data.map(item => ({ id: item.source_knowledge_item_id, title: item.title, content: item.content }));
 }
 
 export async function confirmMemoryChangeReason(input: {

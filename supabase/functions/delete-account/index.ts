@@ -85,7 +85,8 @@ Deno.serve(async (request) => {
         if (error) throw error;
       }
     }
-    const { error } = await admin.auth.admin.deleteUser(userData.user.id);
+    // Retain contributor IDs and organization history after a leader leaves.
+    const { error } = await admin.auth.admin.deleteUser(userData.user.id, true);
     if (error) throw error;
     return Response.json({ deleted: true }, { headers: corsHeaders });
   } catch {

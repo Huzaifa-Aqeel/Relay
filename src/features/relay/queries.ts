@@ -39,6 +39,7 @@ import {
   listOrganizationHandoffs,
   listOrganizations,
   listRoleHandoffs,
+  listRolePublications,
   listRoleMemoryChanges,
   listRoleLessons,
   listRoles,
@@ -155,6 +156,10 @@ export function useHandoff(id: string | undefined) {
     queryFn: () => getHandoff(id!),
     enabled: useCloudQueryEnabled(Boolean(id)),
   });
+}
+
+export function useRolePublications(roleId: string | undefined) {
+  return useQuery({ queryKey: ['relay','role-publications',roleId], queryFn: () => listRolePublications(roleId!), enabled: useCloudQueryEnabled(Boolean(roleId)) });
 }
 
 export function useHandoffSources(handoffId: string | undefined) {

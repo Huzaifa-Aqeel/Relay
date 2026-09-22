@@ -110,7 +110,7 @@ export type HandoffSource = {
 };
 
 export type KnowledgeStatus = 'proposed' | 'approved' | 'rejected' | 'accepted' | 'retired';
-export type KnowledgeOrigin = 'manual' | 'ai';
+export type KnowledgeOrigin = 'manual' | 'ai' | 'inherited';
 export type KnowledgeProposalAction = 'create' | 'update' | 'retire';
 
 export type KnowledgeItem = {
@@ -126,6 +126,7 @@ export type KnowledgeItem = {
   uncertaintyNote: string | null;
   sortOrder: number;
   lineageId: string;
+  inheritedFromServicePeriod: string | null;
   proposalAction: KnowledgeProposalAction;
   proposalTargetId: string | null;
   decidedBy: string | null;

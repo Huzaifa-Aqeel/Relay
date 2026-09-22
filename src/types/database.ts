@@ -103,6 +103,7 @@ export type Database = {
           id: string; organization_id: string; handoff_id: string; created_by: string;
           knowledge_type: string; title: string; content: string; status: string; origin: string;
           uncertainty_note: string | null; sort_order: number; lineage_id: string;
+          inherited_from_service_period: string | null;
           proposal_action: string; proposal_target_id: string | null;
           decided_by: string | null; decided_at: string | null;
         },
@@ -316,6 +317,16 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      get_organization_continuity: { Args: { requested_organization_id: string }; Returns: Json };
+      is_role_holder_for_handoff: { Args: { requested_handoff_id: string }; Returns: boolean };
+      can_view_role_history: { Args: { requested_role_id: string }; Returns: boolean };
+      create_role_assignment_invite: { Args: { requested_role_id: string; requested_service_period: string; replace_existing: boolean }; Returns: Json };
+      preview_role_assignment_invite: { Args: { requested_token: string }; Returns: Json };
+      accept_role_assignment_invite: { Args: { requested_token: string }; Returns: string };
+      end_role_assignment: { Args: { requested_assignment_id: string }; Returns: undefined };
+      reopen_handoff_for_revision: { Args: { requested_handoff_id: string }; Returns: undefined };
+      request_organization_ownership_transfer: { Args: { requested_organization_id: string; requested_user_id: string }; Returns: string };
+      accept_organization_ownership_transfer: { Args: { requested_transfer_id: string }; Returns: undefined };
       claim_push_token: { Args: { requested_token: string; requested_platform: string }; Returns: undefined };
       create_organization: {
         Args: {

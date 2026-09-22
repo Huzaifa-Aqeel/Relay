@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { InfoCard, InfoRow } from '@/components/ui/info-card';
 import { Screen } from '@/components/ui/screen';
 import { OrganizationMark } from '@/features/relay/organization-mark';
+import { useContinuity } from '@/features/relay/continuity';
 import { useOrganization, useOrganizationHandoffs, useRoles } from '@/features/relay/queries';
 import type { Handoff } from '@/features/relay/types';
 import { colors, radii, shadow, spacing } from '@/theme/tokens';
@@ -22,6 +23,7 @@ function handoffLabel(handoff: Handoff | undefined) {
 export default function OrganizationScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const organizationQuery = useOrganization(id);
+  const continuity = useContinuity(id);
   const rolesQuery = useRoles(id);
   const handoffsQuery = useOrganizationHandoffs(id);
   const pending = organizationQuery.isPending || rolesQuery.isPending || handoffsQuery.isPending;
@@ -74,7 +76,7 @@ export default function OrganizationScreen() {
           <AppText variant="heading">Roles</AppText>
           <AppText color={colors.inkMuted}>Each role keeps its handoff history across service periods.</AppText>
         </View>
-        {roles.length ? (
+        {roles.length && continuity.data?.isOwner ? (
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Add role"
@@ -89,6 +91,9 @@ export default function OrganizationScreen() {
         <View style={styles.roleList}>
           {roles.map((role) => {
             const latest = latestByRole.get(role.id);
+            const overview = continuity.data?.roles.find(r => r.roleId === role.id);
+            const workspace = overview?.handoffs[0];
+            const holder = overview?.assignments.find(a => a.servicePeriod === workspace?.servicePeriod);
             return (
               <Pressable
                 accessibilityRole="button"
@@ -99,6 +104,8 @@ export default function OrganizationScreen() {
                 <View style={styles.roleCopy}>
                   <AppText variant="heading">{role.title}</AppText>
                   <AppText variant="caption" color={colors.inkMuted}>{latest?.servicePeriod ?? 'No handoff yet'}</AppText>
+                  <AppText variant="caption">{holder?.name || 'No assigned holder'}</AppText>
+                  {workspace ? <AppText variant="caption">{workspace.approvedCount} approved · {workspace.unresolvedCount} unresolved · Preflight {workspace.preflightStatus ?? 'not run'} · Publication {workspace.publicationStatus ?? 'none'}</AppText> : null}
                 </View>
                 <View style={[styles.state, latest?.status === 'draft' && styles.stateDraft]}>
                   <AppText variant="caption" color={latest ? colors.moss : colors.inkMuted}>{handoffLabel(latest)}</AppText>
@@ -112,9 +119,11 @@ export default function OrganizationScreen() {
           <View style={styles.emptyIcon}><MaterialCommunityIcons color={colors.moss} name="account-tie-outline" size={34} /></View>
           <AppText variant="heading">Add the first role</AppText>
           <AppText color={colors.inkMuted} style={styles.center}>Start with a position whose knowledge should survive its current leader.</AppText>
-          <Button icon="plus" label="Add role" onPress={() => router.push((`/role-new?organizationId=${organization.id}`) as Href)} />
+          {continuity.data?.isOwner ? <Button icon="plus" label="Add role" onPress={() => router.push((`/role-new?organizationId=${organization.id}`) as Href)} /> : null}
         </View>
       )}
+      {continuity.data?.isOwner || continuity.data?.pendingTransfer ? <Button tone="secondary" label="Organization ownership" onPress={() => router.push(`/ownership-transfer?organizationId=${id}` as Href)} /> : null}
+      {continuity.error ? <AppText>{continuity.error.message}</AppText> : null}
     </Screen>
   );
 }

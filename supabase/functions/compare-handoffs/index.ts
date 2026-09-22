@@ -283,31 +283,31 @@ Deno.serve(async (request) => {
   const { data: role, error: roleError } = await client
     .from('roles').select('id, organization_id, title').eq('id', roleId).maybeSingle();
   if (roleError || !role) return json({ error: 'This role is unavailable.' }, 404);
-  const { data: isAdmin } = await client.rpc('is_organization_admin', {
-    requested_organization_id: role.organization_id,
+  const { data: isAdmin } = await client.rpc('can_view_role_history', {
+    requested_role_id: role.id,
   });
   if (!isAdmin) return json({ error: 'You do not have permission to compare this role.' }, 403);
+  const { data: plan } = await client.rpc('get_organization_plan', { requested_organization_id: role.organization_id });
+  if (plan?.plan !== 'pro') return json({ error: 'This Organization needs Relay Pro. Its Owner can upgrade it.' }, 403);
 
   const { data: handoffs, error: handoffError } = await client
     .from('handoffs')
     .select('id, service_period, published_at')
     .eq('role_id', role.id)
-    .eq('status', 'published')
-    .order('published_at', { ascending: true });
+    .order('service_period', { ascending: true });
   if (handoffError) return json({ error: 'Relay could not load handoff history.' }, 500);
   if (!handoffs || handoffs.length < 2) {
     return json({ error: 'Publish at least two service periods for this role before comparing them.' }, 409);
   }
-  const adjacent = handoffs.slice(-2);
   const { data: publications, error: publicationError } = await client
     .from('handoff_publications')
     .select('id, handoff_id, service_period')
-    .in('handoff_id', adjacent.map((handoff) => handoff.id));
+    .in('handoff_id', handoffs.map((handoff) => handoff.id))
+    .order('service_period', { ascending: false }).limit(2);
   if (publicationError || !publications || publications.length !== 2) {
     return json({ error: 'Relay could not resolve both immutable publications.' }, 409);
   }
-  const previous = publications.find((publication) => publication.handoff_id === adjacent[0].id)!;
-  const current = publications.find((publication) => publication.handoff_id === adjacent[1].id)!;
+  const [current, previous] = publications;
 
   const { data: comparison, error: comparisonError } = await admin
     .from('role_memory_comparisons')

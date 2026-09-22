@@ -7,6 +7,7 @@ import { AppText } from '@/components/ui/app-text';
 import { Button } from '@/components/ui/button';
 import { Screen } from '@/components/ui/screen';
 import { useBilling } from '@/features/billing/billing-provider';
+import { useAuth } from '@/features/auth/auth-provider';
 import { OrganizationMark } from '@/features/relay/organization-mark';
 import { useOrganizationPlan, useOrganizations } from '@/features/relay/queries';
 import { colors, radii, spacing } from '@/theme/tokens';
@@ -27,6 +28,7 @@ const reasonCopy: Record<string, string> = {
 export default function PaywallScreen() {
   const params = useLocalSearchParams<{ reason?: string; organizationId?: string }>();
   const billing = useBilling();
+  const { session } = useAuth();
   const organizationsQuery = useOrganizations();
   const [organizationId, setOrganizationId] = useState(
     typeof params.organizationId === 'string' ? params.organizationId : '',
@@ -50,7 +52,7 @@ export default function PaywallScreen() {
     else if (organizationId && !organizations.some((candidate) => candidate.id === organizationId)) setOrganizationId('');
   }, [organizationId, organizationsQuery.data, params.organizationId]);
   async function purchase() {
-    if (!selectedPackage || !organizationId || !organization) return;
+    if (!selectedPackage || !organizationId || !organization || organization.createdBy !== session?.user.id) return;
     setBusy('purchase');
     const succeeded = await billing.purchase(selectedPackage, organizationId);
     if (succeeded) await organizationPlanQuery.refetch();
@@ -59,7 +61,7 @@ export default function PaywallScreen() {
   }
 
   async function restore() {
-    if (!organizationId || !organization) return;
+    if (!organizationId || !organization || organization.createdBy !== session?.user.id) return;
     setBusy('restore');
     const succeeded = await billing.restore(organizationId);
     if (succeeded) await organizationPlanQuery.refetch();
@@ -79,6 +81,8 @@ export default function PaywallScreen() {
       </Screen>
     );
   }
+
+  if (organization && organization.createdBy !== session?.user.id) return <Screen><AppText variant="display">{organization.name} needs Relay Pro</AppText><AppText>The Organization Owner must upgrade it. All authorized Role Holders benefit from the Organization’s plan.</AppText><Button label="Back" onPress={() => router.back()} /></Screen>;
 
   return (
     <Screen>

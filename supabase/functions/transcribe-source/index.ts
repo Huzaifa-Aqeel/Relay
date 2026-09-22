@@ -189,7 +189,7 @@ Deno.serve(async (request) => {
 
   const { data: source, error: sourceError } = await userClient
     .from('sources')
-    .select('id, organization_id, kind, storage_path, processing_status')
+    .select('id, organization_id, handoff_id, kind, storage_path, processing_status')
     .eq('id', sourceId)
     .maybeSingle();
   if (sourceError || !source) return json({ error: 'This source is unavailable.' }, 404);
@@ -197,8 +197,8 @@ Deno.serve(async (request) => {
     return json({ error: 'This source is not a voice recording.' }, 400);
   }
 
-  const { data: isAdmin, error: adminCheckError } = await userClient.rpc('is_organization_admin', {
-    requested_organization_id: source.organization_id,
+  const { data: isAdmin, error: adminCheckError } = await userClient.rpc('is_role_holder_for_handoff', {
+    requested_handoff_id: source.handoff_id,
   });
   if (adminCheckError || !isAdmin) return json({ error: 'You do not have permission to transcribe this source.' }, 403);
 

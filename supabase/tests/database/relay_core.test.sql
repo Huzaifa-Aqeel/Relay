@@ -58,9 +58,14 @@ select lives_ok(
   'an organization admin can create the free role through the guarded RPC'
 );
 
+set local role postgres;
 update public.roles
 set id = '55555555-5555-4555-8555-555555555555'
 where title = 'President';
+insert into public.role_assignments(organization_id,role_id,user_id,service_period,assigned_by)
+select organization_id,id,'33333333-3333-4333-8333-333333333333',period,'33333333-3333-4333-8333-333333333333'
+from public.roles cross join (values ('2026–2027'),('2027–2028')) p(period) where id = '55555555-5555-4555-8555-555555555555';
+set local role authenticated;
 
 select is((select count(*) from public.roles), 1::bigint, 'the admin can read the role');
 
@@ -81,12 +86,14 @@ select lives_ok(
     '55555555-5555-4555-8555-555555555555',
     '2026–2027'
   )$$,
-  'an organization admin can start the free handoff through the guarded RPC'
+  'an assigned owner can start the free handoff through the guarded RPC'
 );
 
+set local role postgres;
 update public.handoffs
 set id = '66666666-6666-4666-8666-666666666666'
 where service_period = '2026–2027';
+set local role authenticated;
 
 select throws_ok(
   $$select public.create_handoff(
@@ -489,15 +496,13 @@ select is(
   'a client cannot grant or remove its own entitlement'
 );
 
-select throws_ok(
+select lives_ok(
   $$select public.create_handoff(
     (select organization_id from public.roles where id = '55555555-5555-4555-8555-555555555555'),
     '55555555-5555-4555-8555-555555555555',
     '2026–2027'
   )$$,
-  '23505',
-  null,
-  'a role cannot have duplicate handoffs for one service period'
+  'opening the same role period reuses its handoff without a duplicate'
 );
 
 select throws_ok(
@@ -516,6 +521,7 @@ select ok(
   'the creator is recognized as an organization admin'
 );
 
+set local role postgres;
 select lives_ok(
   $$
     insert into public.organization_members (organization_id, user_id, member_role)
@@ -525,8 +531,9 @@ select lives_ok(
       'member'
     )
   $$,
-  'an admin can add an authenticated organization member'
+  'test fixture adds a membership without a Role Assignment'
 );
+set local role authenticated;
 
 update public.sources
 set structuring_status = 'processing', structured_at = null, structured_proposal_count = null
@@ -549,10 +556,10 @@ select is(
 select is((select count(*) from public.organizations), 1::bigint, 'a member can read their organization');
 select is((select count(*) from public.roles), 1::bigint, 'a member can read organization roles');
 select is((select count(*) from public.handoffs), 1::bigint, 'a member can read organization handoffs');
-select is((select count(*) from public.sources), 2::bigint, 'a member can read organization sources');
-select is((select count(*) from storage.objects where bucket_id = 'handoff-sources'), 1::bigint, 'a member can read private source files for their organization');
-select is((select count(*) from public.knowledge_items), 3::bigint, 'a member can read organization knowledge');
-select is((select count(*) from public.knowledge_item_sources), 1::bigint, 'a member can read knowledge provenance');
+select is((select count(*) from public.sources), 0::bigint, 'membership alone cannot read role sources');
+select is((select count(*) from storage.objects where bucket_id = 'handoff-sources'), 0::bigint, 'membership alone cannot read private source files');
+select is((select count(*) from public.knowledge_items), 0::bigint, 'membership alone cannot read working knowledge');
+select is((select count(*) from public.knowledge_item_sources), 0::bigint, 'membership alone cannot read private provenance');
 select ok(
   not public.is_organization_admin((select organization_id from public.organization_members where user_id = '44444444-4444-4444-8444-444444444444')),
   'a normal member is not treated as an admin'
@@ -1101,9 +1108,9 @@ select set_config(
   true
 );
 
-select is((select count(*) from public.preflight_runs), 4::bigint, 'an organization member can read its Preflight history');
-select is((select count(*) from public.preflight_findings), 4::bigint, 'an organization member can read its Preflight findings');
-select is((select count(*) from public.preflight_finding_evidence), 5::bigint, 'an organization member can read cited Preflight evidence');
+select is((select count(*) from public.preflight_runs), 0::bigint, 'membership alone cannot read private Preflight history');
+select is((select count(*) from public.preflight_findings), 0::bigint, 'membership alone cannot read private Preflight findings');
+select is((select count(*) from public.preflight_finding_evidence), 0::bigint, 'membership alone cannot read private Preflight evidence');
 
 select throws_ok(
   $$select public.begin_preflight_run('66666666-6666-4666-8666-666666666666')$$,
@@ -1349,15 +1356,11 @@ select throws_ok(
   'new source evidence cannot be attached after publication'
 );
 
-with changed as (
+select throws_ok($$
   update public.handoffs
   set stage = 'review'
   where id = '66666666-6666-4666-8666-666666666666'
-  returning 1
-)
-select is(
-  (select count(*) from changed),
-  0::bigint,
+$$, '42501', null,
   'clients cannot bypass the published lifecycle with a direct handoff update'
 );
 

@@ -561,8 +561,8 @@ Deno.serve(async (request) => {
   if (source.processing_status !== 'ready' || !source.text_content?.trim()) {
     return json({ error: 'Finish processing or add source text before creating proposals.' }, 409);
   }
-  const { data: isAdmin, error: adminCheckError } = await client.rpc('is_organization_admin', {
-    requested_organization_id: source.organization_id,
+  const { data: isAdmin, error: adminCheckError } = await client.rpc('is_role_holder_for_handoff', {
+    requested_handoff_id: source.handoff_id,
   });
   if (adminCheckError || !isAdmin) return json({ error: 'You do not have permission to structure this source.' }, 403);
 

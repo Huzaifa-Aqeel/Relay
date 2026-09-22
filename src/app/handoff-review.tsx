@@ -33,6 +33,7 @@ function ApprovedRow({ item }: { item: KnowledgeItem }) {
       <View style={styles.rowCopy}>
         <AppText variant="caption" color={colors.moss} style={styles.eyebrow}>{meta.label}</AppText>
         <AppText variant="label">{item.title}</AppText>
+        {item.inheritedFromServicePeriod ? <AppText variant="caption">Carried forward from {item.inheritedFromServicePeriod}</AppText> : null}
         <AppText color={colors.inkMuted} numberOfLines={2}>{item.content}</AppText>
       </View>
       <MaterialCommunityIcons color={colors.inkMuted} name="pencil-outline" size={20} />

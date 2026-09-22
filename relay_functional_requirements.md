@@ -1,6 +1,6 @@
 # Functional Requirements — Relay
 
-**Version:** 1.3 — Living Handoffs & Organization Memory
+**Version:** 1.3 — Living Handoffs, Multi-Role Continuity & Organization Memory
 **Product:** Relay  
 **Category:** Student leadership handoff / institutional memory  
 **Target:** RevenueCat Shipaton 2026 — Next Gen Award  
@@ -60,21 +60,25 @@ A feature belongs in Relay only if it helps **capture, structure, verify, transf
 
 | Actor | Description |
 |---|---|
-| **Organization Owner** | Authenticated user who creates and currently manages the organization. |
-| **Current / Outgoing Leader** | Maintains the living role handoff during the term, approves knowledge, and publishes the successor snapshot; normally also the Organization Owner in v1.3. |
-| **Incoming Leader** | Reads the published handoff and asks questions without needing an account or paid plan. |
-| **Purchaser** | Authenticated user who completes a RevenueCat purchase for a selected organization. The Purchaser and Organization Owner may be the same person in v1.3, but are conceptually separate. |
+| **Organization Owner** | One authenticated member who oversees continuity, creates Roles, manages Role assignments and subscription association, and may offer ownership to an active member. Ownership alone grants no Role editing or raw-source access. |
+| **Role Holder / Current or Outgoing Leader** | Authenticated active member with an active server-side assignment for a specific Organization, Role, and service period. Maintains that living Handoff, approves knowledge, runs Preflight, and deliberately publishes or revokes its recipient snapshot. The Owner may separately hold a Role assignment. |
+| **Incoming Recipient** | Reads a published Handoff and asks questions without an account or paid plan. Recipient access never grants membership or Role authority; becoming a successor Role Holder requires a separate authenticated assignment acceptance. |
+| **Purchaser** | Human whose RevenueCat/store account purchased the annual entitlement attached to one Organization. Only the current Owner may initiate/attach a purchase. Ownership transfer leaves the original purchaser and store billing account unchanged. |
 | **System** | Processes sources, runs AI, retrieval, and entitlement checks. |
 
 ### Requirements
 
 | ID | Requirement | Priority |
 |---|---|---|
-| ACT-01 | Owners must authenticate to create or edit Relay data. | P0 |
+| ACT-01 | Owners and Role Holders authenticate. Server-side active Role Assignment, rather than ownership, job title, recipient link, purchase, client state, or AI inference, authorizes Role maintenance. | P0 |
 | ACT-02 | Incoming leaders can open and read a valid published handoff without installing Relay or creating an account. | P0 |
 | ACT-03 | A recipient can access only the handoff and knowledge explicitly published to that recipient link. | P0 |
 | ACT-04 | Purchaser identity, organization ownership, outgoing leadership, and incoming leadership remain separate concepts even when one person fills multiple roles in v1.3. | P0 |
-| ACT-05 | Organization ownership can later transfer without creating a new organization or losing its history, handoffs, or understandable subscription association. | P1 |
+| ACT-05 | The current Owner may offer ownership to an existing active Organization member. The recipient explicitly accepts within the offer's validity period; transfer atomically changes the sole Owner while preserving Organization identity, data, history, assignments, and subscription association. | P0 |
+| ACT-06 | Organization membership records active/ended membership independently of active/ended Role assignments. Only one active maintainer exists per Role and service period. Pending invites grant no edit authority. | P0 |
+| ACT-07 | The Owner creates a time-limited, single-use Role assignment invite and copies/shares its link. The invitee authenticates, inspects Organization/Role/service period, and explicitly accepts; membership, assignment, and workspace activation are atomic. | P0 |
+| ACT-08 | Replacing an existing assignment requires deliberate Owner confirmation. Ending it removes private working/edit access while preserving contributor attribution and published recipient access. | P0 |
+| ACT-09 | Owner oversight shows Role Holder, service period, lifecycle, updated date, approved knowledge count, unresolved Preflight status/count, and publication/history. Owners may inspect approved knowledge and published Organization Memory, but raw Sources, transcripts, draft files, and unresolved proposals require the exact active Role Assignment. | P0 |
 
 ---
 
@@ -121,12 +125,12 @@ v1.3 uses only seven knowledge types:
 | ID | Requirement | Priority |
 |---|---|---|
 | DOM-01 | User can create an organization with name, institution, and optional logo/description. | P0 |
-| DOM-02 | User can create one or more roles within an organization. | P0 |
-| DOM-03 | User can create a handoff for a role and assign its service period. | P0 |
+| DOM-02 | The Organization Owner can create Roles subject to Organization plan limits. | P0 |
+| DOM-03 | An active Role Assignment authorizes its holder to create/open the corresponding Organization + Role + service-period workspace; changing the human holder does not change workspace identity. | P0 |
 | DOM-04 | A role can retain and open multiple immutable published handoffs across service periods. | P0 |
 | DOM-05 | Historical comparison and knowledge lineage are always scoped to the same Organization and same Role. | P0 |
 
-v1.3 assumes one authenticated owner manages the organization. Multi-admin collaboration is out of scope. The ownership-transfer UI remains P1, but the data model must not make organization continuity depend permanently on the original purchaser.
+v1.3 has exactly one Organization Owner and one active maintainer per Role/service period. For example, Alex may be Owner + President Role Holder while Jordan maintains Treasurer and Priya maintains Events Lead. All authorized holders benefit from their Organization's plan. Assignment acceptance supports academic-year periods such as `2026–2027`, with short forms normalized to prevent duplicate period identities. Co-maintainers, multiple admins, custom permissions, and Billing Manager are out of scope.
 
 ---
 
@@ -148,6 +152,11 @@ Draft is not a one-time graduation form. It remains a usable working space throu
 | HAND-04 | Publishing requires the handoff to pass through Review and Preflight. | P0 |
 | HAND-05 | A Draft Handoff can be reopened throughout the service period to add voice notes, typed notes, new or updated files, and maintain approved contacts, deadlines, processes, warnings, resources, responsibilities, and lessons. | P0 |
 | HAND-06 | Publishing creates an intentional immutable recipient snapshot; continued Draft work or source replacement must not silently change a published Handoff. | P0 |
+| HAND-07 | A Role Holder normally maintains a living Draft throughout the service period and publishes when preparing to transfer the Role. Earlier publication and deliberate republication are allowed for unexpected transitions; publication is never automatic. | P0 |
+| HAND-08 | A replacement in the same Role/service period continues the existing working Handoff, including its approved knowledge, private role Sources/version lineage, pending proposals, Preflight, and publication history. Earlier contributors retain attribution and the ended holder loses current private access. | P0 |
+| HAND-09 | A successor starting a new service period receives a separate working Handoff initialized from the latest preceding published Handoff for the same Organization and Role. It carries forward published Responsibilities, Deadlines, Contacts, Processes, Warnings, Resources, and Lessons. | P0 |
+| HAND-10 | Carry-forward includes only approved publication knowledge and safe lineage/citation metadata. Rejected/unresolved proposals, private scratch notes, raw private Sources, and knowledge retired or absent from the publication are not inherited as current truth. Inherited items visibly identify the prior period. | P0 |
+| HAND-11 | New-period changes never mutate the previous publication. Inherited items preserve cross-period lineage and original attribution; stale inherited facts are maintained through the existing human review/edit/retirement flow. | P0 |
 
 ---
 
@@ -396,11 +405,11 @@ Example:
 
 | ID | Requirement | Priority |
 |---|---|---|
-| PUB-01 | Owner can preview exactly what the incoming leader will see. | P0 |
+| PUB-01 | The assigned Role Holder can preview exactly what the incoming recipient will see. | P0 |
 | PUB-02 | Published handoff receives an unguessable access link. | P0 |
-| PUB-03 | Owner can copy/share the link and display a QR code. | P0 |
+| PUB-03 | The assigned Role Holder can copy/share the link and display a QR code. | P0 |
 | PUB-04 | Published handoff opens in a mobile browser without account creation. | P0 |
-| PUB-05 | Owner can revoke a published link without deleting the underlying handoff. | P0 |
+| PUB-05 | The assigned Role Holder can revoke a published link without deleting the underlying handoff. | P0 |
 | PUB-06 | Draft-only source material is never automatically exposed to recipients. | P0 |
 | PUB-07 | A published Handoff snapshots approved knowledge, safe citation metadata, service period, and knowledge lineage without exposing raw Sources or proposals. | P0 |
 | PUB-08 | Updating a working Source or approved Knowledge Item never silently changes a prior published snapshot. | P0 |
@@ -555,14 +564,18 @@ An authenticated owner account can create one organization on Free. Creating an 
 |---|---|---|
 | MON-01 | A user performs the RevenueCat purchase. RevenueCat remains the source of truth for whether the `relay_pro` entitlement is active, while Supabase stores the association between purchaser/entitlement and one Organization. | P0 |
 | MON-02 | A Free organization can complete one genuine end-to-end handoff. Incoming leaders and other published-link recipients never need an account, Relay Pro entitlement, or purchase. | P0 |
-| MON-03 | Premium paywall appears only when the owner attempts a premium organization action, identifies which Organization will be upgraded, and does not appear in the published recipient path. | P0 |
+| MON-03 | Premium actions identify the Organization needing Relay Pro. Its Owner may upgrade it; a non-owner Role Holder sees that the Owner must upgrade the Organization rather than being asked to buy an individual plan. Recipients are never paywalled. | P0 |
 | MON-04 | Relay Pro is an annual subscription positioned around preserving the Organization's knowledge for the academic year. No monthly, lifetime, consumable, or credit plan is offered. | P0 |
 | MON-05 | Restore Purchases refreshes RevenueCat customer information, reconciles an unambiguous Organization association without creating duplicates, and refreshes that Organization's plan state. | P0 |
 | MON-06 | One Relay Pro subscription unlocks only its associated Organization and must not unlock every unrelated Organization owned by the Purchaser. | P0 |
 | MON-07 | Expiration or downgrade returns the Organization to Free without deleting its roles, handoffs, sources, approved knowledge, publications, or institutional history; premium creation may become gated or existing premium data read-only. | P0 |
 | MON-08 | Purchaser, Organization Owner, Outgoing Leader, and Incoming Leader are conceptually separate roles; subscription association must not require the Purchaser to remain the Organization Owner. | P0 |
-| MON-09 | A complete Organization ownership-transfer flow remains P1. Transfer must preserve the Organization identity, history, handoffs, and understandable subscription association. | P1 |
+| MON-09 | Minimal explicit-acceptance Organization ownership transfer is P0. It preserves Organization identity, history, Role assignments, handoffs, and active Organization Pro association without transferring the purchaser's App Store/Play Store account. | P0 |
 | MON-10 | Living Handoffs and Organization Memory do not introduce add-ons or new subscription products. Relay Pro remains annual-only and Organization-scoped. | P0 |
+| MON-11 | One verified `relay_pro` entitlement upgrades one Organization for all authorized Role Holders; there is no per-seat billing or individual `isPro` authorization. | P0 |
+| MON-12 | Every protected premium Role action independently checks Role authorization and Organization entitlement server-side. A purchase never grants membership or editing access, including to unrelated Organizations. | P0 |
+| MON-13 | Only the current Owner may initiate/attach an Organization purchase. RevenueCat verification and Organization attachment are reconciled atomically against current ownership; existing purchaser refreshes after transfer preserve the established association. | P0 |
+| MON-14 | Downgrade preserves memberships, assignments, Roles, Sources, knowledge, publications, and recipient access. Free creation limits remain one active Role and one current Handoff; creating further periods and generating Organization Memory comparisons require Organization Pro. Existing information is retained. | P0 |
 
 Do not build a complex credit/currency system unless actual usage costs later justify it.
 
@@ -582,6 +595,9 @@ Do not build a complex credit/currency system unless actual usage costs later ju
 | SEC-06 | AI-generated information remains proposed until accepted; AI never silently modifies/retires approved knowledge, resolves contradictions, links unrelated Sources, or changes a published snapshot. | P0 |
 | SEC-07 | Relay prefers “I don't know” over unsupported organization-specific answers. | P0 |
 | SEC-08 | Historical Source versions, canonical revision history, and internal lineage remain private; recipient access exposes only the safe immutable publication payload. | P0 |
+| SEC-09 | RLS and guarded RPCs restrict private reads and writes to the exact active Role Assignment. Owner oversight has no implicit access to raw source content, private files, proposal evidence, or detailed Preflight evidence. | P0 |
+| SEC-10 | Invites require authenticated explicit acceptance, expiry and single-use checks, and atomic replacement. Direct membership/admin grants, ownership-field changes, attribution rewrites, and cross-workspace storage references are denied. | P0 |
+| SEC-11 | Existing single-owner Organizations migrate in place with active Owner membership and compatible assignments for existing Role-period workspaces. IDs, attribution, publications, and RevenueCat associations remain intact. | P0 |
 
 ---
 
@@ -601,6 +617,7 @@ Relay should feel like a calm transition tool, not an AI dashboard.
 | UI-04 | Shared handoff is optimized for fast mobile scanning and core controls support accessibility semantics. | P0 |
 | UI-05 | AI failure never prevents manual capture, editing, publishing of already-approved content, or reading a published handoff. | P0 |
 | UI-06 | Source-version and Organization Memory views emphasize material changes, human decisions, and inspectable provenance rather than scores, activity noise, or AI confidence theater. | P0 |
+| UI-07 | Publish is framed as a leadership-transition action. Routine year-round edits save to the working Handoff without publication pressure; reopening a published workspace retains the existing snapshot until deliberate Review/Preflight and republication. | P0 |
 
 No special “AI aesthetic” is required.
 
@@ -683,7 +700,7 @@ The demo should tell one complete story.
    > “Can we use club money to buy laptops?”
 20. Relay says:
    > “This handoff does not contain a reliable answer.”
-21. Alex later maintains and publishes the President `2027–2028` Handoff.
+21. The Owner separately invites Alex as President `2027–2028`. Alex signs in and accepts, receiving a new workspace seeded from the previous published approved knowledge. Alex maintains it throughout the term and deliberately publishes for the next transition.
 22. Organization Memory compares the adjacent President periods and shows grounded material changes such as `Facilities contact: Sarah → Mike` and `Venue booking: 12 weeks → 16 weeks`.
 23. Relay labels the contact reason as Contact/resource change. It labels the deadline Policy-driven only if approved policy evidence explicitly establishes the cause; otherwise it says `Unknown / not established`.
 24. If Alex confirms that a documented projector failure caused the new equipment-test process, Relay records the explicit `Lesson → Process` relationship. It never infers that relationship from sequence alone.
@@ -740,6 +757,12 @@ The Shipaton build is not complete unless these work:
 27. grounded reason categories with `Unknown / not established` fallback
 28. explicit evidence-backed or human-confirmed Lesson-to-Practice relationships
 29. recipient Start Here obligations derived only from approved publication content
+30. independent Organization membership and one active Role Holder per Role/service period
+31. authenticated, explicit, single-use assignment invite acceptance and deliberate replacement
+32. Owner continuity oversight with private raw-source boundaries
+33. same-period workspace inheritance and publication-only new-period carry-forward
+34. explicit Organization ownership offer/acceptance preserving purchaser identity and Organization Pro
+35. independent server-side authorization and Organization entitlement checks
 
 Do not cut **Preflight, human review, citations, immutable publication snapshots, current-version retrieval, or “I don't know / reason not established” behavior** to make room for secondary features.
 
@@ -753,7 +776,6 @@ Only after the core loop is polished:
 - image-description enrichment
 - more advanced stale-policy detection
 - role archiving
-- organization ownership transfer without replacing the organization or losing its history
 - optional human review for borderline cross-year lineage candidates that Relay currently omits
 
 ---
@@ -788,7 +810,9 @@ Post-launch:
 - leader/year rankings or unsupported claims that an organization improved
 - comparisons across unrelated Organizations or Roles
 - causal claims without explicit approved evidence or attributable human confirmation
-- multiple administrators or elaborate multi-user permissions
+- multiple administrators, co-maintainers, custom permissions, teams/groups/departments, or Billing Manager
+- per-seat subscriptions or automatic Role assignment from recipient links
+- automatic ownership transfer or invite email/messaging infrastructure
 - new subscription products, add-ons, monthly plans, lifetime plans, credits, or consumables
 - financial integrations
 - autonomous emails/messages

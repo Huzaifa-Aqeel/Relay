@@ -1,6 +1,6 @@
 # Relay Build Progress
 
-Last updated: 2026-09-21 (Asia/Karachi)
+Last updated: 2026-09-22 (Asia/Karachi)
 
 ## Source of truth
 
@@ -8,13 +8,32 @@ Last updated: 2026-09-21 (Asia/Karachi)
 - Product loop: Capture → Structure → Preflight → Resolve → Publish → Ask
 - Android first, iOS second, using Expo, Supabase, RevenueCat, Unstructured, and Astra DB.
 
-## Implemented
+## Current status and workflow
+
+The completed v1.3 baseline is retained. The multi-role access, successor inheritance, and Organization billing delta has been implemented in the working tree, with database coverage passing at the latest recorded checkpoint. Final UI verification, security review, and validation of the latest edits are still unfinished. This is not yet a fully verified or hosted-deployed delta.
+
+- One Organization Owner oversees continuity, creates Roles, manages assignments, manages purchase attachment, and offers ownership transfer. Ownership alone does not authorize Role editing or private raw-source access.
+- An authenticated active Role Holder maintains the workspace for their assigned Organization + Role + service period. An Owner can separately accept an assignment to maintain a Role.
+- Owner creates/shares a seven-day, single-use assignment invite → invitee signs in or creates an account → inspects the Organization/Role/period → explicitly accepts → membership, assignment, and workspace activation happen atomically.
+- Same-period replacement continues the same working Handoff and preserves previous contributor attribution. A new-period successor receives a separate workspace seeded from the previous publication's approved knowledge and safe lineage/citations; private Sources and unresolved/rejected proposals are not copied.
+- Maintain a living Draft throughout the term → review knowledge → Preflight → resolve/acknowledge → preview → deliberately publish for a leadership transition. Early publication and deliberate republication are supported. Reopening a published workspace leaves its existing recipient snapshot unchanged until republication.
+- An Incoming Recipient reads and asks questions through a published link without logging in. That link grants no membership or Role Assignment.
+- A human Purchaser's verified annual RevenueCat entitlement benefits one Organization and its authorized Role Holders. Only the current Owner can initiate/attach a purchase. Authorization and Organization plan checks are separate; ownership transfer preserves the subscription association and purchaser identity.
+
+### User decisions / paused state
+
+- Implementation/testing is paused at the user's request. This update records status only; it does not resume that work.
+- The user will delete the existing test Organization from hosted Supabase themselves and test the new workflow from scratch. No hosted Organization deletion was performed by the agent.
+- Backward-compatibility verification was explicitly waived. Existing backfill and service-period compatibility logic remains in the migrations; it does not automatically assign future Owners to newly created Roles.
+- Legacy migration fixture files were prepared in `supabase/tests/fixtures/`, but their upgrade verification was not completed and is no longer required by the user.
+
+## Implemented baseline and retained capabilities
 
 - Relay application identity, calm light visual system, icons, splash assets, onboarding copy, and package/deep-link configuration.
-- Supabase authentication, session persistence, password recovery, protected owner routes, account deletion guardrails, and private push-token ownership.
+- Supabase authentication, session persistence, password recovery, protected authenticated workspace routes, account deletion guardrails, and private push-token ownership.
 - Real Organization, Role, and draft Handoff persistence with membership-aware RLS and private organization logos (`ACT-01`, `DOM-01`–`DOM-03`, `HAND-01`).
 - Organization, role, and handoff creation/read screens with deliberate loading, empty, validation, and error states (`UI-01`).
-- Source and Knowledge Item persistence with separate source evidence, seven allow-listed knowledge types, AI/manual origin, proposal status, provenance links, stable ordering, and RLS (`CAP-04`, `KNOW-01`–`KNOW-05`, `AI-02`).
+- Source and Knowledge Item persistence with separate source evidence, seven allow-listed knowledge types, AI/manual/inherited origin, proposal status, provenance links, stable ordering, and RLS (`CAP-04`, `KNOW-01`–`KNOW-05`, `AI-02`).
 - Typed/pasted source capture (`CAP-02`), manual approved knowledge entry (`CAP-05`, `AI-05`), and knowledge editing, deletion, and reordering (`HAND-03`).
 - Foreground voice recording and document selection/upload use Expo SDK 57-compatible official modules. Original files are stored in a private, organization-scoped Supabase bucket with a 25 MB cap (`CAP-01`, `CAP-03`).
 - Voice/document sources expose Processing, Ready, and Failed states, retain plain-language failures, allow retry, and keep editable manual transcript/source-text fallback available (`CAP-05`, `CAP-06`).
@@ -25,12 +44,12 @@ Last updated: 2026-09-21 (Asia/Karachi)
 - Source processing and structuring screens use scoped Supabase Realtime Postgres Changes subscriptions. Fixed-interval database/PostgREST polling has been removed; reconnecting performs one cache refresh.
 - Server-enforced transition into Review, a visually distinct proposal queue, and explicit Accept / Edit / Reject decisions without changing original sources (`HAND-04`, `KNOW-01`–`KNOW-05`, `UI-02`).
 - Evidence-backed Handoff Preflight is implemented end to end: Groq checks approved knowledge plus permission-filtered Astra/source evidence for missing, ambiguous, incomplete, and contradictory information; strict validation and atomic persistence prevent unsupported or partial findings (`PRE-01`–`PRE-07`, `UI-03`).
-- Preflight has polished Processing, Ready, Failed, and Stale states; each finding shows plain-language reasoning and evidence context, and admins can Resolve with new approved knowledge, edit the affected instruction, Skip, or mark it Unknown (`PRE-06`–`PRE-09`).
+- Preflight has Processing, Ready, Failed, and Stale states; each finding shows plain-language reasoning and evidence context, and the assigned Role Holder can Resolve with new approved knowledge, edit the affected instruction, Skip, or mark it Unknown (`PRE-06`–`PRE-09`).
 - Material source/knowledge changes invalidate prior readiness, processing runs fail closed if knowledge changes concurrently, and scoped Supabase Realtime updates the mounted Preflight without database polling.
-- Readiness shows concrete approved/resolved/unresolved counts without an AI percentage. Optional findings allow Preview; unresolved critical findings require an explicit, attributable acknowledgement (`READY-01`–`READY-03`). The next publish phase must enforce the same gate before exposure.
+- Readiness shows concrete approved/resolved/unresolved counts without an AI percentage. Optional findings allow Preview; unresolved critical findings require an explicit, attributable acknowledgement. Publishing rechecks the same gate server-side (`READY-01`–`READY-03`).
 - Exact Preview and the public recipient page use the same calm, mobile-first renderer, with Start Here, grouped/filterable knowledge, prominent warnings, and actionable email/phone/web contacts (`PUB-01`, `REC-01`–`REC-05`).
-- Publishing rechecks current Preflight readiness server-side and atomically snapshots approved knowledge only. Original sources, proposals, provenance, private IDs, and Preflight details never enter the public payload (`HAND-04`, `PUB-02`, `PUB-04`, `PUB-06`, `SEC-01`, `SEC-02`).
-- Active Handoffs support copy, native share, QR display, immediate revocation, and token replacement. Revocation never deletes the Handoff or immutable snapshot, and old/replaced tokens fail closed (`PUB-03`, `PUB-05`). Published drafts are frozen against accidental client-side edits.
+- Publishing rechecks current Preflight readiness server-side and atomically snapshots approved knowledge only. Original Sources, proposals, private provenance excerpts, canonical workspace IDs, and Preflight details stay private. Safe source labels/locators are snapshotted for recipient citations (`HAND-04`, `PUB-02`, `PUB-04`, `PUB-06`, `SEC-01`, `SEC-02`).
+- Active publications support copy, native share, QR display, revocation, and token replacement. Revocation retains the Handoff and snapshot; old/replaced tokens fail closed (`PUB-03`, `PUB-05`). Published workspaces are frozen against direct edits; an assigned holder can deliberately resume a working Draft without changing the existing publication.
 - Credentials warning and private-by-default copy (`SEC-01`, `SEC-05`, `SEC-06`).
 - Invalid, unknown, revoked, and replaced public tokens all return the same non-disclosing unavailable state.
 - Ask Relay is implemented on the no-login recipient page with calm question/answer UI, explicit trust copy, daily remaining-use feedback, and accessible citation cards (`ASK-01`–`ASK-07`).
@@ -38,7 +57,7 @@ Last updated: 2026-09-21 (Asia/Karachi)
 - Publication now snapshots safe source labels/locators for citations. Recipient answers cannot read or modify the private canonical Handoff, and questions/answers/raw sources are not logged.
 - RevenueCat retains the authenticated Supabase user UUID as purchaser identity, while Supabase now associates that verified entitlement with one selected Organization. `organization_subscriptions` keeps purchaser and Organization separate, stores refreshable active/inactive state rather than a permanent `is_pro` flag, and supports an Organization remaining understandable through a later owner change (`MON-01`, `MON-06`, `MON-08`).
 - Purchase and Restore pass explicit Organization context, authorize it server-side, reconcile without duplicate associations, refresh Organization plan state immediately, and refuse to silently move an active entitlement to an unrelated Organization. The webhook refreshes existing state but never guesses the target Organization (`MON-03`, `MON-05`).
-- Free limits are enforced by database RPCs—not UI assumptions—at one owned organization per Free owner account, then one active Role and one current Handoff per Free Organization. Premium attempts open a contextual “Upgrade [Organization]” paywall; direct Role/Handoff inserts cannot bypass limits (`MON-02`, `MON-03`, `MON-06`). Downgrades never delete existing data or remove recipient access (`MON-07`).
+- Free creation limits are enforced by database RPCs at one owned organization per Free owner account, then one active Role and one current Handoff per Free Organization. Owner premium attempts open a contextual “Upgrade [Organization]” paywall; non-owner holders are told the Owner must upgrade. Direct Role/Handoff inserts remain restricted (`MON-02`, `MON-03`, `MON-06`). Downgrades retain existing data, assignments, and recipient access (`MON-07`).
 - Ask allowances are claimed atomically without database polling: 10 requests per published Handoff/day by default for Free and 100 for an associated Pro Organization, both server-configurable and bounded against public-link abuse.
 - Draft Handoffs remain living workspaces throughout a service period: the capture UI explicitly supports returning to add voice, typed context, files, and approved knowledge, with optional real-world prompts for responsibilities, registration/training, finances, recurring events, contacts, access, deadlines, policies, and lessons (`HAND-05`, `CAP-07`). No calendar, reminder, notification, or task-management system was added.
 - Voice and typed-source structuring now considers current approved knowledge and can create reviewable `update` or `retire` proposals that show the existing canonical item, proposed replacement, and exact new evidence. Accepting an update changes the existing canonical item atomically, retains its lineage and prior revision, and copies the new provenance; rejecting remains non-mutating.
@@ -47,10 +66,44 @@ Last updated: 2026-09-21 (Asia/Karachi)
 - Working Preflight retrieval now filters both stored provenance and Astra results to current document source IDs, preventing historical/current versions from acting as duplicate active evidence. Historical chunks and sources remain available for provenance; published Ask Relay continues to use the existing immutable publication snapshot.
 - Approved Knowledge Items now carry durable Role-scoped lineage. Publications snapshot the lineage, accepted same-Handoff updates retain it, and strong same-type/topic year-to-year matches can connect equivalent knowledge without forcing uncertain matches. Canonical revision and proposal decision history is preserved.
 - Organization Memory now lists preserved published Handoffs by Role and compares only the latest adjacent service periods for the same Organization + Role. Its What Changed view shows conservative Added/Changed/Retired material changes, before/after approved snapshots, source labels/locators, and no scores, rankings, cross-role analytics, or claims of improvement.
-- Change reasons are restricted to policy-driven, lesson-driven, leadership preference, contact/resource change, or `Unknown / not established`. Policy and lesson causality require explicit approved evidence; chronology alone is rejected, leadership preference requires an explicit decision statement, and contact/resource classification requires that knowledge type. Admin confirmation is attributable, policy cannot be confirmed without policy evidence, and lesson confirmation requires selecting an approved Lesson plus a resulting Process/Warning/Responsibility, creating an explicit lesson-to-practice relationship.
+- Change reasons are restricted to policy-driven, lesson-driven, leadership preference, contact/resource change, or `Unknown / not established`. Policy and lesson causality require explicit approved evidence; chronology alone is rejected, leadership preference requires an explicit decision statement, and contact/resource classification requires that knowledge type. Authorized Owner/Role Holder confirmation is attributable, policy cannot be confirmed without policy evidence, and lesson confirmation requires selecting an approved Lesson plus a resulting Process/Warning/Responsibility, creating an explicit lesson-to-practice relationship.
 - Recipient Start Here now derives a compact immediate-transition section only from approved immutable publication items, covering surfaced registration/training, finance closeout, important introductions, deadlines, and account/tool access instructions without inventing tasks or exposing draft sources (`REC-06`).
 
-## Verified foundation
+## Multi-role delta implemented in the working tree
+
+- Extended `organization_members` with active/ended state; added `role_assignments` with one active holder per Role/service period, assignment attribution, and acceptance/end timestamps. Pending invitations are stored separately and grant no authority.
+- Replaced organization-wide private access with exact Role-period checks in RLS, storage policies, guarded RPCs, transcription, document processing, proposal generation, and Preflight. Owners retain approved-knowledge and publication/history oversight.
+- Added hashed-token, seven-day assignment invitations with explicit acceptance and deliberate replacement, plus assignment ending and explicit Owner self-assignment through the same acceptance flow.
+- Added atomic same-period continuation and new-period carry-forward from approved publication items, retaining knowledge lineage, original contributor attribution, prior-period labels, and safe citation metadata.
+- Added a guarded reopen-for-revision action. Existing publications stay readable while the working Draft changes; intentional republication continues through Review/Preflight.
+- Added ownership offers to active members and explicit acceptance, with one Owner, expiry checks, invalidation of old Owner invites, and unchanged purchaser/subscription association.
+- Added safe Organization continuity summaries, Owner approved-knowledge inspection, Role assignment management, invitation sign-in/acceptance, ownership transfer, and published-history screens. Inherited knowledge is labeled in Handoff/Review; publication copy describes leadership transition.
+- Updated Organization Memory to use preserved publications even when a workspace has reopened, authorize Owner/Role Holder access, and gate generating comparisons on Organization Pro. Published Lesson selection uses safe snapshot content.
+- Added Owner checks before native purchase/restore and atomic verified subscription association writes, serialized against ownership transfer. Non-owner paywall copy explains Organization-level entitlement.
+- Tightened direct ownership/attribution edits, internal function grants, cross-workspace source paths, referenced-file deletion, and period spelling/assignment races. Auth changes clear the client query cache. Account deletion now requests soft deletion to retain contributor references; this changed path still needs final review.
+- Updated `relay_functional_requirements.md` for the multi-role product model, P0 ownership transfer, successor inheritance, and deliberate transition publication. Its original backward-compatibility requirement was subsequently waived by the user; see decisions above.
+
+### New migration files
+
+- `202609220016_role_access.sql` — membership state, Role assignments/backfill, access helpers, RLS/storage boundaries, and existing RPC authorization changes.
+- `202609220017_continuity_flows.sql` — assignment invites/acceptance, workspace inheritance, reopen-for-revision, ownership transfer, and inherited citations.
+- `202609220018_continuity_overview.sql` — safe Owner/member continuity summary and protected identity/attribution fields.
+- `202609220019_access_hardening.sql` — explicit function privileges, source-path scope, draft mutation guards, and atomic verified subscription attachment.
+- `202609220020_period_and_race_guards.sql` — normalized academic-year invite periods, existing-period disambiguation, ownership/creation locking, and referenced-file protection.
+
+## Verification checkpoints
+
+### Multi-role task — 2026-09-22
+
+- `npm run test:db` — **286 checks passed**: the existing 206 tests (with obsolete membership-wide privacy assumptions updated) plus 80 new access/continuity tests. Coverage includes exact-role access, Owner raw-source denial, single-use/expired invites, explicit replacement, attribution, same-workspace continuation, publication-only inheritance, independent snapshots, ownership transfer, purchaser separation, downgrade preservation, plan-gate rollback, period aliases, and privileged-function denial.
+- `npm test` — **7 application tests passed**, including updated public-route boundaries for the invitation landing screen. These are not browser interaction tests of the new screens.
+- `npm run typecheck` — passed at the recorded checkpoint. Additional UI/repository edits followed; final validation of the latest working tree remains pending.
+- `npx supabase db lint --local --level warning` — no schema errors at the recorded checkpoint. The later period/race migration was applied and covered by the 286-test run; rerun lint after final changes.
+- A clean local Supabase reset through the initial new migrations succeeded; migrations through `202609220020` were subsequently applied locally for database tests. No hosted migration/deployment was performed during this task.
+- Web export and Android Expo export were launched, but their completion/results were not inspected before the pause. Do not count them as passed for this delta.
+- A later local-only reset to baseline `202609210015` was launched for the now-waived upgrade test. Its final result was not inspected. **Check local migration state before resuming tests**; do not assume the local database still has all new migrations applied.
+
+### Earlier v1.3 baseline — historical results, not final validation of this delta
 
 - `npm run typecheck` — passed on 2026-09-21.
 - `npm test` — 7 application tests passed on 2026-09-21, including exact duplicate, strong newer-version, ambiguous confirmation, and unrelated-source version detection.
@@ -67,20 +120,26 @@ Last updated: 2026-09-21 (Asia/Karachi)
 - UI/browser checks must remain headless unless the user explicitly requests otherwise.
 - Verification is batched at dependency boundaries or handoff milestones, not after every small change.
 
-## P0 implementation status
+## Work remaining when implementation resumes
 
-All P0 product code in `relay_functional_requirements.md` is implemented. Remaining work is deployment/store activation and real-device release validation, not another P0 feature module.
+1. Inspect previously launched export results, or rerun web and Android exports against the final working tree as needed. Check local database migration state after the interrupted baseline-reset command and apply the new migrations before further database testing.
+2. Run headless UI/end-to-end verification of Owner oversight, self-assignment, invitation sign-in/acceptance, replacement/end access, next-period inheritance labels, ownership offer/acceptance, published-history viewing, reopened-draft publication behavior, and Owner/non-owner billing screens. New screens are implemented but have not been interaction-tested.
+3. Complete the final authorization/security review, including concurrent assignment/ownership changes, account/session/cache behavior, changed account deletion behavior, Edge Function authorization, and publication/republication boundaries. Fix any issues found; no claim of a completed security audit or zero bugs is made.
+4. Run final typecheck, app tests, DB/RLS tests, database lint, and web/Android exports after any final edits. Recheck existing Preflight, source-versioning, Organization Memory, Ask Relay/citations, publish/revoke, and no-login recipient behavior where affected by the new authorization paths.
+5. Update this file with final observed results and deliver the requested implementation report. Backward-compatibility upgrade verification is **not** a remaining requirement; the user waived it.
+
+The current delta is mostly implemented, with substantial database verification complete. It is not yet ready to be marked fully completed. Hosted deployment, provider smoke checks, and native store/device validation below remain separate release work.
 
 ## External configuration still needed
 
-- Hosted Supabase URL and publishable client key when connecting this build to the user's hosted project.
+- The user has configured the client for their hosted Supabase project. Local Supabase database tests use the local CLI stack independently of the Expo publishable key. Verify the intended client/backend target before a hosted end-to-end test; local migrations do not update hosted Supabase.
 - Unstructured and Astra credentials are configured for local development. Before hosted deployment, add the same server-only secrets to the hosted Supabase project.
 - Astra target is ready: keyspace `default_keyspace`; collection `relay_handoff_chunks`; Astra-hosted NVIDIA `nvidia/nv-embedqa-e5-v5`; 1024 dimensions; cosine similarity. Unstructured parses without embedding, and Astra Vectorize owns both document and Ask Relay query embeddings.
 - Groq is configured and live-verified locally for transcription and reasoning. Add the same server-only Groq configuration to hosted Supabase before deployment.
 - Set `EXPO_PUBLIC_RELAY_WEB_ORIGIN` to the deployed Expo web origin so native share and QR actions point to the browser recipient page.
-- RevenueCat's Test Store SDK key, server secret API key, and `relay_pro` entitlement ID are configured locally. The private `REVENUECAT_WEBHOOK_AUTHORIZATION` value is still empty; configure it before webhook validation and add all server-only values to hosted Supabase secrets.
+- RevenueCat's Test Store SDK key, server secret API key, and `relay_pro` entitlement ID were configured locally at the earlier checkpoint. Webhook authorization was not configured at that checkpoint; verify/configure it before webhook validation and add all server-only values to hosted Supabase secrets. Secret configuration has not been re-audited during this documentation update.
 - In RevenueCat Test Store, attach one annual product to the current offering's Annual package, configure the `relay_pro` entitlement, point the authenticated webhook at `revenuecat-webhook`, and use its exact private Authorization value. Relay Pro is annual-only.
-- Apply hosted migrations through `202609210015`; deploy the modified `generate-knowledge-proposals`, `process-document-source`, and `run-preflight` functions plus the new `compare-handoffs` function, alongside the existing `ask-relay`, `sync-revenuecat-entitlement`, and `revenuecat-webhook` deployment set.
+- After final verification, apply hosted migrations through `202609220020` and deploy the modified `generate-knowledge-proposals`, `transcribe-source`, `process-document-source`, `run-preflight`, `compare-handoffs`, `sync-revenuecat-entitlement`, and `delete-account` functions. Keep the existing `ask-relay` and `revenuecat-webhook` deployment/configuration working. Deploy the matching client/web build before testing the new hosted workflow from scratch.
 - The v1.3 source-delta and Organization Memory Groq paths have passed static/local build checks but have not received a fresh live-provider smoke test. The attempted disposable local setup was stopped after auth signup rate limiting; no Docker configuration or product environment file was changed. Run these two authenticated provider smokes before hosted release.
 - Validate purchase, cancellation, restore, renewal, expiry/downgrade, and contextual Organization gates in an Android Expo development build. Repeat the store validation on iOS second.
 

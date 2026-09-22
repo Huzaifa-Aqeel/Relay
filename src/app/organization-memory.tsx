@@ -11,7 +11,8 @@ import {
   useCompareRoleHandoffs,
   useOrganization,
   useRole,
-  useRoleHandoffs,
+  useRolePublications,
+  useOrganizationPlan,
   useRoleMemoryChanges,
   useRoleMemoryComparison,
 } from '@/features/relay/queries';
@@ -94,7 +95,8 @@ export default function OrganizationMemoryScreen() {
   const { roleId } = useLocalSearchParams<{ roleId: string }>();
   const roleQuery = useRole(roleId);
   const organizationQuery = useOrganization(roleQuery.data?.organizationId);
-  const handoffsQuery = useRoleHandoffs(roleId);
+  const handoffsQuery = useRolePublications(roleId);
+  const plan = useOrganizationPlan(roleQuery.data?.organizationId);
   const comparisonQuery = useRoleMemoryComparison(roleId);
   const changesQuery = useRoleMemoryChanges(comparisonQuery.data?.id);
   const compareMutation = useCompareRoleHandoffs();
@@ -109,7 +111,7 @@ export default function OrganizationMemoryScreen() {
   if (error || !roleQuery.data || !organizationQuery.data) {
     return <Screen><MessageState icon="book-alert-outline" title="Role memory unavailable" body={error?.message ?? 'This role could not be opened.'} /></Screen>;
   }
-  const published = (handoffsQuery.data ?? []).filter((handoff) => handoff.status === 'published');
+  const published = handoffsQuery.data ?? [];
   const comparison = comparisonQuery.data;
   const changes = changesQuery.data ?? [];
 
@@ -129,7 +131,7 @@ export default function OrganizationMemoryScreen() {
             <Pressable
               accessibilityRole="button"
               key={handoff.id}
-              onPress={() => router.push((`/handoff/${handoff.id}`) as Href)}
+              onPress={() => router.push((`/published-history?handoffId=${handoff.handoffId}`) as Href)}
               style={({ pressed }) => [styles.historyRow, pressed && styles.pressed]}>
               <View style={styles.copy}>
                 <AppText variant="label">{handoff.servicePeriod}</AppText>
@@ -141,6 +143,7 @@ export default function OrganizationMemoryScreen() {
         </View>
       </View>
 
+      {plan.data?.plan !== 'pro' ? <Button label="Organization Memory requires Relay Pro" tone="secondary" onPress={() => router.push(`/paywall?organizationId=${roleQuery.data.organizationId}` as Href)} /> : null}
       {published.length < 2 ? (
         <MessageState
           icon="compare-horizontal"
@@ -152,7 +155,7 @@ export default function OrganizationMemoryScreen() {
           <MaterialCommunityIcons color={colors.moss} name="compare-horizontal" size={32} />
           <AppText variant="heading">Compare the latest adjacent periods</AppText>
           <AppText color={colors.inkMuted}>Low-confidence matches and wording-only differences will be omitted.</AppText>
-          <Button disabled={compareMutation.isPending} icon="creation-outline" label={compareMutation.isPending ? 'Comparing…' : 'Find material changes'} onPress={() => compareMutation.mutate({ roleId })} />
+          <Button disabled={compareMutation.isPending || plan.data?.plan !== 'pro'} icon="creation-outline" label={compareMutation.isPending ? 'Comparing…' : 'Find material changes'} onPress={() => compareMutation.mutate({ roleId })} />
         </View>
       ) : (
         <View style={styles.comparisonSection}>
@@ -173,7 +176,7 @@ export default function OrganizationMemoryScreen() {
               <AppText variant="caption" color={colors.inkMuted}>Relay suppressed unchanged, wording-only, and uncertain differences.</AppText>
             </View>
           ) : null}
-          <Button disabled={compareMutation.isPending} icon="refresh" label={compareMutation.isPending ? 'Comparing…' : 'Re-run latest comparison'} tone="secondary" onPress={() => compareMutation.mutate({ roleId })} />
+          <Button disabled={compareMutation.isPending || plan.data?.plan !== 'pro'} icon="refresh" label={compareMutation.isPending ? 'Comparing…' : 'Re-run latest comparison'} tone="secondary" onPress={() => compareMutation.mutate({ roleId })} />
         </View>
       )}
 

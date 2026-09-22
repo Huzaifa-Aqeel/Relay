@@ -105,62 +105,18 @@ Deno.serve(async (request) => {
   try {
     const entitlement = await fetchEntitlement(config, data.user.id);
     const admin = createClient(config.supabaseUrl, config.serviceRoleKey, { auth: { persistSession: false } });
-    const { data: existing, error: existingError } = await admin
-      .from('organization_subscriptions')
-      .select('id, organization_id')
-      .eq('revenuecat_app_user_id', data.user.id)
-      .eq('entitlement_id', config.entitlementId)
-      .maybeSingle();
-    if (existingError) throw existingError;
-
-    let associatedOrganizationId = existing?.organization_id ?? null;
-    if (entitlement.isActive && organizationId) {
-      if (associatedOrganizationId && associatedOrganizationId !== organizationId) {
-        return json({
-          code: 'ENTITLEMENT_ALREADY_ASSOCIATED',
-          error: 'This Relay Pro purchase is already associated with another organization.',
-        }, 409);
-      }
-      const { data: organizationAssociation, error: associationError } = await admin
-        .from('organization_subscriptions')
-        .select('id, revenuecat_app_user_id, status, expires_at')
-        .eq('organization_id', organizationId)
-        .maybeSingle();
-      if (associationError) throw associationError;
-      if (organizationAssociation && organizationAssociation.id !== existing?.id) {
-        const associationIsActive = organizationAssociation.status === 'active'
-          && (!organizationAssociation.expires_at || new Date(organizationAssociation.expires_at) > new Date());
-        if (associationIsActive) {
-          return json({
-            code: 'ORGANIZATION_ALREADY_ASSOCIATED',
-            error: 'This organization already has a different active Relay Pro purchase association.',
-          }, 409);
-        }
-        const { error: detachError } = await admin
-          .from('organization_subscriptions')
-          .update({ organization_id: null })
-          .eq('id', organizationAssociation.id);
-        if (detachError) throw detachError;
-      }
-      associatedOrganizationId = organizationId;
-    }
-
-    const subscription = {
-      purchaser_user_id: data.user.id,
-      revenuecat_app_user_id: data.user.id,
-      entitlement_id: config.entitlementId,
-      status: entitlement.isActive ? 'active' : 'inactive',
-      product_identifier: entitlement.productIdentifier,
-      store: entitlement.store,
-      expires_at: entitlement.expiresAt,
-      revenuecat_checked_at: new Date().toISOString(),
-      organization_id: associatedOrganizationId,
-    };
-    const write = existing
-      ? admin.from('organization_subscriptions').update(subscription).eq('id', existing.id)
-      : admin.from('organization_subscriptions').insert(subscription);
-    const { error: updateError } = await write;
-    if (updateError) throw updateError;
+    const { data: associatedOrganizationId, error: updateError } = await admin.rpc('sync_verified_organization_subscription', {
+      requested_purchaser: data.user.id,
+      requested_organization: organizationId,
+      requested_entitlement: config.entitlementId,
+      requested_active: entitlement.isActive,
+      requested_product: entitlement.productIdentifier,
+      requested_store: entitlement.store,
+      requested_expiry: entitlement.expiresAt,
+    });
+    if (updateError) return json({ error: updateError.code === '42501'
+      ? 'Only the current Organization Owner can attach a purchase.'
+      : 'This purchase or Organization is already associated, or could not be verified. Try Restore purchases.' }, 409);
 
     return json({
       hasActiveEntitlement: entitlement.isActive,

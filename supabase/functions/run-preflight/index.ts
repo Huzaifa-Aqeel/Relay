@@ -291,8 +291,8 @@ Deno.serve(async (request) => {
     .eq('id', handoffId)
     .maybeSingle();
   if (handoffError || !handoff) return json({ error: 'This handoff is unavailable.' }, 404);
-  const { data: isAdmin, error: adminCheckError } = await client.rpc('is_organization_admin', {
-    requested_organization_id: handoff.organization_id,
+  const { data: isAdmin, error: adminCheckError } = await client.rpc('is_role_holder_for_handoff', {
+    requested_handoff_id: handoff.id,
   });
   if (adminCheckError || !isAdmin) return json({ error: 'You do not have permission to run Preflight.' }, 403);
 

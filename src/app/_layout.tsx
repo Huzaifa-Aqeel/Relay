@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Stack, router, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import type { PropsWithChildren } from 'react';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
@@ -23,7 +23,12 @@ const queryClient = new QueryClient({
 });
 
 function AuthGate({ children }: PropsWithChildren) {
-  const { status } = useAuth();
+  const { status, session } = useAuth();
+  const priorUser = useRef<string | null>(null);
+  useEffect(() => {
+    const user = session?.user.id ?? null;
+    if (user !== priorUser.current) { queryClient.clear(); priorUser.current = user; }
+  }, [session?.user.id]);
   const segments = useSegments();
 
   useEffect(() => {

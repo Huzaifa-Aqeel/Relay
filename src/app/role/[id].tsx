@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { InfoCard, InfoRow } from '@/components/ui/info-card';
 import { Screen } from '@/components/ui/screen';
 import { useOrganization, useRole, useRoleHandoffs } from '@/features/relay/queries';
+import { useContinuity } from '@/features/relay/continuity';
 import { colors, radii, spacing } from '@/theme/tokens';
 
 function titleCase(value: string) {
@@ -20,6 +21,7 @@ export default function RoleScreen() {
   const roleQuery = useRole(id);
   const organizationQuery = useOrganization(roleQuery.data?.organizationId);
   const handoffsQuery = useRoleHandoffs(id);
+  const continuity = useContinuity(roleQuery.data?.organizationId);
   const pending = roleQuery.isPending || handoffsQuery.isPending || (roleQuery.data && organizationQuery.isPending);
   const error = roleQuery.error ?? organizationQuery.error ?? handoffsQuery.error;
 
@@ -42,7 +44,9 @@ export default function RoleScreen() {
   const organization = organizationQuery.data;
   const handoffs = handoffsQuery.data ?? [];
   const current = handoffs[0];
-  const publishedCount = handoffs.filter((handoff) => handoff.status === 'published').length;
+  const overview = continuity.data?.roles.find(r => r.roleId === id);
+  const canMaintain = (handoffId: string) => overview?.handoffs.some(h => h.id === handoffId && h.canMaintain);
+  const publishedCount = overview?.handoffs.filter(h => h.publicationStatus).length ?? 0;
   const refreshing = roleQuery.isRefetching || organizationQuery.isRefetching || handoffsQuery.isRefetching;
   const refresh = () => void Promise.all([roleQuery.refetch(), organizationQuery.refetch(), handoffsQuery.refetch()]);
 
@@ -59,22 +63,19 @@ export default function RoleScreen() {
           <InfoRow label="Status" value={titleCase(current.status)} />
           <InfoRow label="Stage" value={titleCase(current.stage)} />
           <InfoRow label="Updated" value={new Date(current.updatedAt).toLocaleDateString()} />
-          <Button
+          {continuity.data?.isOwner ? <Button tone="secondary" label="Inspect approved knowledge" onPress={() => router.push(`/approved-knowledge?handoffId=${current.id}` as Href)} /> : null}
+          {canMaintain(current.id) ? <Button
             icon="arrow-right"
             label={current.status === 'published' ? 'Open handoff' : 'Continue handoff'}
             onPress={() => router.push((`/handoff/${current.id}`) as Href)}
-          />
+          /> : <AppText>Working sources are private to the assigned Role Holder.</AppText>}
         </InfoCard>
       ) : (
         <View style={styles.emptyCard}>
           <View style={styles.icon}><MaterialCommunityIcons color={colors.moss} name="file-document-plus-outline" size={34} /></View>
           <AppText variant="heading">No handoff yet</AppText>
           <AppText color={colors.inkMuted} style={styles.center}>Begin a private draft for this role and its current service period.</AppText>
-          <Button
-            icon="plus"
-            label="Start handoff"
-            onPress={() => router.push((`/handoff-new?organizationId=${organization.id}&roleId=${role.id}`) as Href)}
-          />
+          <AppText>The Organization Owner assigns a Role Holder to start this workspace.</AppText>
         </View>
       )}
 
@@ -89,7 +90,8 @@ export default function RoleScreen() {
               <Pressable
                 accessibilityRole="button"
                 key={handoff.id}
-                onPress={() => router.push((`/handoff/${handoff.id}`) as Href)}
+                disabled={!canMaintain(handoff.id) && !overview?.handoffs.find(h => h.id === handoff.id)?.publicationStatus}
+                onPress={() => router.push((canMaintain(handoff.id) ? `/handoff/${handoff.id}` : `/published-history?handoffId=${handoff.id}`) as Href)}
                 style={({ pressed }) => [styles.historyRow, pressed && styles.pressed]}>
                 <View>
                   <AppText variant="label">{handoff.servicePeriod}</AppText>
@@ -99,12 +101,6 @@ export default function RoleScreen() {
               </Pressable>
             ))}
           </View>
-          <Button
-            icon="plus"
-            label="Start another service period"
-            tone="secondary"
-            onPress={() => router.push((`/handoff-new?organizationId=${organization.id}&roleId=${role.id}`) as Href)}
-          />
           {publishedCount ? (
             <Button
               icon="book-open-page-variant-outline"
@@ -115,6 +111,7 @@ export default function RoleScreen() {
           ) : null}
         </>
       ) : null}
+      {continuity.data?.isOwner ? <Button label="Manage Role assignments / next period" tone="secondary" onPress={() => router.push(`/role-assignment?roleId=${id}` as Href)} /> : null}
     </Screen>
   );
 }

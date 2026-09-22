@@ -187,7 +187,8 @@ export default function HandoffPreviewScreen() {
         <View style={styles.publishCard}>
           <View style={styles.cardIcon}><MaterialCommunityIcons color={colors.moss} name="publish" size={29} /></View>
           <AppText variant="caption" color={colors.moss} style={styles.eyebrow}>READY TO PUBLISH</AppText>
-          <AppText variant="heading">Create the recipient snapshot</AppText>
+          <AppText variant="heading">Prepare to transfer the Role</AppText>
+          <AppText color={colors.inkMuted}>Publish when preparing a leadership transition. Early publication and deliberate republication are available when plans change.</AppText>
           <AppText color={colors.inkMuted}>Publishing includes these {items.length} approved items. Source files, transcripts, rejected proposals, and Preflight details stay private.</AppText>
           <Button disabled={mutating} icon="publish" label={publishMutation.isPending ? 'Publishing…' : 'Publish and create link'} onPress={publish} />
         </View>

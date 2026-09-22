@@ -6,9 +6,12 @@ import {
 } from '@/features/relay/shell-model';
 
 describe('Relay shell boundaries', () => {
-  it('keeps only shared handoffs and legal pages outside the auth gate', () => {
+  it('allows public recipient, legal, and sign-in invitation landing routes', () => {
     expect(isPublicRootSegment('shared')).toBe(true);
     expect(isPublicRootSegment('legal')).toBe(true);
+    expect(isPublicRootSegment('assignment')).toBe(true);
+    expect(isPublicRootSegment('role-assignment')).toBe(false);
+    expect(isPublicRootSegment('ownership-transfer')).toBe(false);
     expect(isPublicRootSegment('organization')).toBe(false);
     expect(isPublicRootSegment('handoff')).toBe(false);
     expect(isPublicRootSegment(undefined)).toBe(false);

@@ -21,6 +21,8 @@ import {
 } from '@/features/relay/queries';
 import { HANDOFF_STAGES } from '@/features/relay/shell-model';
 import type { HandoffSource, KnowledgeItem } from '@/features/relay/types';
+import { checkContinuityError, useContinuity, useContinuityAction } from '@/features/relay/continuity';
+import { requireSupabase } from '@/lib/supabase';
 import { colors, radii, spacing } from '@/theme/tokens';
 
 function sourcePreview(source: HandoffSource) {
@@ -152,6 +154,7 @@ function KnowledgeCard({
             {meta.label}
           </AppText>
           <AppText variant="label">{item.title}</AppText>
+          {item.inheritedFromServicePeriod ? <AppText variant="caption">Carried forward from {item.inheritedFromServicePeriod}</AppText> : null}
           <AppText color={colors.inkMuted} numberOfLines={4}>{item.content}</AppText>
         </View>
         {editable ? <MaterialCommunityIcons color={colors.inkMuted} name="chevron-right" size={22} /> : null}
@@ -187,6 +190,11 @@ export default function HandoffScreen() {
   const handoffQuery = useHandoff(id);
   const roleQuery = useRole(handoffQuery.data?.roleId);
   const organizationQuery = useOrganization(handoffQuery.data?.organizationId);
+  const continuity = useContinuity(handoffQuery.data?.organizationId);
+  const reopen = useContinuityAction(async () => {
+    const { error } = await requireSupabase().rpc('reopen_handoff_for_revision', { requested_handoff_id: id });
+    checkContinuityError(error);
+  });
   const sourcesQuery = useHandoffSources(id);
   const knowledgeQuery = useKnowledgeItems(id);
   const moveMutation = useMoveKnowledgeItem();
@@ -219,6 +227,9 @@ export default function HandoffScreen() {
   }
 
   const handoff = handoffQuery.data;
+  if (continuity.data && !continuity.data.roles.some(r => r.handoffs.some(h => h.id === id && h.canMaintain))) {
+    return <Screen><AppText>This workspace is private to its assigned Role Holder.</AppText><Button label="Open published history" onPress={() => router.replace(`/published-history?handoffId=${id}` as Href)} /></Screen>;
+  }
   const role = roleQuery.data;
   const organization = organizationQuery.data;
   const sources = sourcesQuery.data;
@@ -283,6 +294,9 @@ export default function HandoffScreen() {
         <AppText variant="caption" color={colors.moss} style={styles.eyebrow}>{organization.name.toUpperCase()}</AppText>
         <AppText variant="display">{role.title} handoff</AppText>
         <AppText color={colors.inkMuted}>{handoff.servicePeriod} · {handoff.status === 'draft' ? 'Private draft' : 'Published snapshot'}</AppText>
+        <AppText color={colors.inkMuted}>Keep this living workspace current throughout your term. Review and publish when preparing to transfer the Role; routine edits are saved without publishing.</AppText>
+        {handoff.status === 'published' ? <Button tone="secondary" label="Resume working draft" disabled={reopen.isPending} onPress={() => reopen.mutate()} /> : null}
+        {reopen.error ? <AppText>{reopen.error.message}</AppText> : null}
       </View>
 
       <View accessibilityLabel={`Handoff stage: ${HANDOFF_STAGES[activeStage]}`} style={styles.stages}>

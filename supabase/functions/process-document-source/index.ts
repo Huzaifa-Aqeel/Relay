@@ -538,8 +538,8 @@ Deno.serve(async (request) => {
     return json({ error: 'This source is not a processable document.' }, 400);
   }
 
-  const { data: isAdmin, error: adminCheckError } = await userClient.rpc('is_organization_admin', {
-    requested_organization_id: source.organization_id,
+  const { data: isAdmin, error: adminCheckError } = await userClient.rpc('is_role_holder_for_handoff', {
+    requested_handoff_id: source.handoff_id,
   });
   if (adminCheckError || !isAdmin) return json({ error: 'You do not have permission to process this source.' }, 403);
 
