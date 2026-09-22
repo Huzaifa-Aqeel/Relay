@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import * as Crypto from 'expo-crypto';
 import { useEffect } from 'react';
 
 import { useAuth } from '@/features/auth/auth-provider';
@@ -8,8 +9,7 @@ import {
   advanceHandoffToPreview,
   askRelay,
   createHandoff,
-  createFileSource,
-  createManualKnowledgeItem,
+  createDocumentSource,
   createOrganization,
   createRole,
   createTypedSource,
@@ -45,25 +45,29 @@ import {
   listRoles,
   listSourceVersionChanges,
   moveKnowledgeItem,
-  processSource,
+  processDocumentSource,
   publishHandoff,
   replaceHandoffLink,
   resolvePreflightFinding,
   revokeHandoffLink,
   returnHandoffToCapture,
   runPreflight,
+  saveVoiceSource,
+  transcribeVoiceRecording,
   updateSourceText,
   updateKnowledgeItem,
 } from '@/features/relay/repository';
 import type {
   HandoffInput,
-  KnowledgeItemInput,
+  KnowledgeItemUpdateInput,
   OrganizationInput,
   PreflightResolutionInput,
   RoleInput,
-  SourceFileInput,
+  SaveVoiceSourceInput,
+  DocumentSourceInput,
   SourceTextInput,
   TypedSourceInput,
+  VoiceRecordingInput,
 } from '@/features/relay/types';
 
 export const relayKeys = {
@@ -92,6 +96,10 @@ export const relayKeys = {
   roleMemoryChanges: (comparisonId: string) => ['relay', 'role-memory-changes', comparisonId] as const,
   roleLessons: (roleId: string) => ['relay', 'role-lessons', roleId] as const,
 };
+
+function realtimeTopic(scope: string, id: string) {
+  return `${scope}:${id}:${Crypto.randomUUID()}`;
+}
 
 function useCloudQueryEnabled(extra = true) {
   const { isCloudEnabled, status } = useAuth();
@@ -169,7 +177,7 @@ export function useHandoffSources(handoffId: string | undefined) {
     if (!enabled || !handoffId) return;
     const client = requireSupabase();
     const channel = client
-      .channel(`handoff-sources:${handoffId}`)
+      .channel(realtimeTopic('handoff-sources', handoffId))
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'sources', filter: `handoff_id=eq.${handoffId}` },
@@ -203,7 +211,7 @@ export function useHandoffSource(id: string | undefined) {
     if (!enabled || !id) return;
     const client = requireSupabase();
     const channel = client
-      .channel(`source:${id}`)
+      .channel(realtimeTopic('source', id))
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'sources', filter: `id=eq.${id}` },
@@ -448,13 +456,13 @@ export function useCreateTypedSource() {
   });
 }
 
-export function useCreateFileSource() {
+export function useCreateDocumentSource() {
   const queryClient = useQueryClient();
   const { session } = useAuth();
   return useMutation({
-    mutationFn: (input: SourceFileInput) => {
+    mutationFn: (input: DocumentSourceInput) => {
       if (!session?.user.id) throw new Error('Sign in again to save this source.');
-      return createFileSource(input, session.user.id);
+      return createDocumentSource(input, session.user.id);
     },
     onSuccess: (result, input) => Promise.all([
       queryClient.invalidateQueries({ queryKey: relayKeys.handoffSources(input.handoffId) }),
@@ -464,11 +472,32 @@ export function useCreateFileSource() {
   });
 }
 
-export function useRetrySourceProcessing() {
+export function useTranscribeVoiceRecording() {
+  return useMutation({
+    mutationFn: (input: VoiceRecordingInput) => transcribeVoiceRecording(input),
+  });
+}
+
+export function useSaveVoiceSource() {
+  const queryClient = useQueryClient();
+  const { session } = useAuth();
+  return useMutation({
+    mutationFn: (input: SaveVoiceSourceInput) => {
+      if (!session?.user.id) throw new Error('Sign in again to save this voice note.');
+      return saveVoiceSource(input, session.user.id);
+    },
+    onSuccess: (sourceId, input) => Promise.all([
+      queryClient.invalidateQueries({ queryKey: relayKeys.handoffSources(input.recording.handoffId) }),
+      queryClient.invalidateQueries({ queryKey: relayKeys.source(sourceId) }),
+      queryClient.invalidateQueries({ queryKey: relayKeys.handoff(input.recording.handoffId) }),
+    ]),
+  });
+}
+
+export function useRetryDocumentProcessing() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, kind }: { id: string; handoffId: string; kind: 'voice' | 'document' }) =>
-      processSource(id, kind),
+    mutationFn: ({ id }: { id: string; handoffId: string }) => processDocumentSource(id),
     onSettled: (_, __, variables) => Promise.all([
       queryClient.invalidateQueries({ queryKey: relayKeys.handoffSources(variables.handoffId) }),
       queryClient.invalidateQueries({ queryKey: relayKeys.source(variables.id) }),
@@ -502,28 +531,13 @@ export function useUpdateSourceText() {
   });
 }
 
-export function useCreateManualKnowledgeItem() {
-  const queryClient = useQueryClient();
-  const { session } = useAuth();
-  return useMutation({
-    mutationFn: (input: KnowledgeItemInput) => {
-      if (!session?.user.id) throw new Error('Sign in again to save this knowledge.');
-      return createManualKnowledgeItem(input, session.user.id);
-    },
-    onSuccess: (_, input) => Promise.all([
-      queryClient.invalidateQueries({ queryKey: relayKeys.knowledgeItems(input.handoffId) }),
-      queryClient.invalidateQueries({ queryKey: relayKeys.handoff(input.handoffId) }),
-    ]),
-  });
-}
-
 export function useUpdateKnowledgeItem() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ id, input }: {
       id: string;
       handoffId: string;
-      input: Pick<KnowledgeItemInput, 'knowledgeType' | 'title' | 'content'>;
+      input: KnowledgeItemUpdateInput;
     }) => updateKnowledgeItem(id, input),
     onSuccess: (_, variables) => Promise.all([
       queryClient.invalidateQueries({ queryKey: relayKeys.knowledgeItems(variables.handoffId) }),

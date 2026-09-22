@@ -13,7 +13,7 @@ import { SOURCE_META } from '@/features/relay/knowledge-meta';
 import {
   useHandoffSource,
   useGenerateKnowledgeProposals,
-  useRetrySourceProcessing,
+  useRetryDocumentProcessing,
   useSourceVersionChanges,
   useUpdateSourceText,
 } from '@/features/relay/queries';
@@ -25,7 +25,7 @@ function SourceEditor({ source, versionChanges }: { source: HandoffSource; versi
   const [textContent, setTextContent] = useState(source.textContent ?? '');
   const [localError, setLocalError] = useState<string | null>(null);
   const updateMutation = useUpdateSourceText();
-  const retryMutation = useRetrySourceProcessing();
+  const retryMutation = useRetryDocumentProcessing();
   const structureMutation = useGenerateKnowledgeProposals();
   const meta = SOURCE_META[source.kind];
   const textLabel = source.kind === 'voice' ? 'Editable transcript' : source.kind === 'document' ? 'Extracted text or manual notes' : 'Original notes';
@@ -33,7 +33,7 @@ function SourceEditor({ source, versionChanges }: { source: HandoffSource; versi
   async function save() {
     setLocalError(null);
     if (!title.trim()) return setLocalError('Give this source a title.');
-    if (!textContent.trim()) return setLocalError(source.kind === 'voice' ? 'Add or wait for a transcript first.' : 'Add some source text first.');
+    if (!textContent.trim()) return setLocalError(source.kind === 'voice' ? 'Keep some reviewed transcript text before saving.' : 'Add some source text first.');
     await updateMutation.mutateAsync({ id: source.id, handoffId: source.handoffId, title, textContent });
     router.replace((`/handoff/${source.handoffId}`) as Href);
   }
@@ -120,7 +120,7 @@ function SourceEditor({ source, versionChanges }: { source: HandoffSource; versi
           label={textLabel}
           maxLength={50000}
           multiline
-          placeholder={source.kind === 'voice' ? 'Add the transcript manually if transcription is unavailable…' : 'Add the useful text from this source…'}
+          placeholder={source.kind === 'voice' ? 'Review the confirmed transcript…' : 'Add the useful text from this source…'}
           style={styles.sourceText}
           value={textContent}
           onChangeText={setTextContent}
@@ -141,13 +141,13 @@ function SourceEditor({ source, versionChanges }: { source: HandoffSource; versi
         {source.isCurrent ? (
           <Button disabled={updateMutation.isPending || retryMutation.isPending} icon="content-save-outline" label={updateMutation.isPending ? 'Saving…' : 'Save source text'} onPress={() => void save()} />
         ) : null}
-        {source.isCurrent && source.kind !== 'typed_text' && source.processingStatus === 'failed' ? (
+        {source.isCurrent && source.kind === 'document' && source.processingStatus === 'failed' ? (
           <Button
             disabled={updateMutation.isPending || retryMutation.isPending}
             icon="refresh"
             label={retryMutation.isPending ? 'Retrying…' : 'Retry processing'}
             tone="secondary"
-            onPress={() => retryMutation.mutate({ id: source.id, handoffId: source.handoffId, kind: source.kind as 'voice' | 'document' })}
+            onPress={() => retryMutation.mutate({ id: source.id, handoffId: source.handoffId })}
           />
         ) : null}
         {source.isCurrent && source.processingStatus === 'ready' && source.textContent && source.structuringStatus !== 'ready' ? (

@@ -212,7 +212,7 @@ export default function HandoffReviewScreen() {
         ) : (
           <View style={styles.empty}>
             <AppText variant="label">No approved knowledge yet</AppText>
-            <AppText color={colors.inkMuted}>Accept a proposal or return to Capture and add an item manually.</AppText>
+            <AppText color={colors.inkMuted}>Accept a proposal created from the role&apos;s captured evidence.</AppText>
           </View>
         )}
       </View>

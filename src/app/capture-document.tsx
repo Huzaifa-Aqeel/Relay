@@ -10,7 +10,7 @@ import { LoadingState, MessageState } from '@/components/ui/async-state';
 import { Button } from '@/components/ui/button';
 import { FormInput, FormSection } from '@/components/ui/form-controls';
 import { Screen } from '@/components/ui/screen';
-import { useCreateFileSource, useHandoff, useRole } from '@/features/relay/queries';
+import { useCreateDocumentSource, useHandoff, useRole } from '@/features/relay/queries';
 import { colors, radii, spacing } from '@/theme/tokens';
 
 const MAX_SOURCE_BYTES = 25 * 1024 * 1024;
@@ -56,7 +56,7 @@ export default function CaptureDocumentScreen() {
   const { handoffId } = useLocalSearchParams<{ handoffId: string }>();
   const handoffQuery = useHandoff(handoffId);
   const roleQuery = useRole(handoffQuery.data?.roleId);
-  const mutation = useCreateFileSource();
+  const mutation = useCreateDocumentSource();
   const [asset, setAsset] = useState<DocumentPicker.DocumentPickerAsset | null>(null);
   const [title, setTitle] = useState('');
   const [localError, setLocalError] = useState<string | null>(null);
@@ -163,7 +163,7 @@ export default function CaptureDocumentScreen() {
         <MaterialCommunityIcons color={colors.saffron} name="shield-lock-outline" size={24} />
         <View style={styles.noteCopy}>
           <AppText variant="label">Private source · 25 MB maximum</AppText>
-          <AppText variant="caption" color={colors.inkMuted}>Uploading never publishes this file. You can leave while Relay processes it. If processing fails, the original remains available and manual entry still works.</AppText>
+          <AppText variant="caption" color={colors.inkMuted}>Uploading never publishes this file. You can leave while Relay processes it. If processing fails, the original remains available for review.</AppText>
         </View>
       </View>
 

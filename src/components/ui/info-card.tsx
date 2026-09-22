@@ -1,4 +1,4 @@
-import type { PropsWithChildren } from 'react';
+import type { PropsWithChildren, ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/ui/app-text';
@@ -7,16 +7,22 @@ import { colors, radii, shadow, spacing } from '@/theme/tokens';
 export function InfoCard({
   title,
   eyebrow,
+  action,
   children,
-}: PropsWithChildren<{ title: string; eyebrow?: string }>) {
+}: PropsWithChildren<{ title: string; eyebrow?: string; action?: ReactNode }>) {
   return (
     <View style={styles.card}>
-      {eyebrow ? (
-        <AppText variant="caption" color={colors.moss} style={styles.eyebrow}>
-          {eyebrow.toUpperCase()}
-        </AppText>
-      ) : null}
-      <AppText variant="heading">{title}</AppText>
+      <View style={styles.header}>
+        <View style={styles.headerCopy}>
+          {eyebrow ? (
+            <AppText variant="caption" color={colors.moss} style={styles.eyebrow}>
+              {eyebrow.toUpperCase()}
+            </AppText>
+          ) : null}
+          <AppText variant="heading">{title}</AppText>
+        </View>
+        {action}
+      </View>
       <View style={styles.content}>{children}</View>
     </View>
   );
@@ -45,6 +51,15 @@ const styles = StyleSheet.create({
   },
   eyebrow: {
     letterSpacing: 1.2,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+  },
+  headerCopy: {
+    flex: 1,
+    gap: spacing.xs,
   },
   content: {
     marginTop: spacing.sm,

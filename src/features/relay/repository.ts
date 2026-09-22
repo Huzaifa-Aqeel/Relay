@@ -14,7 +14,7 @@ import type {
   HandoffPublication,
   HandoffSource,
   KnowledgeItem,
-  KnowledgeItemInput,
+  KnowledgeItemUpdateInput,
   KnowledgeProvenance,
   Organization,
   OrganizationInput,
@@ -30,11 +30,14 @@ import type {
   MemorySnapshot,
   RoleMemoryChange,
   RoleMemoryComparison,
-  SourceFileInput,
+  DocumentSourceInput,
   SourceUploadResult,
+  SaveVoiceSourceInput,
   SourceTextInput,
   SourceVersionChange,
   TypedSourceInput,
+  VoiceRecordingInput,
+  VoiceTranscriptPreview,
 } from '@/features/relay/types';
 
 type OrganizationRow = Database['public']['Tables']['organizations']['Row'];
@@ -309,6 +312,11 @@ const organizationPlanSchema = z.object({
   expiresAt: z.string().nullable(),
 }).strict();
 
+const voiceTranscriptPreviewSchema = z.object({
+  transcript: z.string().trim().min(1).max(50_000),
+  providerReference: z.string().max(500).nullable(),
+}).strict();
+
 async function signedLogo(path: string | null) {
   if (!path) return null;
   const { data, error } = await requireSupabase().storage.from(LOGO_BUCKET).createSignedUrl(path, 3600);
@@ -362,6 +370,48 @@ function hexDigest(buffer: ArrayBuffer) {
 
 async function sha256(buffer: ArrayBuffer) {
   return hexDigest(await Crypto.digest(Crypto.CryptoDigestAlgorithm.SHA256, new Uint8Array(buffer)));
+}
+
+export async function transcribeVoiceRecording(input: VoiceRecordingInput): Promise<VoiceTranscriptPreview> {
+  if (input.file.size && input.file.size > MAX_SOURCE_BYTES) {
+    throw new Error('Record a voice note shorter than 25 MB.');
+  }
+
+  const body = await readFileBody(input.file.uri);
+  if (body.byteLength > MAX_SOURCE_BYTES) throw new Error('Record a voice note shorter than 25 MB.');
+  const result = await requireSupabase().functions.invoke('transcribe-source', {
+    body,
+    headers: {
+      'content-type': input.file.mimeType,
+      'x-relay-handoff-id': input.handoffId,
+      'x-relay-file-name': safeFileName(input.file.name),
+    },
+  });
+  if (result.error) {
+    throw new Error("We couldn't transcribe this recording.");
+  }
+  const preview = voiceTranscriptPreviewSchema.parse(result.data);
+  return {
+    organizationId: input.organizationId,
+    handoffId: input.handoffId,
+    ...preview,
+  };
+}
+
+export async function saveVoiceSource(input: SaveVoiceSourceInput, userId: string) {
+  const { recording } = input;
+  const { data, error } = await requireSupabase().from('sources').insert({
+    organization_id: recording.organizationId,
+    handoff_id: recording.handoffId,
+    created_by: userId,
+    kind: 'voice',
+    title: input.title.trim(),
+    text_content: recording.transcript.trim(),
+    processing_status: 'ready',
+    provider_reference: recording.providerReference,
+  }).select('id').single();
+  throwDataError(error);
+  return data.id;
 }
 
 export async function listOrganizations() {
@@ -526,10 +576,8 @@ export async function createTypedSource(input: TypedSourceInput, userId: string)
   return data.id;
 }
 
-async function markProcessingFailed(sourceId: string, kind: SourceFileInput['kind']) {
-  const reason = kind === 'voice'
-    ? 'The recording is saved, but transcription could not start. Retry or add the transcript manually.'
-    : 'The document is saved, but Relay could not reach document processing. Check your connection and retry.';
+async function markDocumentProcessingFailed(sourceId: string) {
+  const reason = 'The document is saved, but Relay could not reach document processing. Check your connection and retry.';
   const { error } = await requireSupabase()
     .from('sources')
     .update({ processing_status: 'failed', failure_reason: reason })
@@ -537,7 +585,7 @@ async function markProcessingFailed(sourceId: string, kind: SourceFileInput['kin
   throwDataError(error);
 }
 
-export async function processSource(sourceId: string, kind: SourceFileInput['kind']) {
+export async function processDocumentSource(sourceId: string) {
   const client = requireSupabase();
   const reset = await client
     .from('sources')
@@ -545,24 +593,19 @@ export async function processSource(sourceId: string, kind: SourceFileInput['kin
     .eq('id', sourceId);
   throwDataError(reset.error);
 
-  const functionName = kind === 'voice' ? 'transcribe-source' : 'process-document-source';
-  const result = await client.functions.invoke(functionName, { body: { sourceId } });
+  const result = await client.functions.invoke('process-document-source', { body: { sourceId } });
   if (result.error) {
     const { data: current } = await client
       .from('sources')
       .select('processing_status')
       .eq('id', sourceId)
       .maybeSingle();
-    if (!current || current.processing_status === 'processing') await markProcessingFailed(sourceId, kind);
-    throw new Error(
-      kind === 'voice'
-        ? 'Your recording is safe, but transcription is not available yet.'
-        : 'Your document is safe, but processing is not available yet.',
-    );
+    if (!current || current.processing_status === 'processing') await markDocumentProcessingFailed(sourceId);
+    throw new Error('Your document is safe, but processing is not available yet.');
   }
 }
 
-export async function createFileSource(input: SourceFileInput, userId: string): Promise<SourceUploadResult> {
+export async function createDocumentSource(input: DocumentSourceInput, userId: string): Promise<SourceUploadResult> {
   if (input.file.size && input.file.size > MAX_SOURCE_BYTES) {
     throw new Error('Choose a file smaller than 25 MB.');
   }
@@ -572,44 +615,42 @@ export async function createFileSource(input: SourceFileInput, userId: string): 
   const body = await readFileBody(input.file.uri);
   if (body.byteLength > MAX_SOURCE_BYTES) throw new Error('Choose a file smaller than 25 MB.');
 
-  const contentHash = input.kind === 'document' ? await sha256(body) : null;
-  const normalized = input.kind === 'document' ? normalizeSourceFilename(input.file.name) : null;
-  let supersedesSourceId = input.kind === 'document' ? input.supersedesSourceId ?? null : null;
+  const contentHash = await sha256(body);
+  const normalized = normalizeSourceFilename(input.file.name);
+  let supersedesSourceId = input.supersedesSourceId ?? null;
   let versionMatchBasis: 'filename_and_type' | 'human_confirmed' | null = null;
 
-  if (input.kind === 'document') {
-    const { data: existing, error: existingError } = await client
-      .from('sources')
-      .select('id, title, normalized_filename, content_hash, mime_type, is_current')
-      .eq('organization_id', input.organizationId)
-      .eq('handoff_id', input.handoffId)
-      .eq('kind', 'document')
-      .order('created_at', { ascending: false });
-    throwDataError(existingError);
+  const { data: existing, error: existingError } = await client
+    .from('sources')
+    .select('id, title, normalized_filename, content_hash, mime_type, is_current')
+    .eq('organization_id', input.organizationId)
+    .eq('handoff_id', input.handoffId)
+    .eq('kind', 'document')
+    .order('created_at', { ascending: false });
+  throwDataError(existingError);
 
-    const match = classifySourceVersion(input.file.name, input.file.mimeType, contentHash!, existing.map((source) => ({
-      id: source.id,
-      title: source.title,
-      normalizedFilename: source.normalized_filename,
-      contentHash: source.content_hash,
-      mimeType: source.mime_type,
-      isCurrent: source.is_current,
-    })));
-    if (match.kind === 'duplicate') {
-      return { status: 'duplicate', sourceId: match.source.id, title: match.source.title };
-    }
+  const match = classifySourceVersion(input.file.name, input.file.mimeType, contentHash, existing.map((source) => ({
+    id: source.id,
+    title: source.title,
+    normalizedFilename: source.normalized_filename,
+    contentHash: source.content_hash,
+    mimeType: source.mime_type,
+    isCurrent: source.is_current,
+  })));
+  if (match.kind === 'duplicate') {
+    return { status: 'duplicate', sourceId: match.source.id, title: match.source.title };
+  }
 
-    if (supersedesSourceId) {
-      const prior = existing.find((source) => source.id === supersedesSourceId && source.is_current);
-      if (!prior) throw new Error('The source you selected as the prior version is no longer current.');
-      versionMatchBasis = 'human_confirmed';
-    } else if (input.versionDecision !== 'separate') {
-      if (match.kind === 'new_version') {
-        supersedesSourceId = match.source.id;
-        versionMatchBasis = 'filename_and_type';
-      } else if (match.kind === 'confirmation_required') {
-        return { status: 'confirmation_required', sourceId: match.source.id, title: match.source.title };
-      }
+  if (supersedesSourceId) {
+    const prior = existing.find((source) => source.id === supersedesSourceId && source.is_current);
+    if (!prior) throw new Error('The source you selected as the prior version is no longer current.');
+    versionMatchBasis = 'human_confirmed';
+  } else if (input.versionDecision !== 'separate') {
+    if (match.kind === 'new_version') {
+      supersedesSourceId = match.source.id;
+      versionMatchBasis = 'filename_and_type';
+    } else if (match.kind === 'confirmation_required') {
+      return { status: 'confirmation_required', sourceId: match.source.id, title: match.source.title };
     }
   }
 
@@ -625,7 +666,7 @@ export async function createFileSource(input: SourceFileInput, userId: string): 
     organization_id: input.organizationId,
     handoff_id: input.handoffId,
     created_by: userId,
-    kind: input.kind,
+    kind: 'document',
     title: input.title.trim(),
     storage_path: path,
     mime_type: input.file.mimeType,
@@ -650,7 +691,7 @@ export async function createFileSource(input: SourceFileInput, userId: string): 
   }
 
   try {
-    await processSource(id, input.kind);
+    await processDocumentSource(id);
   } catch {
     // The source and its plain-language failure state are intentionally retained.
   }
@@ -723,26 +764,7 @@ export async function getKnowledgeItem(id: string) {
   return mapKnowledgeItem(data);
 }
 
-export async function createManualKnowledgeItem(input: KnowledgeItemInput, userId: string) {
-  const { data, error } = await requireSupabase()
-    .from('knowledge_items')
-    .insert({
-      organization_id: input.organizationId,
-      handoff_id: input.handoffId,
-      created_by: userId,
-      knowledge_type: input.knowledgeType,
-      title: input.title.trim(),
-      content: input.content.trim(),
-      status: 'approved',
-      origin: 'manual',
-    })
-    .select('id')
-    .single();
-  throwDataError(error);
-  return data.id;
-}
-
-export async function updateKnowledgeItem(id: string, input: Pick<KnowledgeItemInput, 'knowledgeType' | 'title' | 'content'>) {
+export async function updateKnowledgeItem(id: string, input: KnowledgeItemUpdateInput) {
   const { error } = await requireSupabase()
     .from('knowledge_items')
     .update({

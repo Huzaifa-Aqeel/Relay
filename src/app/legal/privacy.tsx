@@ -16,8 +16,8 @@ export default function PrivacyScreen() {
       </View>
 
       <View style={styles.cards}>
-        <InfoCard title="Private by default">
-          <AppText>Draft handoffs, recordings, uploads, transcripts, and unapproved proposals remain private to authorized organization members.</AppText>
+        <InfoCard title="Draft content">
+          <AppText>Draft handoffs, voice transcripts, uploads, and unapproved proposals remain private to authorized organization members. Relay does not retain voice audio after transcription.</AppText>
         </InfoCard>
         <InfoCard title="Published access">
           <AppText>A recipient receives only the approved content included in a valid published handoff. A shared token must not expose unrelated organization data.</AppText>
@@ -37,4 +37,3 @@ const styles = StyleSheet.create({
   heading: { gap: spacing.xs, marginTop: spacing.lg, marginBottom: spacing.xl },
   cards: { gap: spacing.md },
 });
-

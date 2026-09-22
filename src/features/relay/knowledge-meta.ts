@@ -17,6 +17,6 @@ export const KNOWLEDGE_META: Record<KnowledgeType, { label: string; icon: IconNa
 
 export const SOURCE_META: Record<SourceKind, { label: string; icon: IconName }> = {
   typed_text: { label: 'Typed notes', icon: 'text-box-outline' },
-  voice: { label: 'Voice recording', icon: 'microphone-outline' },
+  voice: { label: 'Voice transcript', icon: 'microphone-outline' },
   document: { label: 'Document', icon: 'file-document-outline' },
 };

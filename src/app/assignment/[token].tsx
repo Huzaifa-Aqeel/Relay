@@ -27,14 +27,14 @@ export default function AssignmentInviteScreen() {
   const action = useContinuityAction(async (accept:boolean) => {
     if (accept) { const id = await acceptAssignment(token); router.replace(`/handoff/${id}` as Href); }
     else if (signup) {
-      const result = await auth.signUp(name,email,password);
-      if (result.needsEmailConfirmation) setNotice('Confirm your email, then return to this invite link and sign in to accept.');
+      const result = await auth.signUp(name,email,password,`/assignment/${token}`);
+      if (result.needsEmailConfirmation) setNotice('Confirm your email on this device. Relay will bring you back to this invitation.');
     } else await auth.signIn(email,password);
   });
   return <Screen>
     <AppText variant="display">Role assignment invitation</AppText>
     {!valid ? <AppText>This invite is unavailable.</AppText> : auth.status !== 'authenticated' ? <>
-      <AppText>Sign in to inspect the Organization, Role, and service period before you explicitly accept.</AppText>
+      <AppText>Sign in or create an account to continue with this Role invitation.</AppText>
       {signup ? <FormInput label="Your name" value={name} onChangeText={setName} /> : null}
       <FormInput label="Email" autoCapitalize="none" keyboardType="email-address" value={email} onChangeText={setEmail} />
       <FormInput label="Password" secureTextEntry value={password} onChangeText={setPassword} />

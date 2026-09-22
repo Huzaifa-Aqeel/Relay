@@ -150,10 +150,10 @@ export type TypedSourceInput = {
   textContent: string;
 };
 
-export type SourceFileInput = {
+export type DocumentSourceInput = {
   organizationId: string;
   handoffId: string;
-  kind: 'voice' | 'document';
+  kind: 'document';
   title: string;
   file: {
     uri: string;
@@ -169,6 +169,29 @@ export type SourceUploadResult =
   | { status: 'created'; sourceId: string }
   | { status: 'duplicate'; sourceId: string; title: string }
   | { status: 'confirmation_required'; sourceId: string; title: string };
+
+export type VoiceRecordingInput = {
+  organizationId: string;
+  handoffId: string;
+  file: {
+    uri: string;
+    name: string;
+    mimeType: string;
+    size?: number | null;
+  };
+};
+
+export type VoiceTranscriptPreview = {
+  organizationId: string;
+  handoffId: string;
+  transcript: string;
+  providerReference: string | null;
+};
+
+export type SaveVoiceSourceInput = {
+  recording: VoiceTranscriptPreview;
+  title: string;
+};
 
 export type SourceVersionChange = {
   id: string;
@@ -190,9 +213,7 @@ export type SourceTextInput = {
   textContent: string;
 };
 
-export type KnowledgeItemInput = {
-  organizationId: string;
-  handoffId: string;
+export type KnowledgeItemUpdateInput = {
   knowledgeType: KnowledgeType;
   title: string;
   content: string;

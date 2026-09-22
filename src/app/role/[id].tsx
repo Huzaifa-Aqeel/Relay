@@ -8,6 +8,7 @@ import { LoadingState, MessageState } from '@/components/ui/async-state';
 import { Button } from '@/components/ui/button';
 import { InfoCard, InfoRow } from '@/components/ui/info-card';
 import { Screen } from '@/components/ui/screen';
+import { useAuth } from '@/features/auth/auth-provider';
 import { useOrganization, useRole, useRoleHandoffs } from '@/features/relay/queries';
 import { useContinuity } from '@/features/relay/continuity';
 import { colors, radii, spacing } from '@/theme/tokens';
@@ -18,6 +19,7 @@ function titleCase(value: string) {
 
 export default function RoleScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const auth = useAuth();
   const roleQuery = useRole(id);
   const organizationQuery = useOrganization(roleQuery.data?.organizationId);
   const handoffsQuery = useRoleHandoffs(id);
@@ -45,6 +47,7 @@ export default function RoleScreen() {
   const handoffs = handoffsQuery.data ?? [];
   const current = handoffs[0];
   const overview = continuity.data?.roles.find(r => r.roleId === id);
+  const canPlanSuccession = Boolean(continuity.data?.isOwner || overview?.assignments[0]?.userId === auth.session?.user.id);
   const canMaintain = (handoffId: string) => overview?.handoffs.some(h => h.id === handoffId && h.canMaintain);
   const publishedCount = overview?.handoffs.filter(h => h.publicationStatus).length ?? 0;
   const refreshing = roleQuery.isRefetching || organizationQuery.isRefetching || handoffsQuery.isRefetching;
@@ -111,7 +114,13 @@ export default function RoleScreen() {
           ) : null}
         </>
       ) : null}
-      {continuity.data?.isOwner ? <Button label="Manage Role assignments / next period" tone="secondary" onPress={() => router.push(`/role-assignment?roleId=${id}` as Href)} /> : null}
+      {canPlanSuccession ? (
+        <Button
+          label={overview?.assignments.length ? `Plan next ${role.title}` : `Assign ${role.title}`}
+          tone="secondary"
+          onPress={() => router.push(`/role-assignment?roleId=${id}` as Href)}
+        />
+      ) : null}
     </Screen>
   );
 }

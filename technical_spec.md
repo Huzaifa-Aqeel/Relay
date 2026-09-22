@@ -57,7 +57,9 @@ Provider secrets are stored only in Supabase Edge Function secrets or an ignored
 | Proposal response mode | Strict JSON Schema |
 
 - The same server-only `GROQ_API_KEY` is used by separate Supabase Edge Functions for transcription and reasoning.
-- Voice files remain private in Supabase Storage. The server downloads a recording, sends it to Groq transcription, and stores the returned text as an editable source transcript.
+- Stopped voice audio remains temporary on the device and is sent as the authenticated Edge Function request body directly to Groq; it is never written to Supabase Storage or `sources`.
+- On successful transcription, the client shows the full editable transcript. Only explicit **Continue** confirmation inserts a Ready voice Source containing the reviewed transcript and Groq provenance reference; no audio object is uploaded or retained.
+- On transcription failure, Relay offers **Record again** and the existing typed-note capture through **Write instead**. It creates no failed voice Source, persistent audio object, retry queue, or saved-source reprocessing state.
 - AI structuring accepts only the seven allow-listed knowledge types. Each proposal must include an exact source excerpt, pass server-side validation, and enter Relay as `proposed` rather than approved.
 - Provider output never writes directly to published or approved knowledge.
 
@@ -67,7 +69,7 @@ Provider secrets are stored only in Supabase Edge Function secrets or an ignored
 - While a Handoff or source screen is mounted, it subscribes only to matching `sources` updates through Supabase Realtime Postgres Changes and invalidates the relevant local query cache when an event arrives.
 - Relay does not use fixed-interval Postgres/PostgREST polling for processing or structuring state.
 - The document Edge Function may poll the external Unstructured job endpoint within a bounded processing attempt because that provider operation is asynchronous; this does not poll Supabase.
-- Groq transcription and proposal generation complete within their originating Edge Function request and update the source once.
+- Groq transcription returns the candidate transcript within its originating Edge Function request without mutating a Source. Proposal generation still updates only an already-confirmed Source.
 
 ## Preflight contract
 
@@ -120,6 +122,14 @@ Provider secrets are stored only in Supabase Edge Function secrets or an ignored
 - `expo-clipboard` provides local copy behavior and `react-native-qrcode-svg` renders QR codes through Expo-compatible `react-native-svg`.
 - The installed versions are compatible with Expo SDK 57 and require neither a custom config plugin nor manual native configuration. Normal Expo native builds include the modules through autolinking.
 
+### Role assignment invite links
+
+- Assignment sharing uses the configured Expo app scheme: `relay://assignment/{64-hex-token}`. Opening the link launches the installed Relay app directly at the public invitation route; published recipient links remain ordinary HTTPS browser links.
+- The assignment token reveals no private workspace and grants no membership or edit access. The invitee must authenticate, inspect the preselected Organization/Role/service period, and explicitly accept before the atomic server transaction activates membership and the Role Assignment.
+- Email-confirmation callbacks may return only to a strictly validated `/assignment/{64-hex-token}` path. Arbitrary post-auth redirects are rejected.
+- Invite authority is checked at creation, authenticated preview, and acceptance. The current Owner remains authorized across all Roles; otherwise only the latest active holder of that same Role may invite a future holder or replace themselves in the current service period.
+- Each invite is bound to the exact outgoing assignment. Acceptance locks and rechecks that assignment, ends the Role's prior active assignments, activates the successor, and opens the workspace in one transaction; any workspace/entitlement failure rolls the assignment changes back. A same-period replacement receives the existing workspace, while a new-period successor receives a distinct workspace populated by the existing publication carry-forward logic.
+
 ### Server-only configuration
 
 - `GROQ_API_KEY`
@@ -134,7 +144,7 @@ Provider secrets are stored only in Supabase Edge Function secrets or an ignored
 - A valid active 64-hex publication token is the only public capability accepted by the `ask-relay` Edge Function. Publication and snapshot tables remain inaccessible directly.
 - The server resolves the immutable publication snapshot first. Astra retrieval is filtered by both `organization_id` and `handoff_id` before ranking any evidence.
 - Astra document matches are used only to rank the already-published Knowledge Items linked to those sources. Raw Astra chunks, private source text, transcripts, rejected proposals, and unpublished knowledge are never included in the Ask prompt or response.
-- Manually entered, typed, and voice-derived published items remain answerable through deterministic text relevance even when they have no Astra document chunk.
+- Published items remain answerable through deterministic text relevance even when they have no Astra document chunk.
 - Citation labels and locators are copied into `handoff_publication_items.citation_sources` during publication. Ask therefore returns immutable citation metadata rather than reading mutable private source metadata at request time.
 
 ### Answer contract

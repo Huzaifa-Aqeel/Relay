@@ -16,7 +16,7 @@ import {
   useKnowledgeItems,
   useMoveKnowledgeItem,
   useOrganization,
-  useRetrySourceProcessing,
+  useRetryDocumentProcessing,
   useRole,
 } from '@/features/relay/queries';
 import { HANDOFF_STAGES } from '@/features/relay/shell-model';
@@ -74,7 +74,7 @@ function SourceCard({
         </View>
         <MaterialCommunityIcons color={colors.inkMuted} name="chevron-right" size={22} />
       </Pressable>
-      {editable && source.processingStatus === 'failed' && source.kind !== 'typed_text' ? (
+      {editable && source.processingStatus === 'failed' && source.kind === 'document' ? (
         <View style={styles.sourceRetry}>
           <Button disabled={retrying} icon="refresh" label={retrying ? 'Retrying…' : 'Retry processing'} tone="ghost" onPress={onRetry} />
         </View>
@@ -199,7 +199,7 @@ export default function HandoffScreen() {
   const knowledgeQuery = useKnowledgeItems(id);
   const moveMutation = useMoveKnowledgeItem();
   const reviewMutation = useBeginHandoffReview();
-  const retryMutation = useRetrySourceProcessing();
+  const retryMutation = useRetryDocumentProcessing();
   const structureMutation = useGenerateKnowledgeProposals();
   const pending = handoffQuery.isPending
     || sourcesQuery.isPending
@@ -348,7 +348,6 @@ export default function HandoffScreen() {
             <Button icon="microphone-outline" label="Record voice knowledge" onPress={() => router.push((`/capture-voice?handoffId=${handoff.id}`) as Href)} />
             <Button icon="text-box-plus-outline" label="Type or paste notes" tone="secondary" onPress={() => router.push((`/capture-text?handoffId=${handoff.id}`) as Href)} />
             <Button icon="file-upload-outline" label="Upload a document" tone="secondary" onPress={() => router.push((`/capture-document?handoffId=${handoff.id}`) as Href)} />
-            <Button icon="playlist-edit" label="Add approved item manually" tone="ghost" onPress={() => router.push((`/knowledge-new?handoffId=${handoff.id}`) as Href)} />
           </View>
           <View style={styles.capturePrompts}>
             <AppText variant="label">Optional prompts for real-world capture</AppText>
@@ -368,14 +367,6 @@ export default function HandoffScreen() {
           </View>
         </>
       ) : null}
-
-      <View style={styles.guardrailCard}>
-        <MaterialCommunityIcons color={colors.saffron} name="shield-check-outline" size={27} />
-        <View style={styles.guardrailCopy}>
-          <AppText variant="label">Private by default</AppText>
-          <AppText variant="caption" color={colors.inkMuted}>Sources never become recipient-facing knowledge without deliberate human approval and publication.</AppText>
-        </View>
-      </View>
 
       <View style={styles.contentSection}>
         <View style={styles.sectionTitle}>
@@ -401,7 +392,7 @@ export default function HandoffScreen() {
             <MaterialCommunityIcons color={colors.moss} name="clipboard-text-outline" size={30} />
             <View style={styles.cardCopy}>
               <AppText variant="label">No approved knowledge yet</AppText>
-              <AppText color={colors.inkMuted}>Add an item manually now. AI-generated items will always wait for your review here.</AppText>
+              <AppText color={colors.inkMuted}>Create proposals from captured notes or documents, then approve what belongs in the handoff.</AppText>
             </View>
           </View>
         )}
@@ -443,7 +434,7 @@ export default function HandoffScreen() {
                 source={source}
                 retrying={retryMutation.isPending && retryMutation.variables?.id === source.id}
                 structuring={structureMutation.isPending && structureMutation.variables?.sourceId === source.id}
-                onRetry={() => retryMutation.mutate({ id: source.id, handoffId: source.handoffId, kind: source.kind as 'voice' | 'document' })}
+                onRetry={() => retryMutation.mutate({ id: source.id, handoffId: source.handoffId })}
                 onStructure={() => structureMutation.mutate({ sourceId: source.id, handoffId: source.handoffId })}
               />
             ))}
@@ -488,12 +479,6 @@ const styles = StyleSheet.create({
   capturePrompts: { gap: spacing.xs, marginTop: spacing.md, padding: spacing.md, borderRadius: radii.lg, backgroundColor: colors.mossSoft },
   promptList: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
   promptChip: { flexDirection: 'row', alignItems: 'center', gap: spacing.xxs, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs, borderRadius: radii.pill, backgroundColor: colors.surface },
-  guardrailCard: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md,
-    marginTop: spacing.md, padding: spacing.md,
-    borderRadius: radii.lg, backgroundColor: colors.saffronSoft,
-  },
-  guardrailCopy: { flex: 1, gap: spacing.xxs },
   contentSection: { gap: spacing.md, marginTop: spacing.xl },
   reviewCard: {
     gap: spacing.md, marginTop: spacing.xl, padding: spacing.lg,

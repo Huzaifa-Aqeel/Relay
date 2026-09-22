@@ -4,7 +4,7 @@
 **Product:** Relay  
 **Category:** Student leadership handoff / institutional memory  
 **Target:** RevenueCat Shipaton 2026 — Next Gen Award  
-**Platforms:** Expo / React Native owner app + mobile-web successor experience
+**Platforms:** Expo / React Native Owner and Role Holder app + mobile-web no-login recipient experience
 
 **Priority:** P0 = must ship · P1 = valuable next · P2 = post-launch
 
@@ -61,7 +61,7 @@ A feature belongs in Relay only if it helps **capture, structure, verify, transf
 | Actor | Description |
 |---|---|
 | **Organization Owner** | One authenticated member who oversees continuity, creates Roles, manages Role assignments and subscription association, and may offer ownership to an active member. Ownership alone grants no Role editing or raw-source access. |
-| **Role Holder / Current or Outgoing Leader** | Authenticated active member with an active server-side assignment for a specific Organization, Role, and service period. Maintains that living Handoff, approves knowledge, runs Preflight, and deliberately publishes or revokes its recipient snapshot. The Owner may separately hold a Role assignment. |
+| **Role Holder / Current or Outgoing Leader** | Authenticated active member with an active server-side assignment for a specific Organization, Role, and service period. Maintains that living Handoff, approves knowledge, runs Preflight, deliberately publishes or revokes its recipient snapshot, and can invite the next holder or their own mid-year replacement for that Role only. The Owner may separately hold a Role assignment. |
 | **Incoming Recipient** | Reads a published Handoff and asks questions without an account or paid plan. Recipient access never grants membership or Role authority; becoming a successor Role Holder requires a separate authenticated assignment acceptance. |
 | **Purchaser** | Human whose RevenueCat/store account purchased the annual entitlement attached to one Organization. Only the current Owner may initiate/attach a purchase. Ownership transfer leaves the original purchaser and store billing account unchanged. |
 | **System** | Processes sources, runs AI, retrieval, and entitlement checks. |
@@ -76,8 +76,8 @@ A feature belongs in Relay only if it helps **capture, structure, verify, transf
 | ACT-04 | Purchaser identity, organization ownership, outgoing leadership, and incoming leadership remain separate concepts even when one person fills multiple roles in v1.3. | P0 |
 | ACT-05 | The current Owner may offer ownership to an existing active Organization member. The recipient explicitly accepts within the offer's validity period; transfer atomically changes the sole Owner while preserving Organization identity, data, history, assignments, and subscription association. | P0 |
 | ACT-06 | Organization membership records active/ended membership independently of active/ended Role assignments. Only one active maintainer exists per Role and service period. Pending invites grant no edit authority. | P0 |
-| ACT-07 | The Owner creates a time-limited, single-use Role assignment invite and copies/shares its link. The invitee authenticates, inspects Organization/Role/service period, and explicitly accepts; membership, assignment, and workspace activation are atomic. | P0 |
-| ACT-08 | Replacing an existing assignment requires deliberate Owner confirmation. Ending it removes private working/edit access while preserving contributor attribution and published recipient access. | P0 |
+| ACT-07 | The Owner may create a time-limited, single-use assignment invite for any Role. The latest active Role Holder may create one only for a future service period of their own Role or to replace themselves in their current service period. The app-opening invite preserves the preselected Role/period while the invitee authenticates and explicitly accepts; ending the outgoing assignment, activating membership/the successor assignment, and opening the correct workspace are atomic. The outgoing account and attribution remain, but its prior Role assignment no longer grants private/edit access. | P0 |
+| ACT-08 | A mid-year replacement requires deliberate confirmation and an existing holder for that Role/service period. The Owner may replace any current Role Holder; a Role Holder may replace only themselves. Acceptance ends the former assignment, removes its private working/edit access, and preserves the same workspace, contributor attribution, and published recipient access. | P0 |
 | ACT-09 | Owner oversight shows Role Holder, service period, lifecycle, updated date, approved knowledge count, unresolved Preflight status/count, and publication/history. Owners may inspect approved knowledge and published Organization Memory, but raw Sources, transcripts, draft files, and unresolved proposals require the exact active Role Assignment. | P0 |
 
 ---
@@ -147,7 +147,7 @@ Draft is not a one-time graduation form. It remains a usable working space throu
 | ID | Requirement | Priority |
 |---|---|---|
 | HAND-01 | User can create, save, and resume a draft handoff. | P0 |
-| HAND-02 | User can add knowledge through voice, typed text, documents, and manual structured entry. | P0 |
+| HAND-02 | User can capture knowledge through voice, typed text, and documents, then approve evidence-backed proposals. | P0 |
 | HAND-03 | User can manually edit, reorder, and delete approved knowledge items. | P0 |
 | HAND-04 | Publishing requires the handoff to pass through Review and Preflight. | P0 |
 | HAND-05 | A Draft Handoff can be reopened throughout the service period to add voice notes, typed notes, new or updated files, and maintain approved contacts, deadlines, processes, warnings, resources, responsibilities, and lessons. | P0 |
@@ -180,11 +180,11 @@ Users can upload common organizational documents.
 
 | ID | Requirement | Priority |
 |---|---|---|
-| CAP-01 | User can record spoken knowledge and receive an editable transcript. | P0 |
+| CAP-01 | Voice capture uses a round waveform control. When the user stops recording, Relay sends the temporary device-local audio through the authenticated transcription function without persisting it, shows a short Transcribing state, then presents the full transcript for editing. **Continue** persists only the reviewed transcript as a private Ready voice Source; Relay never stores the audio. | P0 |
 | CAP-02 | User can type or paste free-form knowledge. | P0 |
 | CAP-03 | User can upload supported documents such as PDF, DOCX, PPTX, XLSX, text/Markdown/CSV, and common images. | P0 |
-| CAP-04 | Original voice/text/document sources remain linked to any knowledge derived from them. | P0 |
-| CAP-05 | Capture failures never block manual entry. | P0 |
+| CAP-04 | Confirmed voice transcripts and original text/document Sources remain linked to any knowledge derived from them. Voice audio, failed transcriptions, and unconfirmed transcripts are not Sources. | P0 |
+| CAP-05 | A failed voice transcription creates no Source, Storage object, failed-processing row, or retry queue. Relay shows only **Record again** and **Write instead**; the latter opens the existing typed-note capture for the same Handoff. Temporary audio is never persisted. | P0 |
 | CAP-06 | Document UI shows Processing, Ready, or Failed and allows retry after failure. | P0 |
 | CAP-07 | Capture may show optional prompts for responsibilities, registration/training, finances, recurring events, advisor/vendor contacts, account/tool access, calendars/deadlines, policies, and lessons/common mistakes without creating new knowledge types or separate operational modules. | P0 |
 
@@ -264,7 +264,7 @@ Relay must distinguish **evidence** from **human-approved truth**.
 
 **Source knowledge** may be outdated, incomplete, or wrong.
 
-**Approved knowledge** is what the outgoing leader has explicitly accepted or written manually.
+**Approved knowledge** is what the outgoing leader has explicitly accepted, resolved through Preflight, or inherited from an immutable prior publication.
 
 ### Requirements
 
@@ -273,7 +273,7 @@ Relay must distinguish **evidence** from **human-approved truth**.
 | KNOW-01 | AI-extracted knowledge starts as Proposed rather than Approved. | P0 |
 | KNOW-02 | Every proposal retains source provenance. | P0 |
 | KNOW-03 | User can Accept, Edit, or Reject each proposal. | P0 |
-| KNOW-04 | Only accepted or manually created items appear as approved canonical knowledge. | P0 |
+| KNOW-04 | Only accepted proposals, explicit Preflight resolutions, or inherited publication items appear as approved canonical knowledge. | P0 |
 | KNOW-05 | Rejected proposals never appear in the published handoff. | P0 |
 | KNOW-06 | New voice/text/file evidence can propose an update to or retirement of an existing approved Knowledge Item instead of creating a duplicate when the intent is clearly the same. | P0 |
 | KNOW-07 | Update/retirement review shows the affected approved item, proposed result, and new evidence before the human decides. | P0 |
@@ -307,7 +307,7 @@ Do not leave venue booking too late
 | AI-02 | Model output is validated against an allow-listed structured schema before it can become product data. | P0 |
 | AI-03 | Relay must not invent names, dates, contact details, policies, or procedures absent from evidence. | P0 |
 | AI-04 | Uncertain information is surfaced for human review instead of being silently guessed. | P0 |
-| AI-05 | User can always add or correct knowledge manually. | P0 |
+| AI-05 | User can correct approved knowledge manually. New approved items enter through reviewed evidence proposals or an explicit Preflight resolution rather than a standalone manual-add shortcut. | P0 |
 | AI-06 | Proposal reasoning receives relevant approved Knowledge Items so it can distinguish genuinely new knowledge from a supported correction, replacement, or retirement. | P0 |
 | AI-07 | Model-selected update targets and evidence excerpts are independently validated before proposals are stored. Low-confidence targets are rejected or omitted. | P0 |
 
@@ -615,7 +615,7 @@ Relay should feel like a calm transition tool, not an AI dashboard.
 | UI-02 | Proposed AI content is visually distinct from approved knowledge. | P0 |
 | UI-03 | Preflight findings use plain language and citations/source context are easy to open. | P0 |
 | UI-04 | Shared handoff is optimized for fast mobile scanning and core controls support accessibility semantics. | P0 |
-| UI-05 | AI failure never prevents manual capture, editing, publishing of already-approved content, or reading a published handoff. | P0 |
+| UI-05 | AI failure never prevents further source capture, editing or publishing already-approved content, or reading a published handoff. | P0 |
 | UI-06 | Source-version and Organization Memory views emphasize material changes, human decisions, and inspectable provenance rather than scores, activity noise, or AI confidence theater. | P0 |
 | UI-07 | Publish is framed as a leadership-transition action. Routine year-round edits save to the working Handoff without publication pressure; reopening a published workspace retains the existing snapshot until deliberate Review/Preflight and republication. | P0 |
 
@@ -700,7 +700,7 @@ The demo should tell one complete story.
    > “Can we use club money to buy laptops?”
 20. Relay says:
    > “This handoff does not contain a reliable answer.”
-21. The Owner separately invites Alex as President `2027–2028`. Alex signs in and accepts, receiving a new workspace seeded from the previous published approved knowledge. Alex maintains it throughout the term and deliberately publishes for the next transition.
+21. Maya selects **Invite next President** for `2027–2028` and shares the app-opening assignment link. Alex opens Relay, signs in or creates an account, reviews the preselected Role, and accepts. Alex receives a new workspace seeded from the previous published approved knowledge, maintains it throughout the term, and deliberately publishes for the next transition.
 22. Organization Memory compares the adjacent President periods and shows grounded material changes such as `Facilities contact: Sarah → Mike` and `Venue booking: 12 weeks → 16 weeks`.
 23. Relay labels the contact reason as Contact/resource change. It labels the deadline Policy-driven only if approved policy evidence explicitly establishes the cause; otherwise it says `Unknown / not established`.
 24. If Alex confirms that a documented projector failure caused the new equipment-test process, Relay records the explicit `Lesson → Process` relationship. It never infers that relationship from sequence alone.
@@ -746,7 +746,7 @@ The Shipaton build is not complete unless these work:
 16. explicit unsupported-answer behavior
 17. RevenueCat Organization entitlement/paywall
 18. secure server-side provider credentials
-19. manual fallback
+19. manual source-text recovery and approved-knowledge correction
 20. living Draft Handoff that can be resumed throughout the term
 21. voice/text proposals that update or retire existing approved knowledge through review
 22. exact duplicate upload detection and conservative Source-version linking

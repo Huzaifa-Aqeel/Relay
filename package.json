@@ -58,7 +58,7 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "test": "vitest run",
-    "test:db": "supabase test db",
+    "test:db": "supabase test db supabase/tests/database",
     "db:start": "supabase start",
     "db:status": "supabase status",
     "typecheck": "tsc --noEmit",

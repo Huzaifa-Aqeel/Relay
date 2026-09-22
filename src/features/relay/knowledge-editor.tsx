@@ -60,7 +60,7 @@ export function KnowledgeEditor({
       <FormSection
         eyebrow="Approved knowledge"
         title="What should the next leader know?"
-        description="Manual entries are approved immediately and can be edited at any time.">
+        description="Keep approved knowledge clear, accurate, and actionable.">
         <Controller
           control={control}
           name="knowledgeType"

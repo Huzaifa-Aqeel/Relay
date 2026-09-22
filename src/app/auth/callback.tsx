@@ -1,4 +1,5 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import type { Href } from 'expo-router';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -10,7 +11,7 @@ import { AuthScaffold } from '@/features/auth/auth-ui';
 import { colors, radii, spacing } from '@/theme/tokens';
 
 export default function AuthCallbackScreen() {
-  const { code, type } = useLocalSearchParams<{ code?: string; type?: string }>();
+  const { code, type, returnTo } = useLocalSearchParams<{ code?: string; type?: string; returnTo?: string }>();
   const { exchangeCode } = useAuth();
   const [error, setError] = useState<string | null>(null);
 
@@ -19,10 +20,11 @@ export default function AuthCallbackScreen() {
       setError('This sign-in link is incomplete or has expired.');
       return;
     }
+    const safeReturnTo = returnTo && /^\/assignment\/[0-9a-f]{64}$/.test(returnTo) ? returnTo as Href : null;
     void exchangeCode(code)
-      .then(() => router.replace(type === 'recovery' ? '/auth/new-password' : '/'))
+      .then(() => router.replace(type === 'recovery' ? '/auth/new-password' : safeReturnTo ?? '/'))
       .catch((caught) => setError(caught instanceof Error ? caught.message : 'This link could not be completed.'));
-  }, [code, exchangeCode, type]);
+  }, [code, exchangeCode, returnTo, type]);
 
   return (
     <AuthScaffold eyebrow="Secure return" title={error ? 'This link needs attention' : 'Opening Relay'} intro={error ?? 'Your account is being confirmed on this device.'}>

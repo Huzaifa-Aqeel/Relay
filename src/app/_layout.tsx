@@ -99,7 +99,6 @@ export default function RootLayout() {
               <Stack.Screen name="capture-text" options={{ title: 'Typed capture' }} />
               <Stack.Screen name="capture-voice" options={{ title: 'Voice capture' }} />
               <Stack.Screen name="capture-document" options={{ title: 'Document capture' }} />
-              <Stack.Screen name="knowledge-new" options={{ title: 'Add knowledge' }} />
               <Stack.Screen name="knowledge/[id]" options={{ title: 'Edit knowledge' }} />
               <Stack.Screen name="source/[id]" options={{ title: 'Source' }} />
               <Stack.Screen name="shared/[token]" options={{ headerShown: false }} />

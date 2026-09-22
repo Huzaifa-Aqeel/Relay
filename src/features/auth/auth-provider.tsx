@@ -26,7 +26,7 @@ type AuthContextValue = {
   isCloudEnabled: boolean;
   isPasswordRecovery: boolean;
   signIn: (email: string, password: string) => Promise<void>;
-  signUp: (displayName: string, email: string, password: string) => Promise<{ needsEmailConfirmation: boolean }>;
+  signUp: (displayName: string, email: string, password: string, returnTo?: string) => Promise<{ needsEmailConfirmation: boolean }>;
   signInWithGoogle: () => Promise<void>;
   sendPasswordReset: (email: string) => Promise<void>;
   updatePassword: (password: string) => Promise<void>;
@@ -95,9 +95,14 @@ export function AuthProvider({ children }: PropsWithChildren) {
     throwFriendly(error);
   }, []);
 
-  const signUp = useCallback(async (displayName: string, email: string, password: string) => {
+  const signUp = useCallback(async (displayName: string, email: string, password: string, returnTo?: string) => {
     const client = requireSupabase();
-    const redirectTo = makeRedirectUri({ scheme: 'relay', path: 'auth/callback' });
+    const safeReturnTo = returnTo && /^\/assignment\/[0-9a-f]{64}$/.test(returnTo) ? returnTo : null;
+    const redirectTo = makeRedirectUri({
+      scheme: 'relay',
+      path: 'auth/callback',
+      queryParams: safeReturnTo ? { returnTo: safeReturnTo } : undefined,
+    });
     const { data, error } = await client.auth.signUp({
       email: email.trim(),
       password,
