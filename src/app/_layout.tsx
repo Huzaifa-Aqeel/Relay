@@ -24,11 +24,19 @@ const queryClient = new QueryClient({
 
 function AuthGate({ children }: PropsWithChildren) {
   const { status, session } = useAuth();
-  const priorUser = useRef<string | null>(null);
+  const priorUser = useRef<string | null | undefined>(undefined);
   useEffect(() => {
+    if (status === 'loading' || status === 'demo') return;
     const user = session?.user.id ?? null;
-    if (user !== priorUser.current) { queryClient.clear(); priorUser.current = user; }
-  }, [session?.user.id]);
+    if (priorUser.current === undefined) {
+      priorUser.current = user;
+      return;
+    }
+    if (user !== priorUser.current) {
+      queryClient.clear();
+      priorUser.current = user;
+    }
+  }, [session?.user.id, status]);
   const segments = useSegments();
 
   useEffect(() => {
@@ -94,6 +102,7 @@ export default function RootLayout() {
               <Stack.Screen name="handoff-preflight" options={{ title: 'Preflight' }} />
               <Stack.Screen name="handoff-preview" options={{ title: 'Preview & share' }} />
               <Stack.Screen name="organization-memory" options={{ title: 'Organization Memory' }} />
+              <Stack.Screen name="ownership-transfer" options={{ title: 'Organization ownership' }} />
               <Stack.Screen name="memory-reason" options={{ title: 'Confirm reason' }} />
               <Stack.Screen name="preflight-resolve" options={{ title: 'Resolve finding' }} />
               <Stack.Screen name="capture-text" options={{ title: 'Typed capture' }} />

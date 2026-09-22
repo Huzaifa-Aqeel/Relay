@@ -5,6 +5,7 @@ import { requireSupabase } from '@/lib/supabase';
 
 const overviewSchema = z.object({
   isOwner: z.boolean(),
+  currentOwnerName: z.string(),
   members: z.array(z.object({ userId: z.string(), name: z.string() })),
   pendingTransfer: z.object({ id: z.string(), toUserId: z.string(), expiresAt: z.string() }).nullable(),
   roles: z.array(z.object({

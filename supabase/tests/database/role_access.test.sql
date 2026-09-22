@@ -5,6 +5,12 @@ insert into auth.users(id,email) values
 ('a0000000-0000-4000-8000-000000000002','treasurer@role.test'),
 ('a0000000-0000-4000-8000-000000000003','successor@role.test'),
 ('a0000000-0000-4000-8000-000000000004','outsider@role.test');
+update public.profiles set display_name = case id
+  when 'a0000000-0000-4000-8000-000000000001' then 'Original Owner'
+  when 'a0000000-0000-4000-8000-000000000002' then 'Treasurer Holder'
+  when 'a0000000-0000-4000-8000-000000000003' then 'Successor Holder'
+  else 'Outsider'
+end;
 create function pg_temp.actor(n integer) returns void language sql as $$
  select set_config('request.jwt.claims',jsonb_build_object('sub','a0000000-0000-4000-8000-' || lpad(n::text,12,'0'),'role','authenticated')::text,true)::text::void;
 $$;
@@ -37,6 +43,8 @@ select ok(public.is_role_holder_for_handoff(pg_temp.id('treasurer_handoff')),'Tr
 select ok(not public.is_role_holder_for_handoff(pg_temp.id('president_handoff')),'Treasurer cannot maintain President');
 select is(public.get_organization_plan(pg_temp.id('org'))->>'plan','pro','Role Holder benefits from Organization Pro without purchasing');
 select ok(not public.is_organization_admin(pg_temp.id('org')),'Role Holder is not Owner');
+select is(public.get_organization_continuity(pg_temp.id('org'))->>'currentOwnerName','Original Owner','Active member sees the current Owner name without receiving the Owner-only member list');
+select is(jsonb_array_length(public.get_organization_continuity(pg_temp.id('org'))->'members'),0,'Nonowner still receives no Organization member list');
 select throws_ok($$select public.create_role_assignment_invite(pg_temp.id('president'),'2028–2029')$$,'42501','Only the Organization Owner or current Role Holder can invite for this Role','Role Holder cannot manage another Role');
 select set_config('test.replacement',public.create_role_assignment_invite(pg_temp.id('treasurer'),'2026–2027',true)->>'token',true);
 select throws_ok($$update public.organizations set created_by = auth.uid() where id = pg_temp.id('org')$$,'42501',null,'Direct ownership takeover denied');
@@ -117,6 +125,7 @@ select throws_ok($$select public.accept_organization_ownership_transfer(pg_temp.
 select pg_temp.actor(2);
 select lives_ok($$select public.accept_organization_ownership_transfer(pg_temp.id('transfer'))$$,'Active member explicitly accepts ownership');
 select ok(public.is_organization_admin(pg_temp.id('org')),'Accepted recipient is sole Owner');
+select is(public.get_organization_continuity(pg_temp.id('org'))->>'currentOwnerName','Treasurer Holder','Continuity context reflects the accepted new Owner');
 select ok(not public.is_role_holder_for_handoff(pg_temp.id('president_handoff')),'New ownership grants no President editing');
 select is(public.get_organization_plan(pg_temp.id('org'))->>'plan','pro','Ownership transfer preserves Organization Pro');
 select pg_temp.actor(1);
