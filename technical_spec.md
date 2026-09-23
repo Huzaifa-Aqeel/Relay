@@ -47,6 +47,27 @@ This document records implementation-level decisions that should not be duplicat
 
 Provider secrets are stored only in Supabase Edge Function secrets or an ignored local server environment file. They must never be exposed through an `EXPO_PUBLIC_*` variable.
 
+## Google Drive attachment import
+
+- Relay uses Google Picker through the system browser with the single `https://www.googleapis.com/auth/drive.file` scope and multiple selection enabled.
+- For every selection, the Expo client asks the authenticated `google-drive-import` Edge Function for a signed authorization URL. Google returns the one-use authorization code and selected file IDs to the hosted callback. The OAuth client secret and access token never enter Expo.
+- OAuth state is HMAC-signed, expires after ten minutes, binds the Relay user/Organization/Handoff/Capture/return URL, and is followed by a fresh active-membership and exact Role Assignment authorization check at callback time.
+- The authorization request uses `access_type=online`, the Google-required `prompt=consent`, `trigger_onepick=true`, and `allow_multiple=true`. Relay does not persist access or refresh tokens. The callback iterates over every validated ID from `picked_file_ids` and imports each file independently.
+- The server downloads ordinary Drive files with `files.get?alt=media`; Google Docs, Sheets, and Slides use `files.export` to DOCX, XLSX, and PPTX.
+- Imported bytes must match the local upload allow-list, remain at or below 25 MB, and receive a SHA-256 hash before Storage/Source insertion. Exact duplicates in the Handoff are skipped.
+- Successful imports are ordinary private `pending` document Sources attached to the existing Capture. Import and Save never invoke Unstructured, Astra, or Groq; explicit Organize retains sole responsibility for processing/indexing and proposal generation.
+- The browser callback is `https://hygwsszjajrqqdxwzqya.supabase.co/functions/v1/google-drive-import/callback`; the Edge Function then returns to the validated web `/drive-import` route or installed `relay://drive-import` route.
+
+### Server-only Google Drive configuration
+
+- `GOOGLE_DRIVE_CLIENT_ID`
+- `GOOGLE_DRIVE_CLIENT_SECRET`
+- `GOOGLE_DRIVE_STATE_SECRET`
+- `GOOGLE_DRIVE_CALLBACK_URL`
+- `GOOGLE_DRIVE_ALLOWED_WEB_ORIGINS`
+
+The OAuth client is a Google **Web application** because Google returns to the HTTPS Edge Function. The installed Android APK still completes through Relay's custom app scheme; the Web client secret is never packaged in the APK.
+
 ## Groq transcription and reasoning
 
 | Concern | Selected configuration |

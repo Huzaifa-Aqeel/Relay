@@ -74,7 +74,7 @@ export const KNOWLEDGE_TYPES = [
 
 export type KnowledgeType = (typeof KNOWLEDGE_TYPES)[number];
 export type SourceKind = 'typed_text' | 'voice' | 'document';
-export type SourceProcessingStatus = 'processing' | 'ready' | 'failed';
+export type SourceProcessingStatus = 'pending' | 'processing' | 'ready' | 'failed';
 export type SourceStructuringStatus = 'not_started' | 'processing' | 'ready' | 'failed';
 
 export type HandoffSource = {
@@ -94,17 +94,25 @@ export type HandoffSource = {
   structuringFailureReason: string | null;
   structuredAt: string | null;
   structuredProposalCount: number | null;
-  normalizedFilename: string | null;
   contentHash: string | null;
-  supersedesSourceId: string | null;
-  sourceRootId: string | null;
-  versionNumber: number;
-  isCurrent: boolean;
-  versionMatchBasis: 'filename_and_type' | 'human_confirmed' | null;
-  deltaStatus: 'not_applicable' | 'pending' | 'processing' | 'ready' | 'failed';
-  deltaFailureReason: string | null;
-  deltaChangeCount: number | null;
-  deltaAnalyzedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type HandoffCapture = {
+  id: string;
+  organizationId: string;
+  handoffId: string;
+  createdBy: string;
+  title: string;
+  textContent: string | null;
+  promptId: string | null;
+  submittedAt: string;
+  structuringStatus: SourceStructuringStatus;
+  structuringFailureReason: string | null;
+  structuredAt: string | null;
+  structuredProposalCount: number | null;
+  attachments: HandoffSource[];
   createdAt: string;
   updatedAt: string;
 };
@@ -129,6 +137,7 @@ export type KnowledgeItem = {
   inheritedFromServicePeriod: string | null;
   proposalAction: KnowledgeProposalAction;
   proposalTargetId: string | null;
+  captureId: string | null;
   decidedBy: string | null;
   decidedAt: string | null;
   createdAt: string;
@@ -143,13 +152,6 @@ export type KnowledgeProvenance = {
   sourceLocator: string | null;
 };
 
-export type TypedSourceInput = {
-  organizationId: string;
-  handoffId: string;
-  title: string;
-  textContent: string;
-};
-
 export type DocumentSourceInput = {
   organizationId: string;
   handoffId: string;
@@ -161,14 +163,67 @@ export type DocumentSourceInput = {
     mimeType: string;
     size?: number | null;
   };
-  versionDecision?: 'new_version' | 'separate';
-  supersedesSourceId?: string | null;
+  captureId: string;
+  capturePosition?: number;
 };
 
 export type SourceUploadResult =
   | { status: 'created'; sourceId: string }
-  | { status: 'duplicate'; sourceId: string; title: string }
-  | { status: 'confirmation_required'; sourceId: string; title: string };
+  | { status: 'duplicate'; sourceId: string; title: string };
+
+export type CaptureAttachmentInput = {
+  uri: string;
+  name: string;
+  mimeType: string;
+  size?: number | null;
+  title: string;
+};
+
+export type DocumentDuplicateCheckInput = {
+  organizationId: string;
+  handoffId: string;
+  file: {
+    uri: string;
+    name: string;
+    size?: number | null;
+  };
+};
+
+export type DocumentDuplicateCheckResult = {
+  contentHash: string;
+  duplicate: {
+    sourceId: string;
+    title: string;
+  } | null;
+};
+
+export type CaptureInput = {
+  captureId?: string | null;
+  organizationId: string;
+  handoffId: string;
+  title: string;
+  textContent?: string | null;
+  promptId?: string | null;
+  retainedAttachmentSourceIds: string[];
+  attachments: CaptureAttachmentInput[];
+};
+
+export type CaptureSubmitResult = {
+  captureId: string;
+  duplicateTitles: string[];
+};
+
+export type CaptureDraftInput = {
+  organizationId: string;
+  handoffId: string;
+  title: string;
+  textContent?: string | null;
+  promptId?: string | null;
+};
+
+export type GoogleDriveImportStart = {
+  authUrl: string;
+};
 
 export type VoiceRecordingInput = {
   organizationId: string;
@@ -186,31 +241,6 @@ export type VoiceTranscriptPreview = {
   handoffId: string;
   transcript: string;
   providerReference: string | null;
-};
-
-export type SaveVoiceSourceInput = {
-  recording: VoiceTranscriptPreview;
-  title: string;
-};
-
-export type SourceVersionChange = {
-  id: string;
-  sourceId: string;
-  priorSourceId: string;
-  changeType: 'added' | 'changed' | 'removed';
-  title: string;
-  summary: string;
-  oldExcerpt: string | null;
-  newExcerpt: string | null;
-  affectedKnowledgeItemId: string | null;
-  proposalItemId: string | null;
-};
-
-export type SourceTextInput = {
-  id: string;
-  handoffId: string;
-  title: string;
-  textContent: string;
 };
 
 export type KnowledgeItemUpdateInput = {
@@ -376,7 +406,7 @@ export type AskRelayCitation = {
 };
 
 export type AskRelayAnswer = {
-  status: 'answered' | 'unsupported';
+  status: 'answered' | 'unsupported' | 'conflict';
   answer: string;
   citations: AskRelayCitation[];
   remaining: number;

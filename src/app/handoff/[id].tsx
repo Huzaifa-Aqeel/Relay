@@ -1,115 +1,146 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import type { Href } from 'expo-router';
 import { router, useLocalSearchParams } from 'expo-router';
+import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/ui/app-text';
 import { LoadingState, MessageState } from '@/components/ui/async-state';
 import { Button } from '@/components/ui/button';
 import { Screen } from '@/components/ui/screen';
-import { KNOWLEDGE_META, SOURCE_META } from '@/features/relay/knowledge-meta';
+import { KNOWLEDGE_META } from '@/features/relay/knowledge-meta';
+import { UnifiedCaptureComposer } from '@/features/relay/unified-capture-composer';
 import {
   useBeginHandoffReview,
-  useGenerateKnowledgeProposals,
+  useGenerateCaptureProposals,
   useHandoff,
-  useHandoffSources,
+  useHandoffCaptures,
   useKnowledgeItems,
   useMoveKnowledgeItem,
   useOrganization,
-  useRetryDocumentProcessing,
   useRole,
 } from '@/features/relay/queries';
-import { HANDOFF_STAGES } from '@/features/relay/shell-model';
-import type { HandoffSource, KnowledgeItem } from '@/features/relay/types';
+import { handoffStageIndex, HANDOFF_STAGES } from '@/features/relay/shell-model';
+import type { HandoffCapture, KnowledgeItem } from '@/features/relay/types';
 import { checkContinuityError, useContinuity, useContinuityAction } from '@/features/relay/continuity';
 import { requireSupabase } from '@/lib/supabase';
 import { colors, radii, spacing } from '@/theme/tokens';
 
-function sourcePreview(source: HandoffSource) {
-  if (!source.textContent) return source.processingStatus === 'failed' ? source.failureReason : 'Original source saved privately.';
-  const clean = source.textContent.replace(/\s+/g, ' ').trim();
-  return clean.length > 150 ? `${clean.slice(0, 147)}…` : clean;
-}
-
-function SourceCard({
-  source,
+function CaptureCard({
+  capture,
   editable,
-  retrying,
-  onRetry,
   structuring,
   onStructure,
+  onEdit,
 }: {
-  source: HandoffSource;
+  capture: HandoffCapture;
   editable: boolean;
-  retrying: boolean;
-  onRetry: () => void;
   structuring: boolean;
   onStructure: () => void;
+  onEdit: () => void;
 }) {
-  const meta = SOURCE_META[source.kind];
+  const [expanded, setExpanded] = useState(false);
+  const processing = capture.attachments.some((source) => source.processingStatus === 'processing');
+  const failed = capture.attachments.some((source) => source.processingStatus === 'failed');
+  const summary = [
+    capture.attachments.length
+      ? `${capture.attachments.length} ${capture.attachments.length === 1 ? 'file' : 'files'}`
+      : null,
+    capture.textContent ? 'note' : null,
+  ].filter(Boolean).join(' · ');
   return (
     <View style={styles.sourceCard}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`Open source ${source.title}`}
-        onPress={() => router.push((`/source/${source.id}`) as Href)}
+        accessibilityLabel={`${expanded ? 'Collapse' : 'Expand'} capture ${capture.title}`}
+        disabled={!capture.attachments.length}
+        onPress={() => setExpanded((current) => !current)}
         style={({ pressed }) => [styles.sourceMain, pressed && styles.pressed]}>
         <View style={styles.sourceIcon}>
-          <MaterialCommunityIcons color={colors.moss} name={meta.icon} size={23} />
+          <MaterialCommunityIcons color={colors.moss} name={capture.promptId ? 'lightbulb-on-outline' : 'note-edit-outline'} size={23} />
         </View>
         <View style={styles.cardCopy}>
           <View style={styles.cardTitleRow}>
-            <AppText variant="label" style={styles.cardTitle}>{source.title}</AppText>
-            <AppText variant="caption" color={source.processingStatus === 'failed' ? colors.emergency : colors.inkMuted}>
-              {source.processingStatus === 'ready' ? 'Ready' : source.processingStatus}
-            </AppText>
+            <AppText variant="label" style={styles.cardTitle}>{capture.title}</AppText>
           </View>
-          <AppText variant="caption" color={colors.inkMuted}>{meta.label}</AppText>
-          {source.kind === 'document' ? (
-            <AppText variant="caption" color={source.isCurrent ? colors.moss : colors.inkMuted}>
-              Version {source.versionNumber} · {source.isCurrent ? 'Current' : 'Historical'}
-            </AppText>
-          ) : null}
-          <AppText color={colors.inkMuted} numberOfLines={3}>{sourcePreview(source)}</AppText>
+          <AppText variant="caption" color={colors.inkMuted}>{summary || 'Capture'}</AppText>
+          {capture.textContent ? <AppText color={colors.inkMuted} numberOfLines={2}>{capture.textContent}</AppText> : null}
         </View>
-        <MaterialCommunityIcons color={colors.inkMuted} name="chevron-right" size={22} />
+        {capture.attachments.length ? (
+          <MaterialCommunityIcons color={colors.inkMuted} name={expanded ? 'chevron-up' : 'chevron-down'} size={22} />
+        ) : null}
       </Pressable>
-      {editable && source.processingStatus === 'failed' && source.kind === 'document' ? (
-        <View style={styles.sourceRetry}>
-          <Button disabled={retrying} icon="refresh" label={retrying ? 'Retrying…' : 'Retry processing'} tone="ghost" onPress={onRetry} />
+      {editable ? (
+        <View style={styles.captureActions}>
+          <Button disabled={structuring || processing} icon="pencil-outline" label="Edit" tone="ghost" onPress={onEdit} />
+          <Button
+            disabled={structuring || processing}
+            icon="creation-outline"
+            label={structuring || processing ? 'Organizing…' : capture.structuringStatus === 'ready' ? 'Organize again' : 'Organize'}
+            tone="secondary"
+            onPress={onStructure}
+          />
         </View>
       ) : null}
-      {editable && source.isCurrent && source.processingStatus === 'ready' && source.textContent ? (
+      {expanded && capture.attachments.length ? (
+        <View style={styles.attachmentList}>
+          {capture.attachments.map((source) => (
+            <View key={source.id} style={styles.attachmentRow}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => router.push((`/source/${source.id}`) as Href)}
+                style={({ pressed }) => [styles.attachmentMain, pressed && styles.pressed]}>
+                <MaterialCommunityIcons color={colors.moss} name="file-document-outline" size={20} />
+                <View style={styles.cardCopy}>
+                  <AppText variant="label">{source.title}</AppText>
+                  <AppText variant="caption" color={source.processingStatus === 'failed' ? colors.emergency : colors.inkMuted}>
+                    {source.processingStatus === 'pending'
+                      ? 'Ready to organize'
+                      : source.processingStatus === 'processing'
+                        ? 'Preparing document…'
+                        : source.processingStatus === 'ready'
+                          ? 'Ready'
+                          : source.failureReason ?? 'Document processing failed'}
+                  </AppText>
+                </View>
+              </Pressable>
+            </View>
+          ))}
+        </View>
+      ) : null}
+      {editable ? (
         <View style={styles.sourceRetry}>
-          {source.structuringStatus === 'ready' ? (
+          {processing ? (
+            <View style={styles.structureResult}>
+              <MaterialCommunityIcons color={colors.moss} name="file-sync-outline" size={19} />
+              <AppText variant="caption" color={colors.inkMuted} style={styles.cardCopy}>Preparing attached files, then Relay will organize this capture…</AppText>
+            </View>
+          ) : failed ? (
+            <AppText variant="caption" color={colors.emergency} style={styles.captureStatus}>
+              A file could not be prepared. Choose Organize to try again, or edit this capture.
+            </AppText>
+          ) : capture.structuringStatus === 'ready' ? (
             <View style={styles.structureResult}>
               <MaterialCommunityIcons color={colors.moss} name="check-circle-outline" size={19} />
               <AppText variant="caption" color={colors.moss} style={styles.cardCopy}>
-                {source.structuredProposalCount
-                  ? `${source.structuredProposalCount} ${source.structuredProposalCount === 1 ? 'proposal' : 'proposals'} created from this source`
-                  : 'Checked · no new proposals found'}
+                {capture.structuredProposalCount
+                  ? `${capture.structuredProposalCount} ${capture.structuredProposalCount === 1 ? 'thing' : 'things'} found`
+                  : 'Checked · nothing new found'}
               </AppText>
             </View>
+          ) : capture.structuringStatus === 'failed' ? (
+            <AppText variant="caption" color={colors.emergency} style={styles.captureStatus}>
+              {capture.structuringFailureReason ?? "We couldn't organize this capture. Choose Organize to try again."}
+            </AppText>
+          ) : capture.structuringStatus === 'processing' ? (
+            <View style={styles.structureResult}>
+              <MaterialCommunityIcons color={colors.moss} name="creation-outline" size={19} />
+              <AppText variant="caption" color={colors.inkMuted} style={styles.cardCopy}>Organizing this capture…</AppText>
+            </View>
           ) : (
-            <View style={styles.structureAction}>
-              {source.structuringFailureReason ? (
-                <AppText variant="caption" color={colors.emergency} style={styles.cardCopy}>
-                  {source.structuringFailureReason}
-                </AppText>
-              ) : (
-                <AppText variant="caption" color={colors.inkMuted} style={styles.cardCopy}>
-                  Turn this evidence into suggestions you can approve, edit, or reject.
-                </AppText>
-              )}
-              <Button
-                disabled={structuring || source.structuringStatus === 'processing'}
-                icon={source.structuringStatus === 'failed' ? 'refresh' : 'creation-outline'}
-                label={structuring || source.structuringStatus === 'processing'
-                  ? 'Structuring…'
-                  : source.structuringStatus === 'failed' ? 'Retry' : 'Create proposals'}
-                tone="ghost"
-                onPress={onStructure}
-              />
+            <View style={styles.structureResult}>
+              <MaterialCommunityIcons color={colors.moss} name="content-save-check-outline" size={19} />
+              <AppText variant="caption" color={colors.inkMuted} style={styles.cardCopy}>Saved · ready to organize</AppText>
             </View>
           )}
         </View>
@@ -187,6 +218,7 @@ function KnowledgeCard({
 
 export default function HandoffScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const [editingCapture, setEditingCapture] = useState<HandoffCapture | null>(null);
   const handoffQuery = useHandoff(id);
   const roleQuery = useRole(handoffQuery.data?.roleId);
   const organizationQuery = useOrganization(handoffQuery.data?.organizationId);
@@ -195,24 +227,23 @@ export default function HandoffScreen() {
     const { error } = await requireSupabase().rpc('reopen_handoff_for_revision', { requested_handoff_id: id });
     checkContinuityError(error);
   });
-  const sourcesQuery = useHandoffSources(id);
+  const capturesQuery = useHandoffCaptures(id);
   const knowledgeQuery = useKnowledgeItems(id);
   const moveMutation = useMoveKnowledgeItem();
   const reviewMutation = useBeginHandoffReview();
-  const retryMutation = useRetryDocumentProcessing();
-  const structureMutation = useGenerateKnowledgeProposals();
+  const structureMutation = useGenerateCaptureProposals();
   const pending = handoffQuery.isPending
-    || sourcesQuery.isPending
+    || capturesQuery.isPending
     || knowledgeQuery.isPending
     || (handoffQuery.data && (roleQuery.isPending || organizationQuery.isPending));
   const error = handoffQuery.error
     ?? roleQuery.error
     ?? organizationQuery.error
-    ?? sourcesQuery.error
+    ?? capturesQuery.error
     ?? knowledgeQuery.error;
 
   if (pending) return <Screen><LoadingState label="Opening handoff…" /></Screen>;
-  if (error || !handoffQuery.data || !roleQuery.data || !organizationQuery.data || !sourcesQuery.data || !knowledgeQuery.data) {
+  if (error || !handoffQuery.data || !roleQuery.data || !organizationQuery.data || !capturesQuery.data || !knowledgeQuery.data) {
     return (
       <Screen>
         <MessageState
@@ -232,10 +263,10 @@ export default function HandoffScreen() {
   }
   const role = roleQuery.data;
   const organization = organizationQuery.data;
-  const sources = sourcesQuery.data;
+  const captures = capturesQuery.data;
   const approvedItems = knowledgeQuery.data.filter((item) => item.status === 'approved');
   const proposedItems = knowledgeQuery.data.filter((item) => item.status === 'proposed');
-  const activeStage = Math.max(0, HANDOFF_STAGES.findIndex((stage) => stage.toLowerCase() === handoff.stage));
+  const activeStage = handoffStageIndex(handoff.stage);
 
   function move(item: KnowledgeItem, direction: 'up' | 'down') {
     moveMutation.mutate({ id: item.id, handoffId: handoff.id, direction });
@@ -266,25 +297,25 @@ export default function HandoffScreen() {
       }
     : handoff.stage === 'preflight'
     ? {
-        eyebrow: 'PREFLIGHT',
-        title: 'Settle questions before Preview',
+        eyebrow: 'HANDOFF CHECK',
+        title: 'Settle the details before Preview',
         body: 'Review evidence-backed gaps, resolve what you know, and make deliberate decisions about what remains.',
-        button: 'Open Preflight',
+        button: 'Open handoff check',
         icon: 'shield-check-outline' as const,
       }
     : handoff.stage === 'preview'
       ? {
           eyebrow: 'READY FOR PREVIEW',
-          title: 'Preflight decisions are recorded',
+          title: 'Handoff check decisions are recorded',
           body: 'Review exactly what the incoming leader will see, then publish the approved snapshot when it is ready.',
           button: 'Preview recipient view',
           icon: 'eye-check-outline' as const,
         }
       : {
           eyebrow: 'NEXT STEP',
-          title: 'Review before Preflight',
-          body: 'Confirm every proposed item and check the approved instructions before Relay looks for gaps.',
-          button: 'Review knowledge',
+          title: 'Review what Relay found',
+          body: 'Choose what belongs in the handoff. Relay checks it automatically when Review is complete.',
+          button: 'Review findings',
           icon: 'arrow-right' as const,
         };
 
@@ -318,59 +349,17 @@ export default function HandoffScreen() {
         })}
       </View>
 
-      <View style={styles.summaryCard}>
-        <View style={styles.summaryItem}>
-          <AppText variant="title">{sources.length}</AppText>
-          <AppText variant="caption" color={colors.inkMuted}>{sources.length === 1 ? 'source' : 'sources'}</AppText>
-        </View>
-        <View style={styles.summaryDivider} />
-        <View style={styles.summaryItem}>
-          <AppText variant="title">{approvedItems.length}</AppText>
-          <AppText variant="caption" color={colors.inkMuted}>approved</AppText>
-        </View>
-        <View style={styles.summaryDivider} />
-        <View style={styles.summaryItem}>
-          <AppText variant="title">{proposedItems.length}</AppText>
-          <AppText variant="caption" color={colors.inkMuted}>to review</AppText>
-        </View>
-      </View>
-
       {handoff.status === 'draft' ? (
-        <>
-          <View style={styles.sectionHeading}>
-            <View style={styles.sectionTitle}>
-              <AppText variant="caption" color={colors.moss} style={styles.eyebrow}>CAPTURE</AppText>
-              <AppText variant="heading">Add what only you know</AppText>
-            </View>
-            <AppText color={colors.inkMuted}>Return throughout the service period to capture new context while keeping evidence separate from approved knowledge.</AppText>
-          </View>
-          <View style={styles.captureActions}>
-            <Button icon="microphone-outline" label="Record voice knowledge" onPress={() => router.push((`/capture-voice?handoffId=${handoff.id}`) as Href)} />
-            <Button icon="text-box-plus-outline" label="Type or paste notes" tone="secondary" onPress={() => router.push((`/capture-text?handoffId=${handoff.id}`) as Href)} />
-            <Button icon="file-upload-outline" label="Upload a document" tone="secondary" onPress={() => router.push((`/capture-document?handoffId=${handoff.id}`) as Href)} />
-          </View>
-          <View style={styles.capturePrompts}>
-            <AppText variant="label">Optional prompts for real-world capture</AppText>
-            <AppText variant="caption" color={colors.inkMuted}>Use only what fits this role—these are guidance, not new modules or tasks.</AppText>
-            <View style={styles.promptList}>
-              {[
-                'Role responsibilities', 'Annual registration or training', 'Finances or budget handoff',
-                'Recurring events', 'Advisor or vendor contacts', 'Account and tool access',
-                'Calendars and deadlines', 'Constitution or policies', 'Lessons and common mistakes',
-              ].map((prompt) => (
-                <View key={prompt} style={styles.promptChip}>
-                  <MaterialCommunityIcons color={colors.moss} name="plus-circle-outline" size={16} />
-                  <AppText variant="caption" color={colors.moss}>{prompt}</AppText>
-                </View>
-              ))}
-            </View>
-          </View>
-        </>
+        <UnifiedCaptureComposer
+          editingCapture={editingCapture}
+          organizationId={handoff.organizationId}
+          handoffId={handoff.id}
+          onEditComplete={() => setEditingCapture(null)}
+        />
       ) : null}
 
       <View style={styles.contentSection}>
         <View style={styles.sectionTitle}>
-          <AppText variant="caption" color={colors.moss} style={styles.eyebrow}>APPROVED KNOWLEDGE</AppText>
           <AppText variant="heading">What the next leader should know</AppText>
         </View>
         {approvedItems.length ? (
@@ -391,8 +380,8 @@ export default function HandoffScreen() {
           <View style={styles.emptyCard}>
             <MaterialCommunityIcons color={colors.moss} name="clipboard-text-outline" size={30} />
             <View style={styles.cardCopy}>
-              <AppText variant="label">No approved knowledge yet</AppText>
-              <AppText color={colors.inkMuted}>Create proposals from captured notes or documents, then approve what belongs in the handoff.</AppText>
+              <AppText variant="label">Nothing added yet</AppText>
+              <AppText color={colors.inkMuted}>Organize your captures, then review what belongs in the handoff.</AppText>
             </View>
           </View>
         )}
@@ -422,20 +411,18 @@ export default function HandoffScreen() {
 
       <View style={styles.contentSection}>
         <View style={styles.sectionTitle}>
-          <AppText variant="caption" color={colors.moss} style={styles.eyebrow}>SOURCE EVIDENCE</AppText>
-          <AppText variant="heading">Original material</AppText>
+          <AppText variant="heading">Your captures</AppText>
         </View>
-        {sources.length ? (
+        {captures.length ? (
           <View style={styles.list}>
-            {sources.map((source) => (
-              <SourceCard
-                editable={handoff.status === 'draft' && source.isCurrent}
-                key={source.id}
-                source={source}
-                retrying={retryMutation.isPending && retryMutation.variables?.id === source.id}
-                structuring={structureMutation.isPending && structureMutation.variables?.sourceId === source.id}
-                onRetry={() => retryMutation.mutate({ id: source.id, handoffId: source.handoffId })}
-                onStructure={() => structureMutation.mutate({ sourceId: source.id, handoffId: source.handoffId })}
+            {captures.map((capture) => (
+              <CaptureCard
+                capture={capture}
+                editable={handoff.status === 'draft'}
+                key={capture.id}
+                structuring={structureMutation.isPending && structureMutation.variables?.captureId === capture.id}
+                onEdit={() => setEditingCapture(capture)}
+                onStructure={() => structureMutation.mutate({ captureId: capture.id, handoffId: capture.handoffId })}
               />
             ))}
           </View>
@@ -443,14 +430,14 @@ export default function HandoffScreen() {
           <View style={styles.emptyCard}>
             <MaterialCommunityIcons color={colors.moss} name="tray-arrow-up" size={30} />
             <View style={styles.cardCopy}>
-              <AppText variant="label">No sources yet</AppText>
-              <AppText color={colors.inkMuted}>Record, type, or upload the first piece of source evidence.</AppText>
+              <AppText variant="label">No captures yet</AppText>
+              <AppText color={colors.inkMuted}>Write, record, or attach what the next leader should know.</AppText>
             </View>
           </View>
         )}
-        {retryMutation.error || structureMutation.error ? (
+        {structureMutation.error ? (
           <AppText accessibilityLiveRegion="polite" variant="caption" color={colors.emergency}>
-            {(retryMutation.error ?? structureMutation.error)?.message}
+            {structureMutation.error.message}
           </AppText>
         ) : null}
       </View>
@@ -466,19 +453,7 @@ const styles = StyleSheet.create({
   stageDot: { width: 30, height: 30, borderRadius: radii.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceMuted },
   stageDotReached: { backgroundColor: '#789786' },
   stageDotActive: { backgroundColor: colors.moss },
-  summaryCard: {
-    flexDirection: 'row', alignItems: 'center', marginBottom: spacing.xl,
-    padding: spacing.md, borderWidth: 1, borderColor: colors.line,
-    borderRadius: radii.lg, backgroundColor: colors.surface,
-  },
-  summaryItem: { flex: 1, alignItems: 'center', gap: spacing.xxs },
-  summaryDivider: { width: 1, height: 38, backgroundColor: colors.line },
-  sectionHeading: { gap: spacing.xs, marginBottom: spacing.md },
   sectionTitle: { gap: spacing.xxs },
-  captureActions: { gap: spacing.sm },
-  capturePrompts: { gap: spacing.xs, marginTop: spacing.md, padding: spacing.md, borderRadius: radii.lg, backgroundColor: colors.mossSoft },
-  promptList: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
-  promptChip: { flexDirection: 'row', alignItems: 'center', gap: spacing.xxs, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs, borderRadius: radii.pill, backgroundColor: colors.surface },
   contentSection: { gap: spacing.md, marginTop: spacing.xl },
   reviewCard: {
     gap: spacing.md, marginTop: spacing.xl, padding: spacing.lg,
@@ -489,6 +464,14 @@ const styles = StyleSheet.create({
   sourceCard: { overflow: 'hidden', borderWidth: 1, borderColor: colors.line, borderRadius: radii.lg, backgroundColor: colors.surface },
   sourceMain: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md, padding: spacing.md },
   sourceRetry: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.line, backgroundColor: colors.canvas },
+  captureActions: {
+    flexDirection: 'row', justifyContent: 'flex-end', gap: spacing.xs,
+    paddingHorizontal: spacing.sm, paddingBottom: spacing.sm,
+  },
+  captureStatus: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
+  attachmentList: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.line },
+  attachmentRow: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.line },
+  attachmentMain: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, padding: spacing.md },
   structureAction: { gap: spacing.xs, paddingHorizontal: spacing.md, paddingVertical: spacing.xs },
   structureResult: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, padding: spacing.md },
   sourceIcon: {

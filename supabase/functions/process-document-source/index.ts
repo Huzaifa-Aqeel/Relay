@@ -1,4 +1,5 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.116.0';
+import { completeDocumentText, DocumentTextLimitError } from '../_shared/document-text.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -29,10 +30,6 @@ type SourceRow = {
   size_bytes: number | null;
   processing_status: string;
   provider_reference: string | null;
-  supersedes_source_id: string | null;
-  source_root_id: string | null;
-  version_number: number;
-  is_current: boolean;
 };
 
 type TransformElement = {
@@ -353,9 +350,6 @@ async function indexChunks(
         source_id: source.id,
         source_title: source.title,
         source_kind: source.kind,
-        source_root_id: source.source_root_id,
-        source_version_number: source.version_number,
-        is_current: source.is_current,
         element_id: chunk.elementId,
         element_type: chunk.elementType,
         page_number: chunk.pageNumber,
@@ -412,6 +406,96 @@ async function markFailed(
   };
   if (processingError.clearProviderReference) update.provider_reference = null;
   await admin.from('sources').update(update).eq('id', sourceId).eq('processing_status', 'processing');
+  const { data: links } = await admin.from('capture_sources')
+    .select('capture_id')
+    .eq('source_id', sourceId)
+    .eq('relationship', 'attachment')
+    .is('removed_at', null);
+  for (const link of links ?? []) {
+    await admin.from('captures').update({
+      structuring_status: 'failed',
+      structuring_failure_reason: processingError.publicMessage.slice(0, 500),
+      structured_at: null,
+      structured_proposal_count: null,
+    }).eq('id', link.capture_id).neq('structuring_status', 'processing');
+  }
+}
+
+async function continueRequestedOrganize(
+  config: ServerConfig,
+  admin: ReturnType<typeof createClient>,
+  source: SourceRow,
+  authorization: string,
+) {
+  const { data: captureLinks, error: captureLinkError } = await admin
+    .from('capture_sources')
+    .select('capture_id')
+    .eq('source_id', source.id)
+    .eq('relationship', 'attachment')
+    .is('removed_at', null);
+  if (captureLinkError) throw captureLinkError;
+  if (captureLinks?.length) {
+    for (const link of captureLinks) {
+      try {
+        const response = await fetch(`${config.supabaseUrl}/functions/v1/generate-knowledge-proposals`, {
+          method: 'POST',
+          headers: {
+            Authorization: authorization,
+            apikey: config.anonKey,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ captureId: link.capture_id }),
+        });
+        // Waiting for another attachment and an already-claimed Capture are both
+        // expected. Model/storage failures are recorded by the Organize function.
+        if (response.status === 202 || response.status === 409 || response.ok) continue;
+      } catch {
+        await admin.from('captures').update({
+          structuring_status: 'failed',
+          structuring_failure_reason: "We couldn't organize this capture.",
+          structured_at: null,
+          structured_proposal_count: null,
+        }).eq('id', link.capture_id).eq('structuring_status', 'not_started');
+      }
+    }
+    return;
+  }
+}
+
+async function removeAttachment(
+  config: ServerConfig,
+  admin: ReturnType<typeof createClient>,
+  source: SourceRow,
+  captureId: string,
+) {
+  const { data: relation, error: relationError } = await admin.from('capture_sources')
+    .select('capture_id')
+    .eq('capture_id', captureId)
+    .eq('source_id', source.id)
+    .eq('relationship', 'attachment')
+    .not('removed_at', 'is', null)
+    .maybeSingle();
+  if (relationError || !relation) throw new ProcessingError('This removed attachment is unavailable.');
+
+  const { count, error: activeError } = await admin.from('capture_sources')
+    .select('*', { count: 'exact', head: true })
+    .eq('source_id', source.id)
+    .eq('relationship', 'attachment')
+    .is('removed_at', null);
+  if (activeError) throw activeError;
+  if ((count ?? 0) === 0) {
+    await astraCommand(config, 'collection', { deleteMany: { filter: { source_id: source.id } } });
+    if (source.storage_path) {
+      const { error: storageError } = await admin.storage.from(SOURCE_BUCKET).remove([source.storage_path]);
+      if (storageError) throw storageError;
+    }
+    const { error: deleteError } = await admin.from('sources').delete().eq('id', source.id);
+    if (deleteError) throw deleteError;
+  } else {
+    const { error: unlinkError } = await admin.from('capture_sources')
+      .delete().eq('capture_id', captureId).eq('source_id', source.id);
+    if (unlinkError) throw unlinkError;
+  }
 }
 
 async function processDocument(
@@ -454,11 +538,18 @@ async function processDocument(
     }
 
     const chunks = chunksFromElements(elements);
-    const sourceText = elements
-      .map((element) => typeof element.text === 'string' ? element.text.trim() : '')
-      .filter(Boolean)
-      .join('\n\n')
-      .slice(0, MAX_SOURCE_TEXT_CHARS);
+    let sourceText: string;
+    try {
+      sourceText = completeDocumentText(
+        elements.map((element) => element.text),
+        MAX_SOURCE_TEXT_CHARS,
+      );
+    } catch (error) {
+      if (error instanceof DocumentTextLimitError) {
+        throw new ProcessingError('This document contains more than 50,000 characters of readable text. Split it into smaller documents so Relay can organize every part safely.');
+      }
+      throw error;
+    }
 
     if (!await sourceStillProcessing(admin, source.id)) return;
     const indexed = await indexChunks(config, source, chunks);
@@ -479,17 +570,7 @@ async function processDocument(
       await cleanupAstraRun(config, source.id, indexed.runId);
       return;
     }
-    if (source.supersedes_source_id) {
-      await fetch(`${config.supabaseUrl}/functions/v1/generate-knowledge-proposals`, {
-        method: 'POST',
-        headers: {
-          Authorization: authorization,
-          apikey: config.anonKey,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ sourceId: source.id }),
-      }).catch(() => null);
-    }
+    await continueRequestedOrganize(config, admin, source, authorization);
   } catch (error) {
     console.error('Document source processing failed', error instanceof Error ? error.message : 'unknown error');
     await markFailed(admin, source.id, error);
@@ -518,9 +599,13 @@ Deno.serve(async (request) => {
   if (userError || !userData.user) return json({ error: 'Your session is no longer valid.' }, 401);
 
   let sourceId = '';
+  let captureId = '';
+  let action = 'process';
   try {
     const body = await request.json();
     sourceId = typeof body?.sourceId === 'string' ? body.sourceId : '';
+    captureId = typeof body?.captureId === 'string' ? body.captureId : '';
+    action = body?.action === 'remove' ? 'remove' : 'process';
   } catch {
     return json({ error: 'A source ID is required.' }, 400);
   }
@@ -530,7 +615,7 @@ Deno.serve(async (request) => {
 
   const { data: source, error: sourceError } = await userClient
     .from('sources')
-    .select('id, organization_id, handoff_id, kind, title, storage_path, mime_type, size_bytes, processing_status, provider_reference, supersedes_source_id, source_root_id, version_number, is_current')
+    .select('id, organization_id, handoff_id, kind, title, storage_path, mime_type, size_bytes, processing_status, provider_reference')
     .eq('id', sourceId)
     .maybeSingle();
   if (sourceError || !source) return json({ error: 'This source is unavailable.' }, 404);
@@ -544,10 +629,29 @@ Deno.serve(async (request) => {
   if (adminCheckError || !isAdmin) return json({ error: 'You do not have permission to process this source.' }, 403);
 
   const admin = createClient(config.supabaseUrl, config.serviceRoleKey, { auth: { persistSession: false } });
+  if (action === 'remove') {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(captureId)) {
+      return json({ error: 'A valid capture ID is required.' }, 400);
+    }
+    try {
+      await removeAttachment(config, admin, source as SourceRow, captureId);
+      return json({ removed: true, sourceId: source.id });
+    } catch (error) {
+      console.error('Attachment cleanup failed', error instanceof Error ? error.message : 'unknown error');
+      return json({ error: 'Relay could not finish removing this attachment. Try Organize again.' }, 500);
+    }
+  }
+  if (source.processing_status === 'ready') {
+    return json({ accepted: false, alreadyReady: true, sourceId: source.id });
+  }
+  if (source.processing_status === 'processing') {
+    return json({ accepted: true, alreadyProcessing: true, sourceId: source.id }, 202);
+  }
   const { error: statusError } = await admin
     .from('sources')
     .update({ processing_status: 'processing', failure_reason: null })
-    .eq('id', source.id);
+    .eq('id', source.id)
+    .in('processing_status', ['pending', 'failed']);
   if (statusError) return json({ error: 'Relay could not start document processing.' }, 500);
 
   const task = processDocument(config, admin, source as SourceRow, authorization);

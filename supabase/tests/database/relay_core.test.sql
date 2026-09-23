@@ -1,6 +1,6 @@
 begin;
 
-select plan(206);
+select no_plan();
 
 insert into auth.users (id, email)
 values
@@ -61,7 +61,11 @@ select lives_ok(
 set local role postgres;
 update public.roles
 set id = '55555555-5555-4555-8555-555555555555'
-where title = 'President';
+where title = 'President'
+  and organization_id = (
+    select organization_id from public.organization_members
+    where user_id = '33333333-3333-4333-8333-333333333333'
+  );
 insert into public.role_assignments(organization_id,role_id,user_id,service_period,assigned_by)
 select organization_id,id,'33333333-3333-4333-8333-333333333333',period,'33333333-3333-4333-8333-333333333333'
 from public.roles cross join (values ('2026–2027'),('2027–2028')) p(period) where id = '55555555-5555-4555-8555-555555555555';
@@ -300,6 +304,41 @@ select is(
   (select stage from public.handoffs where id = '66666666-6666-4666-8666-666666666666'),
   'capture',
   'returning to Capture updates the handoff stage'
+);
+
+update public.sources
+set structuring_status = 'failed',
+    structuring_failure_reason = 'Temporary Organize failure',
+    structured_at = null,
+    structured_proposal_count = null
+where id = '77777777-7777-4777-8777-777777777777';
+
+create temporary table organize_claim_counts (value bigint) on commit drop;
+with claimed as (
+  update public.sources set structuring_status = 'processing', structuring_failure_reason = null
+  where id = '77777777-7777-4777-8777-777777777777' and structuring_status <> 'processing'
+  returning id
+)
+insert into organize_claim_counts select count(*) from claimed;
+
+select is(
+  (select value from organize_claim_counts),
+  1::bigint,
+  'a failed Organize attempt can be claimed for retry'
+);
+
+truncate organize_claim_counts;
+with claimed as (
+  update public.sources set structuring_status = 'processing'
+  where id = '77777777-7777-4777-8777-777777777777' and structuring_status <> 'processing'
+  returning id
+)
+insert into organize_claim_counts select count(*) from claimed;
+
+select is(
+  (select value from organize_claim_counts),
+  0::bigint,
+  'a duplicate concurrent Organize claim is blocked'
 );
 
 select lives_ok(
@@ -557,6 +596,7 @@ select is((select count(*) from public.organizations), 1::bigint, 'a member can 
 select is((select count(*) from public.roles), 1::bigint, 'a member can read organization roles');
 select is((select count(*) from public.handoffs), 1::bigint, 'a member can read organization handoffs');
 select is((select count(*) from public.sources), 0::bigint, 'membership alone cannot read role sources');
+select is((select count(*) from public.captures), 0::bigint, 'membership alone cannot read private Captures');
 select is((select count(*) from storage.objects where bucket_id = 'handoff-sources'), 0::bigint, 'membership alone cannot read private source files');
 select is((select count(*) from public.knowledge_items), 0::bigint, 'membership alone cannot read working knowledge');
 select is((select count(*) from public.knowledge_item_sources), 0::bigint, 'membership alone cannot read private provenance');
@@ -602,6 +642,16 @@ select throws_ok(
   '42501',
   null,
   'a normal member cannot create handoff sources'
+);
+
+select throws_ok(
+  $$select public.create_capture_draft(
+    (select organization_id from public.handoffs where id = '66666666-6666-4666-8666-666666666666'),
+    '66666666-6666-4666-8666-666666666666', 'Unauthorized capture', null, 'Private note'
+  )$$,
+  '42501',
+  null,
+  'membership without a Role Assignment cannot create a Capture'
 );
 
 select throws_ok(
@@ -1576,67 +1626,47 @@ select lives_ok(
   $$
     insert into public.sources (
       id, organization_id, handoff_id, created_by, kind, title, text_content,
-      mime_type, processing_status, normalized_filename, content_hash
+      mime_type, processing_status, content_hash
     ) values (
       '11111111-1010-4010-8010-101010101010',
       (select organization_id from public.handoffs where id = '10101010-1010-4010-8010-101010101010'),
       '10101010-1010-4010-8010-101010101010',
       '33333333-3333-4333-8333-333333333333',
-      'document', 'RoboFest guide', 'Book Engineering Hall twelve weeks before RoboFest.',
-      'application/pdf', 'ready', 'robofest-guide', repeat('a', 64)
+      'document', 'RoboFest guide', null,
+      'application/pdf', 'pending', repeat('a', 64)
     )
   $$,
-  'a first document becomes the root source version'
+  'saving a document can persist a pending Source without parsing it'
 );
 
 select lives_ok(
   $$
     insert into public.sources (
       id, organization_id, handoff_id, created_by, kind, title, text_content,
-      mime_type, processing_status, normalized_filename, content_hash,
-      supersedes_source_id, version_match_basis
+      mime_type, processing_status, content_hash
     ) values (
       '12121212-1010-4010-8010-101010101010',
       (select organization_id from public.handoffs where id = '10101010-1010-4010-8010-101010101010'),
       '10101010-1010-4010-8010-101010101010',
       '33333333-3333-4333-8333-333333333333',
       'document', 'RoboFest guide', 'Book Engineering Hall sixteen weeks before RoboFest.',
-      'application/pdf', 'ready', 'robofest-guide', repeat('b', 64),
-      '11111111-1010-4010-8010-101010101010', 'filename_and_type'
+      'application/pdf', 'ready', repeat('b', 64)
     )
   $$,
-  'a changed document can link to its prior version'
-);
-
-select is(
-  (select is_current from public.sources where id = '11111111-1010-4010-8010-101010101010'),
-  false,
-  'linking a new version preserves and marks the prior source historical'
-);
-
-select is(
-  (select version_number from public.sources where id = '12121212-1010-4010-8010-101010101010'),
-  2,
-  'the linked source receives the next version number'
-);
-
-select is(
-  (select is_current from public.sources where id = '12121212-1010-4010-8010-101010101010'),
-  true,
-  'the latest linked source is current'
+  'different bytes remain a separate document without fuzzy version linking'
 );
 
 select throws_like(
   $$
     insert into public.sources (
       organization_id, handoff_id, created_by, kind, title, text_content,
-      mime_type, processing_status, normalized_filename, content_hash
+      mime_type, processing_status, content_hash
     ) values (
       (select organization_id from public.handoffs where id = '10101010-1010-4010-8010-101010101010'),
       '10101010-1010-4010-8010-101010101010',
       '33333333-3333-4333-8333-333333333333',
       'document', 'Duplicate', 'Duplicate bytes represented by the same digest.',
-      'application/pdf', 'ready', 'duplicate', repeat('b', 64)
+      'application/pdf', 'ready', repeat('b', 64)
     )
   $$,
   '%duplicate key value%',
@@ -1658,6 +1688,12 @@ select isnt(
   (select lineage_id from public.knowledge_items where id = '13131313-1010-4010-8010-101010101010'),
   null,
   'approved knowledge receives durable lineage metadata'
+);
+
+select is(
+  (select status from public.knowledge_items where id = '13131313-1010-4010-8010-101010101010'),
+  'approved',
+  'a newer document never retires approved knowledge without a reviewed proposal decision'
 );
 
 update public.sources set structuring_status = 'processing'
@@ -1885,10 +1921,382 @@ select is(
   'human confirmation creates an explicit lesson-to-practice link'
 );
 
+select lives_ok(
+  $$select public.create_capture_draft(
+    (select organization_id from public.handoffs where id = '10101010-1010-4010-8010-101010101010'),
+    '10101010-1010-4010-8010-101010101010',
+    'Custom capture', null,
+    'Keep the budget spreadsheet current throughout the service period.'
+  )$$,
+  'custom text creates one Capture through the same model'
+);
+
+select is(
+  (select count(*) from public.captures
+   where title = 'Custom capture' and prompt_id is null and text_content is not null),
+  1::bigint,
+  'custom Capture text does not require guided-prompt metadata'
+);
+
+select lives_ok(
+  $$select public.save_capture(
+    (select id from public.captures where title = 'Custom capture'),
+    'Custom capture', null,
+    'Keep the budget spreadsheet current throughout the service period.',
+    array[]::uuid[]
+  )$$,
+  'Save persists a custom text Capture without running Organize'
+);
+
+select is(
+  (select structuring_status from public.captures where title = 'Custom capture'),
+  'not_started',
+  'Save leaves the Capture ready for an explicit Organize action'
+);
+
+select lives_ok(
+  $$select public.create_capture_draft(
+    (select organization_id from public.handoffs where id = '10101010-1010-4010-8010-101010101010'),
+    '10101010-1010-4010-8010-101010101010',
+    'Constitution or policies',
+    'constitution-policies',
+    'Every Friday, update the event budget spreadsheet in the shared drive.'
+  )$$,
+  'a guided text answer creates one Capture'
+);
+
+select is(
+  (select prompt_id from public.captures where title = 'Constitution or policies'),
+  'constitution-policies',
+  'guided prompt identity is retained as Capture metadata'
+);
+
+select is(
+  (select text_content from public.captures where title = 'Constitution or policies'),
+  'Every Friday, update the event budget spreadsheet in the shared drive.',
+  'typed or transcribed content is stored as Capture text'
+);
+
+select is(
+  (select count(*) from public.capture_sources relation
+   join public.sources source on source.id = relation.source_id
+   where relation.capture_id = (select id from public.captures where title = 'Constitution or policies')
+     and relation.relationship = 'text' and source.kind = 'voice'),
+  0::bigint,
+  'Capture text never creates a separate voice Source type'
+);
+
+select is(
+  (select source.title from public.capture_sources relation
+   join public.sources source on source.id = relation.source_id
+   where relation.capture_id = (select id from public.captures where title = 'Constitution or policies')
+     and relation.relationship = 'text'),
+  'Capture note',
+  'guided prompt text remains Capture metadata rather than the semantic evidence label'
+);
+
+select lives_ok(
+  $$select public.attach_source_to_capture(
+    (select id from public.captures where title = 'Constitution or policies'),
+    '12121212-1010-4010-8010-101010101010', 1, false
+  )$$,
+  'an existing current document can be attached to the Capture'
+);
+
+select lives_ok(
+  $$insert into public.sources (
+    id, organization_id, handoff_id, created_by, kind, title, text_content,
+    mime_type, processing_status, content_hash
+  ) values (
+    '17171717-1010-4010-8010-101010101010',
+    (select organization_id from public.handoffs where id = '10101010-1010-4010-8010-101010101010'),
+    '10101010-1010-4010-8010-101010101010',
+    '33333333-3333-4333-8333-333333333333',
+    'document', 'Funding guide', 'Send the budget to the faculty advisor after updating it.',
+    'application/pdf', 'ready', repeat('d', 64)
+  )$$,
+  'each attachment remains an individually identifiable Source'
+);
+
+select lives_ok(
+  $$select public.create_capture_draft(
+    (select organization_id from public.handoffs where id = '10101010-1010-4010-8010-101010101010'),
+    '10101010-1010-4010-8010-101010101010',
+    'Supporting files', null, null
+  )$$,
+  'a file-only submission starts one Capture without synthetic text'
+);
+
+select lives_ok(
+  $$select public.attach_source_to_capture(
+    (select id from public.captures where title = 'Supporting files'),
+    '12121212-1010-4010-8010-101010101010', 1, false
+  )$$,
+  'the first file joins the file-only Capture'
+);
+
+select lives_ok(
+  $$select public.attach_source_to_capture(
+    (select id from public.captures where title = 'Supporting files'),
+    '17171717-1010-4010-8010-101010101010', 2, false
+  )$$,
+  'the second file joins the same file-only Capture'
+);
+
+select lives_ok(
+  $$select public.save_capture(
+    (select id from public.captures where title = 'Supporting files'),
+    'Supporting files', null, null,
+    array[
+      '12121212-1010-4010-8010-101010101010'::uuid,
+      '17171717-1010-4010-8010-101010101010'::uuid
+    ]
+  )$$,
+  'Save persists multiple files as one Capture without synthetic text'
+);
+
+select is(
+  (select text_content from public.captures where title = 'Supporting files'),
+  null,
+  'file-only Capture text remains empty rather than inventing evidence'
+);
+
+select is(
+  (select count(*) from public.capture_sources
+   where capture_id = (select id from public.captures where title = 'Supporting files')
+     and relationship = 'attachment'),
+  2::bigint,
+  'multiple files without text remain attachments of one Capture'
+);
+
+select lives_ok(
+  $$select public.attach_source_to_capture(
+    (select id from public.captures where title = 'Constitution or policies'),
+    '17171717-1010-4010-8010-101010101010', 2, true
+  )$$,
+  'a second document joins the same Capture rather than creating another Capture'
+);
+
+select lives_ok(
+  $$select public.save_capture(
+    (select id from public.captures where title = 'Constitution or policies'),
+    'Constitution or policies', 'constitution-policies',
+    'Every Friday, update the event budget spreadsheet in the shared drive.',
+    array[
+      '12121212-1010-4010-8010-101010101010'::uuid,
+      '17171717-1010-4010-8010-101010101010'::uuid
+    ]
+  )$$,
+  'a guided Capture saves after its text and attachments are assembled'
+);
+
+select is(
+  (select count(*) from public.capture_sources
+   where capture_id = (select id from public.captures where title = 'Constitution or policies')
+     and relationship = 'attachment'),
+  2::bigint,
+  'multiple files remain attachments of one Capture'
+);
+
+select lives_ok(
+  $$select public.save_capture(
+    (select id from public.captures where title = 'Constitution or policies'),
+    'Constitution or policies', 'constitution-policies',
+    'Every Friday, update the event budget spreadsheet in the shared drive.',
+    array[
+      '12121212-1010-4010-8010-101010101010'::uuid,
+      '17171717-1010-4010-8010-101010101010'::uuid
+    ]
+  )$$,
+  'an existing Capture remains editable and can be saved again'
+);
+
+set local role postgres;
+update public.captures set structuring_status = 'processing'
+where title = 'Constitution or policies';
+set local role authenticated;
+
+select lives_ok(
+  $$select public.replace_capture_knowledge_proposals(
+    (select id from public.captures where title = 'Constitution or policies'),
+    jsonb_build_array(
+      jsonb_build_object(
+        'proposal_action', 'create', 'target_knowledge_item_id', null,
+        'knowledge_type', 'process', 'title', 'Update the event budget weekly',
+        'content', 'Update the event budget spreadsheet every Friday.',
+        'uncertainty_note', null,
+        'evidence_source_id', (select source_id from public.capture_sources
+          where capture_id = (select id from public.captures where title = 'Constitution or policies')
+            and relationship = 'text'),
+        'source_excerpt', 'Every Friday, update the event budget spreadsheet in the shared drive.',
+        'source_locator', null
+      ),
+      jsonb_build_object(
+        'proposal_action', 'create', 'target_knowledge_item_id', null,
+        'knowledge_type', 'process', 'title', 'Send the updated budget to the advisor',
+        'content', 'Send the updated budget to the faculty advisor.',
+        'uncertainty_note', null,
+        'evidence_source_id', '17171717-1010-4010-8010-101010101010',
+        'source_excerpt', 'Send the budget to the faculty advisor after updating it.',
+        'source_locator', null
+      )
+    )
+  )$$,
+  'one atomic Capture Organize write can save multiple grounded suggestions'
+);
+
+select is(
+  (select count(*) from public.knowledge_items
+   where capture_id = (select id from public.captures where title = 'Constitution or policies')
+     and status = 'proposed'),
+  2::bigint,
+  'Review suggestions remain grouped by the Capture that produced them'
+);
+
+select is(
+  (select count(distinct provenance.source_id)
+   from public.knowledge_items item
+   join public.knowledge_item_sources provenance on provenance.knowledge_item_id = item.id
+   where item.capture_id = (select id from public.captures where title = 'Constitution or policies')),
+  2::bigint,
+  'Capture suggestions retain exact text-versus-attachment Source provenance'
+);
+
+select is(
+  (select structured_proposal_count from public.captures where title = 'Constitution or policies'),
+  2,
+  'Organize records one completed result on the Capture rather than separate user-facing Sources'
+);
+
+select lives_ok(
+  $$with inserted as (
+    insert into public.knowledge_items (
+      id, organization_id, handoff_id, created_by, knowledge_type,
+      title, content, status, origin
+    ) values (
+      '18181818-1010-4010-8010-101010101010',
+      (select organization_id from public.handoffs where id = '10101010-1010-4010-8010-101010101010'),
+      '10101010-1010-4010-8010-101010101010',
+      '33333333-3333-4333-8333-333333333333',
+      'process', 'Send budget to advisor',
+      'Send the budget to the faculty advisor after updating it.',
+      'approved', 'manual'
+    ) returning id
+  )
+  insert into public.knowledge_item_sources (
+    knowledge_item_id, source_id, handoff_id, organization_id, source_excerpt
+  ) select id, '17171717-1010-4010-8010-101010101010',
+    '10101010-1010-4010-8010-101010101010',
+    (select organization_id from public.handoffs where id = '10101010-1010-4010-8010-101010101010'),
+    'Send the budget to the faculty advisor after updating it.'
+  from inserted$$,
+  'an organized prior document can establish approved knowledge provenance'
+);
+
+select lives_ok(
+  $$select public.create_capture_draft(
+    (select organization_id from public.handoffs where id = '10101010-1010-4010-8010-101010101010'),
+    '10101010-1010-4010-8010-101010101010',
+    'Editable finance capture', null,
+    'The advisor receives the budget after it is updated.'
+  )$$,
+  'an editable Capture can start with text'
+);
+
+select lives_ok(
+  $$insert into public.sources (
+    id, organization_id, handoff_id, created_by, kind, title, text_content,
+    mime_type, processing_status, content_hash
+  ) values (
+    '19191919-1010-4010-8010-101010101010',
+    (select organization_id from public.handoffs where id = '10101010-1010-4010-8010-101010101010'),
+    '10101010-1010-4010-8010-101010101010',
+    '33333333-3333-4333-8333-333333333333',
+    'document', 'Replacement funding guide', null,
+    'application/pdf', 'pending', repeat('e', 64)
+  )$$,
+  'a newly saved attachment remains pending until Organize'
+);
+
+select lives_ok(
+  $$select public.attach_source_to_capture(
+    (select id from public.captures where title = 'Editable finance capture'),
+    '19191919-1010-4010-8010-101010101010', 1, true
+  )$$,
+  'the pending attachment belongs to its Capture'
+);
+
+select lives_ok(
+  $$select public.save_capture(
+    (select id from public.captures where title = 'Editable finance capture'),
+    'Editable finance capture', null,
+    'The advisor receives the budget after it is updated.',
+    array['19191919-1010-4010-8010-101010101010'::uuid]
+  )$$,
+  'Save persists text and the current attachment state'
+);
+
+select is(
+  (select processing_status from public.sources where id = '19191919-1010-4010-8010-101010101010'),
+  'pending',
+  'Save does not parse or index a new document'
+);
+
+select is(
+  (select count(*) from public.knowledge_items
+   where capture_id = (select id from public.captures where title = 'Editable finance capture')),
+  0::bigint,
+  'Save does not run AI or create Review suggestions'
+);
+
+select lives_ok(
+  $$select public.save_capture(
+    (select id from public.captures where title = 'Editable finance capture'),
+    'Editable finance capture', null,
+    'Send the final budget to the advisor every Friday.',
+    array[]::uuid[]
+  )$$,
+  'the user can edit text and remove attachments with another Save'
+);
+
+select is(
+  (select text_content from public.captures where title = 'Editable finance capture'),
+  'Send the final budget to the advisor every Friday.',
+  'Save persists only the latest Capture text'
+);
+
+select is(
+  (select removed_at is not null from public.capture_sources
+   where capture_id = (select id from public.captures where title = 'Editable finance capture')
+     and source_id = '19191919-1010-4010-8010-101010101010'),
+  true,
+  'Save marks a removed attachment for cleanup on the next Organize'
+);
+
+select lives_ok(
+  $$select public.rollback_capture_attachment(
+    (select id from public.captures where title = 'Editable finance capture'),
+    '19191919-1010-4010-8010-101010101010'
+  )$$,
+  'a failed multi-file Save can roll back a newly attached pending file'
+);
+
+select is(
+  (select count(*) from public.sources where id = '19191919-1010-4010-8010-101010101010'),
+  0::bigint,
+  'rollback removes an unreferenced pending Source instead of leaving partial Capture state'
+);
+
+select is(
+  (select status from public.knowledge_items where id = '18181818-1010-4010-8010-101010101010'),
+  'approved',
+  'editing a working Capture does not mutate already approved knowledge'
+);
+
 set local role postgres;
 select lives_ok(
   $$delete from public.handoffs where id = '10101010-1010-4010-8010-101010101010'$$,
-  'handoff deletion still cascades safely through version and knowledge lineage records'
+  'handoff deletion still cascades safely through Capture and published-knowledge lineage records'
 );
 
 select * from finish();

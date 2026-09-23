@@ -17,7 +17,11 @@
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": true
+      "predictiveBackGestureEnabled": true,
+      "permissions": [
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "output": "single",
@@ -64,6 +68,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "db90575f-2028-49cd-8bf0-965af229a6cb"
+      }
+    },
+    "owner": "quepass"
   }
 }

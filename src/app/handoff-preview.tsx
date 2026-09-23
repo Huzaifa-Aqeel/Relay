@@ -164,9 +164,9 @@ export default function HandoffPreviewScreen() {
       <Screen>
         <MessageState
           icon="shield-check-outline"
-          title="Finish Preflight first"
-          body="Exact Preview becomes available after the latest Preflight readiness decision."
-          actionLabel="Open Preflight"
+          title="Finish the handoff check first"
+          body="Exact Preview becomes available after the latest handoff-check decision."
+          actionLabel="Open handoff check"
           onAction={() => router.replace((`/handoff-preflight?handoffId=${handoffId}`) as Href)}
         />
       </Screen>
@@ -189,7 +189,7 @@ export default function HandoffPreviewScreen() {
           <AppText variant="caption" color={colors.moss} style={styles.eyebrow}>READY TO PUBLISH</AppText>
           <AppText variant="heading">Prepare to transfer the Role</AppText>
           <AppText color={colors.inkMuted}>Publish when preparing a leadership transition. Early publication and deliberate republication are available when plans change.</AppText>
-          <AppText color={colors.inkMuted}>Publishing includes these {items.length} approved items. Source files, transcripts, rejected proposals, and Preflight details stay private.</AppText>
+          <AppText color={colors.inkMuted}>Publishing includes these {items.length} approved items. Private captures, files, rejected suggestions, and handoff-check details stay private.</AppText>
           <Button disabled={mutating} icon="publish" label={publishMutation.isPending ? 'Publishing…' : 'Publish and create link'} onPress={publish} />
         </View>
       ) : null}

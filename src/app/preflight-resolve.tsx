@@ -21,7 +21,7 @@ export default function ResolvePreflightFindingScreen() {
         <MessageState
           icon="shield-alert-outline"
           title="Finding unavailable"
-          body="Open this resolution from a Preflight finding."
+          body="Open this resolution from a handoff-check finding."
         />
       </Screen>
     );
@@ -60,9 +60,9 @@ export default function ResolvePreflightFindingScreen() {
 
   return (
     <KnowledgeEditor
-      eyebrow={`${finding.severity} Preflight finding`}
+      eyebrow={`${finding.severity} handoff-check finding`}
       title="Turn the answer into approved knowledge"
-      description={`${finding.question} Your answer becomes part of the canonical handoff. Relay will ask you to rerun Preflight so readiness reflects the change.`}
+      description={`${finding.question} Your answer becomes part of the handoff. Relay will ask you to check it again so readiness reflects the change.`}
       defaultValues={{
         knowledgeType: finding.suggestedKnowledgeType ?? 'process',
         title: finding.title,

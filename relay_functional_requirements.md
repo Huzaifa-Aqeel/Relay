@@ -14,7 +14,7 @@
 
 Relay is a living institutional-memory layer for student organizations. Leaders capture operational knowledge throughout their service period, deliberately approve what is true, and publish an intentional handoff snapshot for the next leader.
 
-The current leader can return to a Draft Handoff during the year to speak, type, upload new or updated material, and maintain approved knowledge. Relay turns source evidence into reviewable knowledge and runs a **Handoff Preflight** that finds missing details, vague instructions, incomplete processes, and contradictions before publication.
+The current leader can return to a Draft Handoff during the year to speak, type, upload new or updated material, and maintain approved knowledge. Relay turns Capture evidence into reviewable knowledge and automatically runs a **Handoff check** that finds meaningful missing details, vague instructions, incomplete processes, and contradictions before publication.
 
 The incoming leader receives a focused immutable publication and can ask grounded questions from its approved knowledge. Across service periods, Relay helps the organization see what materially changed and why—but only when approved evidence or a human confirmation establishes the reason.
 
@@ -32,7 +32,7 @@ Documents remain evidence. Approved Knowledge Items remain product truth.
 
 ## Core loop
 
-**Capture → Structure → Preflight → Resolve → Publish → Ask**
+**Capture → Organize → Review → Handoff check → Publish → Ask**
 
 Any v1.3 feature that does not strengthen this loop should be excluded.
 
@@ -61,7 +61,7 @@ A feature belongs in Relay only if it helps **capture, structure, verify, transf
 | Actor | Description |
 |---|---|
 | **Organization Owner** | One authenticated member who oversees continuity, creates Roles, manages Role assignments and subscription association, and may offer ownership to an active member. Ownership alone grants no Role editing or raw-source access. |
-| **Role Holder / Current or Outgoing Leader** | Authenticated active member with an active server-side assignment for a specific Organization, Role, and service period. Maintains that living Handoff, approves knowledge, runs Preflight, deliberately publishes or revokes its recipient snapshot, and can invite the next holder or their own mid-year replacement for that Role only. The Owner may separately hold a Role assignment. |
+| **Role Holder / Current or Outgoing Leader** | Authenticated active member with an active server-side assignment for a specific Organization, Role, and service period. Maintains that living Handoff, reviews knowledge, resolves its Handoff check, deliberately publishes or revokes its recipient snapshot, and can invite the next holder or their own mid-year replacement for that Role only. The Owner may separately hold a Role assignment. |
 | **Incoming Recipient** | Reads a published Handoff and asks questions without an account or paid plan. Recipient access never grants membership or Role authority; becoming a successor Role Holder requires a separate authenticated assignment acceptance. |
 | **Purchaser** | Human whose RevenueCat/store account purchased the annual entitlement attached to one Organization. Only the current Owner may initiate/attach a purchase. Ownership transfer leaves the original purchaser and store billing account unchanged. |
 | **System** | Processes sources, runs AI, retrieval, and entitlement checks. |
@@ -78,34 +78,31 @@ A feature belongs in Relay only if it helps **capture, structure, verify, transf
 | ACT-06 | Organization membership records active/ended membership independently of active/ended Role assignments. Only one active maintainer exists per Role and service period. Pending invites grant no edit authority. | P0 |
 | ACT-07 | The Owner may create a time-limited, single-use assignment invite for any Role. The latest active Role Holder may create one only for a future service period of their own Role or to replace themselves in their current service period. The app-opening invite preserves the preselected Role/period while the invitee authenticates and explicitly accepts; ending the outgoing assignment, activating membership/the successor assignment, and opening the correct workspace are atomic. The outgoing account and attribution remain, but its prior Role assignment no longer grants private/edit access. | P0 |
 | ACT-08 | A mid-year replacement requires deliberate confirmation and an existing holder for that Role/service period. The Owner may replace any current Role Holder; a Role Holder may replace only themselves. Acceptance ends the former assignment, removes its private working/edit access, and preserves the same workspace, contributor attribution, and published recipient access. | P0 |
-| ACT-09 | Owner oversight shows Role Holder, service period, lifecycle, updated date, approved knowledge count, unresolved Preflight status/count, and publication/history. Owners may inspect approved knowledge and published Organization Memory, but raw Sources, transcripts, draft files, and unresolved proposals require the exact active Role Assignment. | P0 |
+| ACT-09 | Owner oversight shows Role Holder, service period, lifecycle, updated date, approved knowledge count, unresolved Handoff-check status/count, and publication/history. Owners may inspect approved knowledge and published Organization Memory, but raw Captures/Sources, transcripts, draft files, and unresolved suggestions require the exact active Role Assignment. | P0 |
 
 ---
 
 # 3. Core Domain
 
-Relay uses five primary objects:
+Relay uses six primary objects:
 
 - **Organization**
 - **Role**
 - **Handoff**
+- **Capture**
 - **Source**
 - **Knowledge Item**
 
 A Handoff belongs to one Role and has a service period such as `2025–2026`. A Role can retain multiple published Handoffs across service periods.
 
-A Source is original evidence such as:
-- voice transcript
-- typed notes
-- PDF / DOCX / PPTX
-- spreadsheet
-- image
+A Capture is one user contribution or topic. It contains optional user text, zero or more document attachments, and optional guided-prompt metadata. A confirmed voice transcript becomes the Capture's text and follows the same path as typed text.
+
+A Source is an internal, individually addressable evidence record. Relay keeps Capture text evidence and each current document attachment separately identifiable so extraction, Astra indexing, exact citations, and provenance remain correct. Sources are not the primary user-facing capture history.
 
 A Knowledge Item is a human-approved fact or instruction derived from one or more sources.
 
 Supporting lineage metadata connects:
 
-- versions of the same Source within a Handoff
 - revisions of canonical Knowledge Items
 - logically equivalent Knowledge Items across Handoffs for the same Role
 - an approved Lesson to a resulting Process, Warning, or Responsibility when evidence or human confirmation establishes the relationship
@@ -138,22 +135,22 @@ v1.3 has exactly one Organization Owner and one active maintainer per Role/servi
 
 A handoff moves through:
 
-**Draft → Review → Preflight → Ready → Published**
+**Draft → Review → Handoff check → Ready → Published**
 
-Draft is not a one-time graduation form. It remains a usable working space throughout the service period. Publishing is a deliberate snapshot after Review and Preflight; later working-source changes never silently alter an existing publication.
+Draft is not a one-time graduation form. It remains a usable working space throughout the service period. Publishing is a deliberate snapshot after Review and the Handoff check; later working evidence changes never silently alter an existing publication.
 
 ### Requirements
 
 | ID | Requirement | Priority |
 |---|---|---|
 | HAND-01 | User can create, save, and resume a draft handoff. | P0 |
-| HAND-02 | User can capture knowledge through voice, typed text, and documents, then approve evidence-backed proposals. | P0 |
+| HAND-02 | User can contribute typed text, a confirmed voice transcript, documents, or any supported combination in one Capture, then approve evidence-backed suggestions. | P0 |
 | HAND-03 | User can manually edit, reorder, and delete approved knowledge items. | P0 |
-| HAND-04 | Publishing requires the handoff to pass through Review and Preflight. | P0 |
+| HAND-04 | Publishing requires the handoff to pass through Review and the existing server-enforced Handoff check. | P0 |
 | HAND-05 | A Draft Handoff can be reopened throughout the service period to add voice notes, typed notes, new or updated files, and maintain approved contacts, deadlines, processes, warnings, resources, responsibilities, and lessons. | P0 |
 | HAND-06 | Publishing creates an intentional immutable recipient snapshot; continued Draft work or source replacement must not silently change a published Handoff. | P0 |
 | HAND-07 | A Role Holder normally maintains a living Draft throughout the service period and publishes when preparing to transfer the Role. Earlier publication and deliberate republication are allowed for unexpected transitions; publication is never automatic. | P0 |
-| HAND-08 | A replacement in the same Role/service period continues the existing working Handoff, including its approved knowledge, private role Sources/version lineage, pending proposals, Preflight, and publication history. Earlier contributors retain attribution and the ended holder loses current private access. | P0 |
+| HAND-08 | A replacement in the same Role/service period continues the existing working Handoff, including its Captures, approved knowledge, current private role Sources, pending suggestions, Handoff-check state, and publication history. Earlier contributors retain attribution and the ended holder loses current private access. | P0 |
 | HAND-09 | A successor starting a new service period receives a separate working Handoff initialized from the latest preceding published Handoff for the same Organization and Role. It carries forward published Responsibilities, Deadlines, Contacts, Processes, Warnings, Resources, and Lessons. | P0 |
 | HAND-10 | Carry-forward includes only approved publication knowledge and safe lineage/citation metadata. Rejected/unresolved proposals, private scratch notes, raw private Sources, and knowledge retired or absent from the publication are not inherited as current truth. Inherited items visibly identify the prior period. | P0 |
 | HAND-11 | New-period changes never mutate the previous publication. Inherited items preserve cross-period lineage and original attribution; stale inherited facts are maintained through the existing human review/edit/retirement flow. | P0 |
@@ -162,31 +159,26 @@ Draft is not a one-time graduation form. It remains a usable working space throu
 
 # 5. Knowledge Capture
 
-## Voice
+A Capture is one contribution or topic from the outgoing leader. It starts from either a fixed guided prompt or a custom capture and may combine text with multiple document attachments. Voice is an input method: after transcription and user correction, its transcript becomes the same Capture text used by typed input.
 
-Example prompt:
-
-> “Tell Relay how this role actually works. Include responsibilities, deadlines, important people, processes, common mistakes, and anything you wish you knew when you started.”
-
-## Text
-
-Users can type or paste existing notes without using a template.
-
-## Documents
-
-Users can upload common organizational documents.
+The Handoff page shows one compact capture entry point. Opening it presents the same composer for typing, recording, and adding one or more files. Capture history is grouped by Capture; individual attachments are revealed only when their preparation or provenance detail is useful.
 
 ### Requirements
 
 | ID | Requirement | Priority |
 |---|---|---|
-| CAP-01 | Voice capture uses a round waveform control. When the user stops recording, Relay sends the temporary device-local audio through the authenticated transcription function without persisting it, shows a short Transcribing state, then presents the full transcript for editing. **Continue** persists only the reviewed transcript as a private Ready voice Source; Relay never stores the audio. | P0 |
-| CAP-02 | User can type or paste free-form knowledge. | P0 |
-| CAP-03 | User can upload supported documents such as PDF, DOCX, PPTX, XLSX, text/Markdown/CSV, and common images. | P0 |
-| CAP-04 | Confirmed voice transcripts and original text/document Sources remain linked to any knowledge derived from them. Voice audio, failed transcriptions, and unconfirmed transcripts are not Sources. | P0 |
-| CAP-05 | A failed voice transcription creates no Source, Storage object, failed-processing row, or retry queue. Relay shows only **Record again** and **Write instead**; the latter opens the existing typed-note capture for the same Handoff. Temporary audio is never persisted. | P0 |
-| CAP-06 | Document UI shows Processing, Ready, or Failed and allows retry after failure. | P0 |
-| CAP-07 | Capture may show optional prompts for responsibilities, registration/training, finances, recurring events, advisor/vendor contacts, account/tool access, calendars/deadlines, policies, and lessons/common mistakes without creating new knowledge types or separate operational modules. | P0 |
+| CAP-01 | Voice capture uses a round waveform control. On Stop, temporary device-local audio is transcribed through the authenticated function without being persisted. Relay shows Transcribing, then a full editable transcript. The confirmed transcript becomes Capture text exactly like typed text; Relay never stores the audio or creates a separate voice Capture/Source. | P0 |
+| CAP-02 | A custom or guided Capture may contain optional free-form text and zero or more document attachments. One composer submission creates exactly one Capture. A guided Capture uses its chip label as the display title; a custom Capture derives a concise title from submitted text or attachment names, so the user never names it manually. | P0 |
+| CAP-03 | A Capture can attach multiple supported documents such as PDF, DOCX, PPTX, XLSX, text/Markdown/CSV, and common images from the device or Google Drive. Each current attachment remains an individually addressable internal Source for processing, indexing, and citations. | P0 |
+| CAP-04 | Every suggestion and approved Knowledge Item retains exact provenance to either an excerpt from Capture text or a specific attachment plus its excerpt/locator. The prompt question is never evidence. | P0 |
+| CAP-05 | A failed voice transcription creates no Capture, Source, Storage object, failed-processing row, or retry queue. Relay shows only **Record again** and **Write instead**; both remain in the same composer. Temporary audio is never persisted. | P0 |
+| CAP-06 | Capture history shows Saved, Organizing, Ready, or Failed state. Attachment details expose whether each current file is pending, processing, ready, or failed. A failed attachment is retried by the next explicit Organize action. | P0 |
+| CAP-07 | Guided prompt chips cover responsibilities, registration/training, finances, recurring events, advisor/vendor contacts, account/tool access, calendars/deadlines, policies, and lessons/common mistakes. Selecting one opens the same composer and keeps its fixed guiding question visible. `prompt_id` is lightweight context only: it is not evidence and cannot determine Source meaning, Knowledge Item type, or proposal classification. | P0 |
+| CAP-08 | A Capture is an editable working draft. **Save** persists only its latest text, prompt metadata, and current attachment set. Save never parses documents, calls Groq, indexes/reindexes Astra, or runs Organize. | P0 |
+| CAP-09 | **Organize** is the only user action that starts document preparation/indexing and AI structuring. It processes only current pending/failed attachments, reuses already-ready unchanged attachments, removes stale indexed material for removed attachments, then organizes the current Capture into reviewable suggestions. Failure preserves the Capture and exposes Organize as the retry; concurrency claims block duplicate AI runs. | P0 |
+| CAP-10 | Capture history presents one card per contribution, summarizes note/file count and things found, and may expand to attachment detail. It does not present internal Capture-text evidence or every attachment as separate primary captures. | P0 |
+| CAP-11 | Attachment identity is byte-exact: Relay uses deterministic SHA-256 hashing, rejects identical bytes already present in the same Handoff or open composer before upload, and treats different bytes as a different current attachment. Relay does not infer file lineage, fuzzy versions, or deltas. | P0 |
+| CAP-12 | **Google Drive** is an additional attachment source in the same Capture composer. Each selection uses Google's supported redirect-based One Picker with the `drive.file` scope, required consent, and `allow_multiple=true`. Google Docs, Sheets, and Slides are imported as DOCX, XLSX, and PPTX, while supported ordinary files retain their original bytes. Imported bytes use the same type, 25 MB, SHA-256 duplicate, private Storage, pending attachment, Save, and Organize behavior as local files. Relay stores no Google access/refresh token, provides no live synchronization, and does not parse/index or call Groq during import or Save. | P0 |
 
 ---
 
@@ -232,27 +224,26 @@ Relay uses managed infrastructure rather than custom document/vector plumbing.
 | RAG-03 | Retrieval records are scoped with enough metadata to enforce organization/handoff access before generation. | P0 |
 | RAG-04 | Relay does not build a custom parser, OCR stack, semantic chunker, embedding store, or vector index when the managed stack already satisfies the requirement. It may apply bounded text segmentation required by the selected embedding model. | P0 |
 | RAG-05 | Table/image enrichment may be enabled later when it materially improves retrieval quality. | P1 |
-| RAG-06 | Current working retrieval prefers current Source versions and prevents historical/current versions from producing duplicate active evidence. | P0 |
-| RAG-07 | Historical Source versions remain available for provenance and comparison but do not silently affect an already published Ask Relay snapshot. | P0 |
+| RAG-06 | Working retrieval uses only documents actively attached to the current Capture state. Removed/replaced files and their Astra chunks are excluded and cleaned on the next Organize. | P0 |
+| RAG-07 | Ask Relay remains grounded only in the immutable published Knowledge Item snapshot; changing or removing a working attachment cannot silently alter a published recipient experience. | P0 |
 
-## Source versioning and meaningful deltas
+## Current attachments and exact duplicates
 
-File versioning exists only to improve operational knowledge maintenance. Relay is not a generic document version-control product.
+Working files intentionally use a simple current-state model. A leader edits the Capture's current attachment list and saves it. Relay does not keep document-version history or infer that differently named/changed files belong to one lineage.
 
 ### Requirements
 
 | ID | Requirement | Priority |
 |---|---|---|
-| SRC-01 | Before expensive processing, Relay calculates a content hash and checks existing document Sources in the same Organization/Handoff. | P0 |
-| SRC-02 | If the content hash is identical, Relay does not create another active version, upload/process the file again, or create duplicate retrieval evidence; the user is told the file already exists. | P0 |
-| SRC-03 | If bytes differ and filename/type or established lineage strongly indicates a newer version, Relay processes it through the existing ingestion pipeline and links it to the prior Source. | P0 |
-| SRC-04 | Ambiguous matches require explicit confirmation such as “This looks like an updated version of RoboFest Budget.xlsx. Treat it as a new version?” Unrelated files are never silently linked. | P0 |
-| SRC-05 | A linked Source stores minimal lineage metadata including its predecessor/root, version number, current status, content hash, and match basis. Older versions remain immutable. | P0 |
-| SRC-06 | Linked versions are compared using extracted/normalized content rather than binary DOCX/XLSX/PDF bytes. | P0 |
-| SRC-07 | Only operationally material added, changed, or removed information is surfaced: responsibilities, contacts, deadlines, procedures, policy requirements, warnings, resources, lessons, and operational budget/resource facts. | P0 |
-| SRC-08 | Formatting changes, reordered rows, duplicate wording, synonymous rewrites, and other source churn are suppressed. Closely related changes are grouped where practical. | P0 |
-| SRC-09 | Every surfaced delta retains exact old/new evidence where applicable and is converted into a reviewable create, update, or retirement proposal only when its canonical knowledge target is sufficiently grounded. | P0 |
-| SRC-10 | Disappearing text never automatically deletes approved knowledge. Removal becomes a reviewable retirement/update proposal. | P0 |
+| SRC-01 | Before upload/processing, Relay calculates a deterministic SHA-256 content hash and checks document Sources in the same Organization/Handoff. | P0 |
+| SRC-02 | **Add files** hashes selected bytes immediately. Identical bytes already present in the Handoff or composer are rejected before entering the attachment list or uploading; Save repeats the hash check as a race-condition safeguard. | P0 |
+| SRC-03 | Different bytes are a different file. Relay does not use filenames, semantic overlap, or AI to infer predecessor/current-version relationships. | P0 |
+| SRC-04 | Save records new attachments as pending but performs no parsing or indexing. | P0 |
+| SRC-05 | On Organize, current pending/failed files are processed and indexed; current ready files are reused without reprocessing or reindexing. | P0 |
+| SRC-06 | Removing/replacing an attachment marks it for cleanup. The next Organize removes its stale Astra chunks and private Storage/Source data when no active Capture still references it. | P0 |
+| SRC-07 | No Capture revision history, document-version history, supersedes relation, fuzzy version detection, version delta, or historical binary-retention subsystem is maintained. The Handoff may still list the current saved Captures. | P0 |
+| SRC-08 | Editing/removing working evidence never automatically mutates or retires approved Knowledge Items. Any canonical change still requires grounded Organize output and human Review. | P0 |
+| SRC-09 | Organization Memory never consumes working Captures, Source hashes, attachment changes, or Astra chunks. It compares only immutable published approved Knowledge Item snapshots for adjacent periods of the same Role. | P0 |
 
 Implementation details such as chunk size, Unstructured processing/pipeline configuration, embedding model, and Astra collection configuration belong in `technical_spec.md`, not this file.
 
@@ -303,29 +294,32 @@ Do not leave venue booking too late
 
 | ID | Requirement | Priority |
 |---|---|---|
-| AI-01 | Relay converts source material into proposed knowledge using the seven v1.3 knowledge types. | P0 |
+| AI-01 | When the Role Holder explicitly chooses Organize, Relay organizes the complete current Capture into zero or more reviewable create, update, or retire suggestions using the seven v1.3 knowledge types. | P0 |
 | AI-02 | Model output is validated against an allow-listed structured schema before it can become product data. | P0 |
 | AI-03 | Relay must not invent names, dates, contact details, policies, or procedures absent from evidence. | P0 |
 | AI-04 | Uncertain information is surfaced for human review instead of being silently guessed. | P0 |
-| AI-05 | User can correct approved knowledge manually. New approved items enter through reviewed evidence proposals or an explicit Preflight resolution rather than a standalone manual-add shortcut. | P0 |
-| AI-06 | Proposal reasoning receives relevant approved Knowledge Items so it can distinguish genuinely new knowledge from a supported correction, replacement, or retirement. | P0 |
-| AI-07 | Model-selected update targets and evidence excerpts are independently validated before proposals are stored. Low-confidence targets are rejected or omitted. | P0 |
+| AI-05 | User can correct approved knowledge manually. New approved items enter through reviewed evidence suggestions or an explicit Handoff-check resolution rather than a standalone manual-add shortcut. | P0 |
+| AI-06 | Organize receives the Role, complete Capture text, extracted content from all current attachments in that Capture, and relevant approved Knowledge Items so it can distinguish new knowledge from a supported correction, replacement, or retirement. | P0 |
+| AI-07 | Model-selected update targets and exact Capture-text/attachment evidence excerpts are independently validated before suggestions are stored. Low-confidence targets or unsupported excerpts are rejected or omitted. | P0 |
+| AI-08 | Actual Capture text and attachment content determine classification. Capture display labels and optional prompt guidance are context only, are not evidence, and may not force the Knowledge Item type. | P0 |
+| AI-09 | Suggestions produced by one Organize run retain their Capture relationship for grouped Review while preserving exact individual Source provenance. | P0 |
+| AI-10 | Organize creates separate Knowledge Items only when each is independently useful. An explicitly linked incident/lesson that merely explains a Process, Warning, or Responsibility is retained as grounded rationale within that operational item rather than duplicated as a standalone Lesson. A separate Lesson requires independently reusable guidance, and causality is never inferred from chronology or proximity. | P0 |
 
 ---
 
-# 9. Handoff Preflight — Signature Feature
+# 9. Handoff Check — Signature Feature
 
-Preflight asks:
+The Handoff check asks:
 
 > **“Could a new person successfully take over this role using what has been documented, without having to guess?”**
 
-v1.3 detects four problem types.
+The existing Preflight engine remains the server-side implementation. The user-facing Handoff check runs automatically after Review is resolved and surfaces only four meaningful problem types.
 
 ## Missing information
 
 > “Call our printer.”
 
-Preflight:
+Handoff check:
 
 > **Who is the printer?**
 
@@ -333,7 +327,7 @@ Preflight:
 
 > “Book the hall early.”
 
-Preflight:
+Handoff check:
 
 > **How early should the next president book it?**
 
@@ -341,7 +335,7 @@ Preflight:
 
 > “Apply for funding by October.”
 
-Preflight:
+Handoff check:
 
 > **Where or how should the next president apply?**
 
@@ -355,7 +349,7 @@ Uploaded policy:
 
 > “Large events require booking 16 weeks ahead.”
 
-Preflight:
+Handoff check:
 
 > **These instructions do not agree. Which should the successor follow?**
 
@@ -363,17 +357,18 @@ Preflight:
 
 | ID | Requirement | Priority |
 |---|---|---|
-| PRE-01 | Preflight runs before publication using approved knowledge plus relevant authorized source evidence. | P0 |
-| PRE-02 | Preflight can identify missing information. | P0 |
-| PRE-03 | Preflight can identify vague or ambiguous operational language. | P0 |
-| PRE-04 | Preflight can identify incomplete instructions. | P0 |
-| PRE-05 | Preflight can identify apparent contradictions between relevant knowledge/evidence. | P0 |
+| PRE-01 | After Review is resolved, Relay automatically runs the Handoff check before publication using approved knowledge plus relevant authorized source evidence. | P0 |
+| PRE-02 | The Handoff check can identify missing information. | P0 |
+| PRE-03 | The Handoff check can identify vague or ambiguous operational language. | P0 |
+| PRE-04 | The Handoff check can identify incomplete instructions. | P0 |
+| PRE-05 | The Handoff check can identify apparent contradictions between relevant knowledge/evidence. | P0 |
 | PRE-06 | Every finding explains the problem in plain language and shows relevant source context when available. | P0 |
 | PRE-07 | Relay asks the human to resolve the issue; it never invents or silently chooses the answer. | P0 |
-| PRE-08 | User can Resolve, Edit, Skip, or mark a finding Unknown. | P0 |
-| PRE-09 | Preflight reruns after material handoff changes. | P0 |
+| PRE-08 | User can resolve issues directly by adding a grounded answer, editing the affected instruction, skipping an optional issue, or marking it Unknown. | P0 |
+| PRE-09 | The Handoff check reruns after material handoff changes. | P0 |
 | PRE-10 | More advanced stale-policy detection remains an extension of Preflight rather than a separate v1.3 subsystem. | P1 |
-| PRE-11 | For versioned working Sources, Preflight uses the current version as active evidence and retains historical versions only for provenance/history. | P0 |
+| PRE-11 | The Handoff check uses only documents actively attached to the current saved Capture state as working document evidence. | P0 |
+| PRE-12 | If no meaningful issue is found, Relay says **Your handoff looks ready** rather than requiring a separate ceremonial Preflight step. | P0 |
 
 ---
 
@@ -393,7 +388,7 @@ Example:
 
 | ID | Requirement | Priority |
 |---|---|---|
-| READY-01 | Relay shows unresolved Preflight findings before publication. | P0 |
+| READY-01 | Relay shows unresolved Handoff-check findings before publication. | P0 |
 | READY-02 | Relay does not present an arbitrary AI completeness percentage as objective truth. | P0 |
 | READY-03 | User can publish with optional unresolved findings; critical unresolved findings require deliberate acknowledgement. | P0 |
 
@@ -472,11 +467,12 @@ Unsupported question:
 |---|---|---|
 | ASK-01 | Recipient can ask natural-language questions from the published handoff. | P0 |
 | ASK-02 | Retrieval is permission-filtered before evidence is provided to the LLM. | P0 |
-| ASK-03 | Ask Relay may use permission-filtered Astra matches to rank immutable published Knowledge Items, but generation is grounded in the publication snapshot and never receives raw/private Source chunks. | P0 |
+| ASK-03 | Ask Relay ranks immutable published Knowledge Items with field-aware BM25F over title and content. Both fields contribute with modest configurable weights; corpus IDF, term-frequency saturation, and field-length normalization prevent common, repeated, or long text from dominating mechanically. Source type and Astra/document availability must not make document-derived knowledge more authoritative than approved voice/text-derived knowledge. Generation is grounded in the publication snapshot and never receives raw/private Source chunks. | P0 |
 | ASK-04 | Every factual organization-specific answer includes source references. | P0 |
 | ASK-05 | If evidence is insufficient, Relay explicitly says the handoff does not contain a reliable answer. | P0 |
 | ASK-06 | Relay must not fabricate organization-specific answers from general model knowledge. | P0 |
 | ASK-07 | Ask Relay never modifies approved knowledge. | P0 |
+| ASK-08 | If published Knowledge Items materially conflict about the recipient's question, Ask Relay identifies the conflict, explains the supported alternatives without choosing or inventing which is correct/newer, and cites every conflicting item. | P0 |
 
 Public internet search is out of scope for Ask Relay v1.3.
 
@@ -589,12 +585,12 @@ Do not build a complex credit/currency system unless actual usage costs later ju
 |---|---|---|
 | SEC-01 | Draft sources and handoffs are private by default; published access uses unguessable tokens. | P0 |
 | SEC-02 | Authorization is enforced server-side and retrieval is scoped before data reaches the LLM. | P0 |
-| SEC-03 | Unstructured, Astra, transcription, and LLM credentials remain server-side and are never exposed in the Expo client. | P0 |
+| SEC-03 | Unstructured, Astra, transcription, LLM, and Google Drive OAuth client/state-signing secrets remain server-side and are never exposed in the Expo client. Google access tokens exist only during the Edge Function callback/import request and are not persisted. | P0 |
 | SEC-04 | Raw source content and generated answers are not logged by default. | P0 |
 | SEC-05 | Relay warns users not to store passwords, recovery codes, or private keys as handoff knowledge. | P0 |
 | SEC-06 | AI-generated information remains proposed until accepted; AI never silently modifies/retires approved knowledge, resolves contradictions, links unrelated Sources, or changes a published snapshot. | P0 |
 | SEC-07 | Relay prefers “I don't know” over unsupported organization-specific answers. | P0 |
-| SEC-08 | Historical Source versions, canonical revision history, and internal lineage remain private; recipient access exposes only the safe immutable publication payload. | P0 |
+| SEC-08 | Working Sources, canonical revision history, and internal Knowledge Item lineage remain private; recipient access exposes only the safe immutable publication payload. | P0 |
 | SEC-09 | RLS and guarded RPCs restrict private reads and writes to the exact active Role Assignment. Owner oversight has no implicit access to raw source content, private files, proposal evidence, or detailed Preflight evidence. | P0 |
 | SEC-10 | Invites require authenticated explicit acceptance, expiry and single-use checks, and atomic replacement. Direct membership/admin grants, ownership-field changes, attribution rewrites, and cross-workspace storage references are denied. | P0 |
 | SEC-11 | Existing single-owner Organizations migrate in place with active Owner membership and compatible assignments for existing Role-period workspaces. IDs, attribution, publications, and RevenueCat associations remain intact. | P0 |
@@ -612,12 +608,13 @@ Relay should feel like a calm transition tool, not an AI dashboard.
 | ID | Requirement | Priority |
 |---|---|---|
 | UI-01 | Every primary screen has one obvious next action and clear empty/error/loading states. | P0 |
-| UI-02 | Proposed AI content is visually distinct from approved knowledge. | P0 |
-| UI-03 | Preflight findings use plain language and citations/source context are easy to open. | P0 |
+| UI-02 | Review groups suggestions by Capture as concise typed cards, gives updates/retirements an explicit current-versus-suggested structure, and uses user language such as **Add to handoff**, **Edit**, and **Don't add**. Exact provenance remains available through expandable supporting detail without cluttering the default view. | P0 |
+| UI-03 | Handoff-check findings use plain language and citations/source context are easy to open. | P0 |
 | UI-04 | Shared handoff is optimized for fast mobile scanning and core controls support accessibility semantics. | P0 |
 | UI-05 | AI failure never prevents further source capture, editing or publishing already-approved content, or reading a published handoff. | P0 |
-| UI-06 | Source-version and Organization Memory views emphasize material changes, human decisions, and inspectable provenance rather than scores, activity noise, or AI confidence theater. | P0 |
-| UI-07 | Publish is framed as a leadership-transition action. Routine year-round edits save to the working Handoff without publication pressure; reopening a published workspace retains the existing snapshot until deliberate Review/Preflight and republication. | P0 |
+| UI-06 | Organization Memory emphasizes material changes, human decisions, and inspectable published provenance rather than scores, activity noise, or AI confidence theater. | P0 |
+| UI-07 | Publish is framed as a leadership-transition action. Routine year-round edits save to the working Handoff without publication pressure; reopening a published workspace retains the existing snapshot until deliberate Review/Handoff check and republication. | P0 |
+| UI-08 | The Handoff page uses a compact Capture launcher and a focused unified composer. It presents Captures rather than internal Sources as the primary history and shows approved Knowledge Items under **What the next leader should know**. | P0 |
 
 No special “AI aesthetic” is required.
 
@@ -638,21 +635,21 @@ No special “AI aesthetic” is required.
 
 ## Documents / RAG
 - Unstructured API for document parsing, OCR, layout, and chunking
-- Astra DB Vectorize for document and Ask Relay query embeddings
-- Astra DB managed retrieval
-- Supabase Source lineage/current-version metadata controls which indexed evidence is active
+- Astra DB Vectorize for document embeddings
+- Astra DB managed retrieval for authorized document evidence and Preflight
+- Supabase Capture attachment state and SHA-256 hashes control which indexed evidence is active and whether processing is needed
 
 ## AI
 - Groq server-side reasoning with strict structured output
 - Groq server-side speech-to-text
-- independently validated proposal, source-delta, Preflight, Ask Relay, and Organization Memory outputs
+- independently validated proposal, Preflight, Ask Relay, and Organization Memory outputs
 
 ## Monetization
 - RevenueCat
 
 ### Architectural principle
 
-> **Unstructured owns document transformation. Astra owns retrieval. Supabase owns canonical truth, history, and lineage. Relay owns reasoning and user experience.**
+> **Unstructured owns document transformation. Astra owns document-evidence retrieval. Supabase owns canonical truth, published answer evidence, history, and lineage. Relay owns reasoning and user experience.**
 
 All lower-level provider configuration belongs in `technical_spec.md`.
 
@@ -671,10 +668,10 @@ The demo should tell one complete story.
 ### Sequence
 
 1. Early in her term, Maya opens the living Draft President handoff.
-2. Maya records:
+2. Maya opens one guided Capture, records:
    > “RoboFest happens in March. Sarah in Facilities handles the hall. Make sure you book it early. Last year we nearly lost the venue.”
-3. Relay transcribes it.
-4. Relay proposes:
+3. Relay transcribes it into the same editable Capture text; Maya may also attach several supporting files, then chooses **Save**. Saving performs no AI or document processing.
+4. Maya chooses **Organize**. Relay processes only pending attachments, indexes their current material, and finds:
    - Contact: Sarah / Facilities
    - Process: reserve RoboFest venue
    - Warning: do not leave booking too late
@@ -682,14 +679,14 @@ The demo should tell one complete story.
 6. Months later, Maya records:
    > “Sarah moved departments. Mike now handles Engineering Hall.”
 7. Relay proposes an update to the existing Facilities Contact instead of creating a duplicate; Maya reviews and accepts it.
-8. Maya uploads the RoboFest planning guide. Uploading the identical file again is detected without reprocessing.
-9. Maya uploads a revised guide. Relay links it as a new Source version, preserves the old version, and surfaces only material operational changes.
-10. A changed venue deadline and added sponsor-approval step become reviewable knowledge changes; nothing canonical changes until Maya accepts or edits them.
-11. Preflight asks:
+8. Maya attaches the RoboFest planning guide. If she selects the same bytes again, Relay rejects the duplicate before upload.
+9. Maya edits the Capture, replaces the guide with different bytes, and saves. The old attachment is no longer current working evidence; Relay keeps no document-version or delta model.
+10. Maya chooses Organize again. Relay processes only the changed attachment and may propose grounded updates from the complete current Capture; nothing canonical changes until Maya accepts or edits it.
+11. After Review is resolved, the automatic Handoff check asks:
    > “You said to book the hall ‘early.’ How early should Alex book it?”
 12. Maya answers:
    > “12 weeks before RoboFest.”
-13. If source evidence conflicts, Preflight shows the disagreement and asks Maya to resolve it.
+13. If source evidence conflicts, the Handoff check shows the disagreement and asks Maya to resolve it.
 14. Maya previews and intentionally publishes the `2026–2027` snapshot.
 15. Alex opens the QR/link without an account.
 16. Alex sees Start Here obligations, responsibilities, deadlines, contacts, warnings, and resources.
@@ -709,15 +706,15 @@ The demo should tell one complete story.
 ### Demo must prove
 
 - Relay is more than a summarizer.
-- Preflight discovers missing knowledge.
+- The automatic Handoff check discovers meaningful missing, ambiguous, incomplete, or contradictory knowledge.
 - Human approval controls truth.
 - A Draft Handoff remains useful throughout the term.
 - Voice/text context can update existing approved knowledge without automatic mutation.
 - Ask Relay cites evidence.
 - Ask Relay refuses unsupported answers.
 - Document ingestion is real.
-- Exact duplicate files avoid reprocessing; linked versions preserve evidence and surface meaningful deltas.
-- Organization Memory compares only the same Role across adjacent published periods.
+- Exact duplicate files avoid reprocessing; different bytes are handled as different current attachments without inferred version lineage.
+- Organization Memory compares only immutable published approved Knowledge Items for the same Role across adjacent published periods.
 - Change reasons are grounded or explicitly shown as not established.
 - Recipient needs no account.
 - RevenueCat gates a logical Organization feature without gating Alex's recipient path.
@@ -732,12 +729,12 @@ The Shipaton build is not complete unless these work:
 2. organization
 3. role
 4. draft handoff
-5. voice capture + transcription
-6. typed capture
+5. unified Capture composer with typed text, editable voice transcription, and multiple attachments
+6. one saved Capture per submission with exact internal evidence provenance
 7. document upload + Unstructured/Astra indexing
-8. AI structured proposals
+8. explicit Organize as the sole trigger for document processing/indexing and structured suggestions
 9. Accept / Edit / Reject
-10. Preflight for missing/ambiguous/incomplete/conflicting information
+10. automatic Handoff check for missing/ambiguous/incomplete/conflicting information
 11. preview
 12. publish + revoke
 13. no-login mobile web recipient experience
@@ -746,14 +743,14 @@ The Shipaton build is not complete unless these work:
 16. explicit unsupported-answer behavior
 17. RevenueCat Organization entitlement/paywall
 18. secure server-side provider credentials
-19. manual source-text recovery and approved-knowledge correction
+19. editable current Captures plus approved-knowledge correction
 20. living Draft Handoff that can be resumed throughout the term
 21. voice/text proposals that update or retire existing approved knowledge through review
-22. exact duplicate upload detection and conservative Source-version linking
-23. normalized meaningful deltas that become reviewable knowledge changes
-24. current-version working retrieval without historical duplicate evidence
+22. SHA-256 exact duplicate protection with no fuzzy document versioning/deltas
+23. Save-only Capture editing and changed-attachment processing only on Organize
+24. active-attachment working retrieval without removed-file evidence
 25. multiple preserved published Handoffs for the same Role
-26. adjacent-period Organization Memory with material Added/Changed/Retired results
+26. adjacent-period Organization Memory from immutable published Knowledge Items with material Added/Changed/Retired results
 27. grounded reason categories with `Unknown / not established` fallback
 28. explicit evidence-backed or human-confirmed Lesson-to-Practice relationships
 29. recipient Start Here obligations derived only from approved publication content
@@ -764,7 +761,7 @@ The Shipaton build is not complete unless these work:
 34. explicit Organization ownership offer/acceptance preserving purchaser identity and Organization Pro
 35. independent server-side authorization and Organization entitlement checks
 
-Do not cut **Preflight, human review, citations, immutable publication snapshots, current-version retrieval, or “I don't know / reason not established” behavior** to make room for secondary features.
+Do not cut **the Handoff check/Preflight engine, human review, citations, immutable publication snapshots, current-attachment filtering, or “I don't know / reason not established” behavior** to make room for secondary features.
 
 ---
 

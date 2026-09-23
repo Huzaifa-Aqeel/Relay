@@ -76,12 +76,7 @@ export type Database = {
           mime_type: string | null; size_bytes: number | null; processing_status: string;
           failure_reason: string | null; provider_reference: string | null; structuring_status: string;
           structuring_failure_reason: string | null; structured_at: string | null;
-          structured_proposal_count: number | null; normalized_filename: string | null;
-          content_hash: string | null; supersedes_source_id: string | null;
-          source_root_id: string | null; version_number: number; is_current: boolean;
-          version_match_basis: string | null; delta_status: string;
-          delta_failure_reason: string | null; delta_change_count: number | null;
-          delta_analyzed_at: string | null;
+          structured_proposal_count: number | null; content_hash: string | null;
         },
         {
           id?: string; organization_id: string; handoff_id: string; created_by: string;
@@ -90,12 +85,36 @@ export type Database = {
           failure_reason?: string | null; provider_reference?: string | null;
           structuring_status?: string; structuring_failure_reason?: string | null;
           structured_at?: string | null; structured_proposal_count?: number | null;
-          normalized_filename?: string | null; content_hash?: string | null;
-          supersedes_source_id?: string | null; source_root_id?: string | null;
-          version_number?: number; is_current?: boolean; version_match_basis?: string | null;
-          delta_status?: string; delta_failure_reason?: string | null;
-          delta_change_count?: number | null; delta_analyzed_at?: string | null;
+          content_hash?: string | null;
           created_at?: string; updated_at?: string;
+        }
+      >;
+      captures: Table<
+        Timestamped & {
+          id: string; organization_id: string; handoff_id: string; created_by: string;
+          title: string; text_content: string | null; prompt_id: string | null;
+          submitted_at: string | null; structuring_status: string;
+          structuring_failure_reason: string | null; structured_at: string | null;
+          structured_proposal_count: number | null;
+        },
+        {
+          id?: string; organization_id: string; handoff_id: string; created_by: string;
+          title: string; text_content?: string | null; prompt_id?: string | null;
+          submitted_at?: string | null; structuring_status?: string;
+          structuring_failure_reason?: string | null; structured_at?: string | null;
+          structured_proposal_count?: number | null; created_at?: string; updated_at?: string;
+        }
+      >;
+      capture_sources: Table<
+        {
+          capture_id: string; source_id: string; organization_id: string; handoff_id: string;
+          relationship: string; position: number; created_for_capture: boolean;
+          removed_at: string | null; created_at: string;
+        },
+        {
+          capture_id: string; source_id: string; organization_id: string; handoff_id: string;
+          relationship: string; position?: number; created_for_capture?: boolean;
+          removed_at?: string | null; created_at?: string;
         }
       >;
       knowledge_items: Table<
@@ -105,6 +124,7 @@ export type Database = {
           uncertainty_note: string | null; sort_order: number; lineage_id: string;
           inherited_from_service_period: string | null;
           proposal_action: string; proposal_target_id: string | null;
+          capture_id: string | null;
           decided_by: string | null; decided_at: string | null;
         },
         {
@@ -112,6 +132,7 @@ export type Database = {
           knowledge_type: string; title: string; content: string; status: string; origin: string;
           uncertainty_note?: string | null; sort_order?: number; lineage_id?: string;
           proposal_action?: string; proposal_target_id?: string | null;
+          capture_id?: string | null;
           decided_by?: string | null; decided_at?: string | null;
           created_at?: string; updated_at?: string;
         }
@@ -135,22 +156,6 @@ export type Database = {
           id?: string; knowledge_item_id: string; organization_id: string; handoff_id: string;
           proposal_id?: string | null; knowledge_type: string; title: string; content: string;
           status: string; changed_by: string; changed_at?: string;
-        }
-      >;
-      source_version_changes: Table<
-        {
-          id: string; organization_id: string; handoff_id: string; source_id: string;
-          prior_source_id: string; change_type: string; title: string; summary: string;
-          old_excerpt: string | null; new_excerpt: string | null;
-          affected_knowledge_item_id: string | null; proposal_item_id: string | null;
-          created_at: string;
-        },
-        {
-          id?: string; organization_id: string; handoff_id: string; source_id: string;
-          prior_source_id: string; change_type: string; title: string; summary: string;
-          old_excerpt?: string | null; new_excerpt?: string | null;
-          affected_knowledge_item_id?: string | null; proposal_item_id?: string | null;
-          created_at?: string;
         }
       >;
       knowledge_item_sources: Table<
@@ -364,12 +369,46 @@ export type Database = {
         Args: { requested_item_id: string; decision: 'approved' | 'rejected' };
         Returns: undefined;
       };
-      replace_source_knowledge_proposals: {
-        Args: { requested_source_id: string; requested_proposals: Json };
+      create_capture_draft: {
+        Args: {
+          requested_organization_id: string;
+          requested_handoff_id: string;
+          requested_title: string;
+          requested_prompt_id?: string | null;
+          requested_text_content?: string | null;
+        };
+        Returns: string;
+      };
+      attach_source_to_capture: {
+        Args: {
+          requested_capture_id: string;
+          requested_source_id: string;
+          requested_position: number;
+          requested_created_for_capture: boolean;
+        };
+        Returns: undefined;
+      };
+      save_capture: {
+        Args: {
+          requested_capture_id: string;
+          requested_title: string;
+          requested_prompt_id: string | null;
+          requested_text_content: string | null;
+          requested_attachment_source_ids: string[];
+        };
+        Returns: undefined;
+      };
+      discard_capture_draft: { Args: { requested_capture_id: string }; Returns: undefined };
+      rollback_capture_attachment: {
+        Args: { requested_capture_id: string; requested_source_id: string };
+        Returns: string | null;
+      };
+      replace_capture_knowledge_proposals: {
+        Args: { requested_capture_id: string; requested_proposals: Json };
         Returns: number;
       };
-      replace_source_version_changes: {
-        Args: { requested_source_id: string; requested_changes: Json };
+      replace_source_knowledge_proposals: {
+        Args: { requested_source_id: string; requested_proposals: Json };
         Returns: number;
       };
       confirm_memory_change_reason: {

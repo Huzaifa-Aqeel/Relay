@@ -75,10 +75,14 @@ export function AskRelayPanel({ token }: { token: string }) {
           <View style={styles.answerHeading}>
             <MaterialCommunityIcons
               color={mutation.data.status === 'answered' ? colors.moss : colors.saffron}
-              name={mutation.data.status === 'answered' ? 'check-decagram-outline' : 'information-outline'}
+              name={mutation.data.status === 'answered' ? 'check-decagram-outline' : mutation.data.status === 'conflict' ? 'alert-outline' : 'information-outline'}
               size={21}
             />
-            <AppText variant="label">{mutation.data.status === 'answered' ? 'Answer from this handoff' : 'Not in this handoff'}</AppText>
+            <AppText variant="label">
+              {mutation.data.status === 'answered'
+                ? 'Answer from this handoff'
+                : mutation.data.status === 'conflict' ? 'Conflicting information' : 'Not in this handoff'}
+            </AppText>
           </View>
           <AppText>{mutation.data.answer}</AppText>
 
@@ -109,7 +113,7 @@ export function AskRelayPanel({ token }: { token: string }) {
       <View style={styles.trustNote}>
         <MaterialCommunityIcons color={colors.inkMuted} name="shield-check-outline" size={17} />
         <AppText variant="caption" color={colors.inkMuted} style={styles.flex}>
-          Asking never edits this handoff. If the published information is insufficient, Relay says so.
+          Asking never edits this handoff. If the published information is insufficient or conflicting, Relay says so.
         </AppText>
       </View>
     </View>

@@ -3,13 +3,18 @@ import { File } from 'expo-file-system';
 import { Platform } from 'react-native';
 import { z } from 'zod';
 
+import { FunctionsHttpError } from '@supabase/supabase-js';
+
 import { requireSupabase } from '@/lib/supabase';
 import type { Database } from '@/types/database';
 import { KNOWLEDGE_TYPES } from '@/features/relay/types';
-import { classifySourceVersion, normalizeSourceFilename } from '@/features/relay/source-versioning';
 import type {
   AskRelayAnswer,
+  CaptureInput,
+  CaptureDraftInput,
+  CaptureSubmitResult,
   Handoff,
+  HandoffCapture,
   HandoffInput,
   HandoffPublication,
   HandoffSource,
@@ -31,11 +36,10 @@ import type {
   RoleMemoryChange,
   RoleMemoryComparison,
   DocumentSourceInput,
+  DocumentDuplicateCheckInput,
+  DocumentDuplicateCheckResult,
+  GoogleDriveImportStart,
   SourceUploadResult,
-  SaveVoiceSourceInput,
-  SourceTextInput,
-  SourceVersionChange,
-  TypedSourceInput,
   VoiceRecordingInput,
   VoiceTranscriptPreview,
 } from '@/features/relay/types';
@@ -44,13 +48,13 @@ type OrganizationRow = Database['public']['Tables']['organizations']['Row'];
 type RoleRow = Database['public']['Tables']['roles']['Row'];
 type HandoffRow = Database['public']['Tables']['handoffs']['Row'];
 type SourceRow = Database['public']['Tables']['sources']['Row'];
+type CaptureRow = Database['public']['Tables']['captures']['Row'];
 type KnowledgeItemRow = Database['public']['Tables']['knowledge_items']['Row'];
 type PreflightRunRow = Database['public']['Tables']['preflight_runs']['Row'];
 type PreflightFindingRow = Database['public']['Tables']['preflight_findings']['Row'];
 type PreflightEvidenceRow = Database['public']['Tables']['preflight_finding_evidence']['Row'];
 type HandoffPublicationRow = Database['public']['Tables']['handoff_publications']['Row'];
 type HandoffPublicationItemRow = Database['public']['Tables']['handoff_publication_items']['Row'];
-type SourceVersionChangeRow = Database['public']['Tables']['source_version_changes']['Row'];
 type RoleMemoryComparisonRow = Database['public']['Tables']['role_memory_comparisons']['Row'];
 type RoleMemoryChangeRow = Database['public']['Tables']['role_memory_changes']['Row'];
 
@@ -81,6 +85,7 @@ function messageFor(error: { code?: string; message: string }) {
   if (error.message.includes('Run Preflight')) return 'Run Preflight again before publishing this handoff.';
   if (error.message.includes('Critical findings')) return 'Acknowledge the remaining critical findings before publishing.';
   if (error.message.includes('Review every proposal')) return 'Review every proposed item before publishing.';
+  if (error.message.includes('every capture to finish')) return 'Wait for every capture to finish, then open Review.';
   if (error.message.includes('Active published link unavailable')) return 'This published link is already inactive.';
   if (error.message.toLowerCase().includes('network') || error.message.toLowerCase().includes('fetch')) {
     return 'Check your connection and try again.';
@@ -155,17 +160,27 @@ function mapSource(row: SourceRow): HandoffSource {
     structuringFailureReason: row.structuring_failure_reason,
     structuredAt: row.structured_at,
     structuredProposalCount: row.structured_proposal_count,
-    normalizedFilename: row.normalized_filename,
     contentHash: row.content_hash,
-    supersedesSourceId: row.supersedes_source_id,
-    sourceRootId: row.source_root_id,
-    versionNumber: row.version_number,
-    isCurrent: row.is_current,
-    versionMatchBasis: row.version_match_basis as HandoffSource['versionMatchBasis'],
-    deltaStatus: row.delta_status as HandoffSource['deltaStatus'],
-    deltaFailureReason: row.delta_failure_reason,
-    deltaChangeCount: row.delta_change_count,
-    deltaAnalyzedAt: row.delta_analyzed_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapCapture(row: CaptureRow, attachments: HandoffSource[]): HandoffCapture {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    handoffId: row.handoff_id,
+    createdBy: row.created_by,
+    title: row.title,
+    textContent: row.text_content,
+    promptId: row.prompt_id,
+    submittedAt: row.submitted_at!,
+    structuringStatus: row.structuring_status as HandoffCapture['structuringStatus'],
+    structuringFailureReason: row.structuring_failure_reason,
+    structuredAt: row.structured_at,
+    structuredProposalCount: row.structured_proposal_count,
+    attachments,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -188,6 +203,7 @@ function mapKnowledgeItem(row: KnowledgeItemRow): KnowledgeItem {
     inheritedFromServicePeriod: row.inherited_from_service_period,
     proposalAction: row.proposal_action as KnowledgeItem['proposalAction'],
     proposalTargetId: row.proposal_target_id,
+    captureId: row.capture_id,
     decidedBy: row.decided_by,
     decidedAt: row.decided_at,
     createdAt: row.created_at,
@@ -292,7 +308,7 @@ const sharedHandoffSchema = z.object({
 }).strict();
 
 const askRelayAnswerSchema = z.object({
-  status: z.enum(['answered', 'unsupported']),
+  status: z.enum(['answered', 'unsupported', 'conflict']),
   answer: z.string().min(1).max(1600),
   citations: z.array(z.object({
     ref: z.string().regex(/^E\d+$/),
@@ -372,6 +388,30 @@ async function sha256(buffer: ArrayBuffer) {
   return hexDigest(await Crypto.digest(Crypto.CryptoDigestAlgorithm.SHA256, new Uint8Array(buffer)));
 }
 
+export async function findExactDocumentDuplicate(
+  input: DocumentDuplicateCheckInput,
+): Promise<DocumentDuplicateCheckResult> {
+  if (input.file.size && input.file.size > MAX_SOURCE_BYTES) {
+    throw new Error('Choose a file smaller than 25 MB.');
+  }
+  const body = await readFileBody(input.file.uri);
+  if (body.byteLength > MAX_SOURCE_BYTES) throw new Error('Choose a file smaller than 25 MB.');
+  const contentHash = await sha256(body);
+  const { data, error } = await requireSupabase()
+    .from('sources')
+    .select('id, title, mime_type, size_bytes')
+    .eq('organization_id', input.organizationId)
+    .eq('handoff_id', input.handoffId)
+    .eq('kind', 'document')
+    .eq('content_hash', contentHash)
+    .maybeSingle();
+  throwDataError(error);
+  return {
+    contentHash,
+    duplicate: data ? { sourceId: data.id, title: data.title } : null,
+  };
+}
+
 export async function transcribeVoiceRecording(input: VoiceRecordingInput): Promise<VoiceTranscriptPreview> {
   if (input.file.size && input.file.size > MAX_SOURCE_BYTES) {
     throw new Error('Record a voice note shorter than 25 MB.');
@@ -396,22 +436,6 @@ export async function transcribeVoiceRecording(input: VoiceRecordingInput): Prom
     handoffId: input.handoffId,
     ...preview,
   };
-}
-
-export async function saveVoiceSource(input: SaveVoiceSourceInput, userId: string) {
-  const { recording } = input;
-  const { data, error } = await requireSupabase().from('sources').insert({
-    organization_id: recording.organizationId,
-    handoff_id: recording.handoffId,
-    created_by: userId,
-    kind: 'voice',
-    title: input.title.trim(),
-    text_content: recording.transcript.trim(),
-    processing_status: 'ready',
-    provider_reference: recording.providerReference,
-  }).select('id').single();
-  throwDataError(error);
-  return data.id;
 }
 
 export async function listOrganizations() {
@@ -531,49 +555,68 @@ export async function listHandoffSources(handoffId: string) {
   return data.map(mapSource);
 }
 
+export async function listHandoffCaptures(handoffId: string): Promise<HandoffCapture[]> {
+  const client = requireSupabase();
+  const { data: captures, error: captureError } = await client
+    .from('captures')
+    .select('*')
+    .eq('handoff_id', handoffId)
+    .not('submitted_at', 'is', null)
+    .order('created_at', { ascending: false });
+  throwDataError(captureError);
+  if (!captures.length) return [];
+
+  const captureIds = captures.map((capture) => capture.id);
+  const { data: links, error: linkError } = await client
+    .from('capture_sources')
+    .select('capture_id, source_id, relationship, position')
+    .in('capture_id', captureIds)
+    .eq('relationship', 'attachment')
+    .is('removed_at', null)
+    .order('position', { ascending: true });
+  throwDataError(linkError);
+  const sourceIds = [...new Set(links.map((link) => link.source_id))];
+  const { data: sources, error: sourceError } = sourceIds.length
+    ? await client.from('sources').select('*').in('id', sourceIds)
+    : { data: [], error: null };
+  throwDataError(sourceError);
+  const sourceById = new Map(sources.map((source) => [source.id, mapSource(source)]));
+  const attachmentsByCapture = new Map<string, HandoffSource[]>();
+  for (const link of links) {
+    const source = sourceById.get(link.source_id);
+    if (!source) continue;
+    const current = attachmentsByCapture.get(link.capture_id) ?? [];
+    current.push(source);
+    attachmentsByCapture.set(link.capture_id, current);
+  }
+  return captures.map((capture) => mapCapture(capture, attachmentsByCapture.get(capture.id) ?? []));
+}
+
+export async function listCaptureAttachments(captureId: string): Promise<HandoffSource[]> {
+  const client = requireSupabase();
+  const { data: links, error: linkError } = await client.from('capture_sources')
+    .select('source_id, position')
+    .eq('capture_id', captureId)
+    .eq('relationship', 'attachment')
+    .is('removed_at', null)
+    .order('position', { ascending: true });
+  throwDataError(linkError);
+  if (!links.length) return [];
+  const { data: sources, error: sourceError } = await client.from('sources')
+    .select('*')
+    .in('id', links.map((link) => link.source_id));
+  throwDataError(sourceError);
+  const sourceById = new Map(sources.map((source) => [source.id, mapSource(source)]));
+  return links.flatMap((link) => {
+    const source = sourceById.get(link.source_id);
+    return source ? [source] : [];
+  });
+}
+
 export async function getHandoffSource(id: string) {
   const { data, error } = await requireSupabase().from('sources').select('*').eq('id', id).single();
   throwDataError(error);
   return mapSource(data);
-}
-
-export async function listSourceVersionChanges(sourceId: string): Promise<SourceVersionChange[]> {
-  const { data, error } = await requireSupabase()
-    .from('source_version_changes')
-    .select('*')
-    .eq('source_id', sourceId)
-    .order('created_at', { ascending: true });
-  throwDataError(error);
-  return data.map((row: SourceVersionChangeRow) => ({
-    id: row.id,
-    sourceId: row.source_id,
-    priorSourceId: row.prior_source_id,
-    changeType: row.change_type as SourceVersionChange['changeType'],
-    title: row.title,
-    summary: row.summary,
-    oldExcerpt: row.old_excerpt,
-    newExcerpt: row.new_excerpt,
-    affectedKnowledgeItemId: row.affected_knowledge_item_id,
-    proposalItemId: row.proposal_item_id,
-  }));
-}
-
-export async function createTypedSource(input: TypedSourceInput, userId: string) {
-  const { data, error } = await requireSupabase()
-    .from('sources')
-    .insert({
-      organization_id: input.organizationId,
-      handoff_id: input.handoffId,
-      created_by: userId,
-      kind: 'typed_text',
-      title: input.title.trim(),
-      text_content: input.textContent.trim(),
-      processing_status: 'ready',
-    })
-    .select('id')
-    .single();
-  throwDataError(error);
-  return data.id;
 }
 
 async function markDocumentProcessingFailed(sourceId: string) {
@@ -587,12 +630,6 @@ async function markDocumentProcessingFailed(sourceId: string) {
 
 export async function processDocumentSource(sourceId: string) {
   const client = requireSupabase();
-  const reset = await client
-    .from('sources')
-    .update({ processing_status: 'processing', failure_reason: null })
-    .eq('id', sourceId);
-  throwDataError(reset.error);
-
   const result = await client.functions.invoke('process-document-source', { body: { sourceId } });
   if (result.error) {
     const { data: current } = await client
@@ -605,7 +642,14 @@ export async function processDocumentSource(sourceId: string) {
   }
 }
 
-export async function createDocumentSource(input: DocumentSourceInput, userId: string): Promise<SourceUploadResult> {
+async function removeDocumentAttachment(captureId: string, sourceId: string) {
+  const result = await requireSupabase().functions.invoke('process-document-source', {
+    body: { action: 'remove', captureId, sourceId },
+  });
+  if (result.error) throw new Error('Relay could not finish removing an attachment. Try Organize again.');
+}
+
+async function createDocumentSource(input: DocumentSourceInput, userId: string): Promise<SourceUploadResult> {
   if (input.file.size && input.file.size > MAX_SOURCE_BYTES) {
     throw new Error('Choose a file smaller than 25 MB.');
   }
@@ -616,42 +660,25 @@ export async function createDocumentSource(input: DocumentSourceInput, userId: s
   if (body.byteLength > MAX_SOURCE_BYTES) throw new Error('Choose a file smaller than 25 MB.');
 
   const contentHash = await sha256(body);
-  const normalized = normalizeSourceFilename(input.file.name);
-  let supersedesSourceId = input.supersedesSourceId ?? null;
-  let versionMatchBasis: 'filename_and_type' | 'human_confirmed' | null = null;
 
-  const { data: existing, error: existingError } = await client
+  const { data: duplicate, error: duplicateError } = await client
     .from('sources')
-    .select('id, title, normalized_filename, content_hash, mime_type, is_current')
+    .select('id, title')
     .eq('organization_id', input.organizationId)
     .eq('handoff_id', input.handoffId)
     .eq('kind', 'document')
-    .order('created_at', { ascending: false });
-  throwDataError(existingError);
-
-  const match = classifySourceVersion(input.file.name, input.file.mimeType, contentHash, existing.map((source) => ({
-    id: source.id,
-    title: source.title,
-    normalizedFilename: source.normalized_filename,
-    contentHash: source.content_hash,
-    mimeType: source.mime_type,
-    isCurrent: source.is_current,
-  })));
-  if (match.kind === 'duplicate') {
-    return { status: 'duplicate', sourceId: match.source.id, title: match.source.title };
-  }
-
-  if (supersedesSourceId) {
-    const prior = existing.find((source) => source.id === supersedesSourceId && source.is_current);
-    if (!prior) throw new Error('The source you selected as the prior version is no longer current.');
-    versionMatchBasis = 'human_confirmed';
-  } else if (input.versionDecision !== 'separate') {
-    if (match.kind === 'new_version') {
-      supersedesSourceId = match.source.id;
-      versionMatchBasis = 'filename_and_type';
-    } else if (match.kind === 'confirmation_required') {
-      return { status: 'confirmation_required', sourceId: match.source.id, title: match.source.title };
-    }
+    .eq('content_hash', contentHash)
+    .maybeSingle();
+  throwDataError(duplicateError);
+  if (duplicate) {
+    const attached = await client.rpc('attach_source_to_capture', {
+      requested_capture_id: input.captureId,
+      requested_source_id: duplicate.id,
+      requested_position: input.capturePosition ?? 0,
+      requested_created_for_capture: false,
+    });
+    throwDataError(attached.error);
+    return { status: 'duplicate', sourceId: duplicate.id, title: duplicate.title };
   }
 
   const path = `${input.organizationId}/${input.handoffId}/${id}/${safeFileName(input.file.name)}`;
@@ -671,11 +698,8 @@ export async function createDocumentSource(input: DocumentSourceInput, userId: s
     storage_path: path,
     mime_type: input.file.mimeType,
     size_bytes: body.byteLength,
-    processing_status: 'processing',
-    normalized_filename: normalized,
+    processing_status: 'pending',
     content_hash: contentHash,
-    supersedes_source_id: supersedesSourceId,
-    version_match_basis: versionMatchBasis,
   });
   if (inserted.error) {
     await client.storage.from(SOURCE_BUCKET).remove([path]);
@@ -685,38 +709,192 @@ export async function createDocumentSource(input: DocumentSourceInput, userId: s
         .eq('handoff_id', input.handoffId)
         .eq('content_hash', contentHash)
         .maybeSingle();
-      if (duplicate) return { status: 'duplicate', sourceId: duplicate.id, title: duplicate.title };
+      if (duplicate) {
+        const attached = await client.rpc('attach_source_to_capture', {
+          requested_capture_id: input.captureId,
+          requested_source_id: duplicate.id,
+          requested_position: input.capturePosition ?? 0,
+          requested_created_for_capture: false,
+        });
+        throwDataError(attached.error);
+        return { status: 'duplicate', sourceId: duplicate.id, title: duplicate.title };
+      }
     }
     throwDataError(inserted.error);
   }
 
-  try {
-    await processDocumentSource(id);
-  } catch {
-    // The source and its plain-language failure state are intentionally retained.
+  const attached = await client.rpc('attach_source_to_capture', {
+    requested_capture_id: input.captureId,
+    requested_source_id: id,
+    requested_position: input.capturePosition ?? 0,
+    requested_created_for_capture: true,
+  });
+  if (attached.error) {
+    await client.storage.from(SOURCE_BUCKET).remove([path]);
+    await client.from('sources').delete().eq('id', id);
+    throwDataError(attached.error);
   }
   return { status: 'created', sourceId: id };
 }
 
-export async function updateSourceText(input: SourceTextInput) {
-  const { error } = await requireSupabase()
-    .from('sources')
-    .update({
-      title: input.title.trim(),
-      text_content: input.textContent.trim(),
-      processing_status: 'ready',
-      failure_reason: null,
-    })
-    .eq('id', input.id);
-  throwDataError(error);
+export async function discardCaptureDraft(captureId: string) {
+  const client = requireSupabase();
+  const { data: links } = await client.from('capture_sources')
+    .select('source_id, relationship, created_for_capture')
+    .eq('capture_id', captureId)
+    .eq('created_for_capture', true);
+  for (const link of links ?? []) {
+    if (link.relationship === 'attachment') {
+      await rollbackCaptureAttachment(captureId, link.source_id);
+    }
+  }
+  const discarded = await client.rpc('discard_capture_draft', { requested_capture_id: captureId });
+  throwDataError(discarded.error);
 }
 
-export async function generateKnowledgeProposals(sourceId: string) {
-  const result = await requireSupabase().functions.invoke('generate-knowledge-proposals', {
-    body: { sourceId },
+export async function rollbackCaptureAttachment(captureId: string, sourceId: string) {
+  const client = requireSupabase();
+  const { data: storagePath, error } = await client.rpc('rollback_capture_attachment', {
+    requested_capture_id: captureId,
+    requested_source_id: sourceId,
+  });
+  throwDataError(error);
+  if (storagePath) await client.storage.from(SOURCE_BUCKET).remove([storagePath]);
+}
+
+export async function createCaptureDraft(input: CaptureDraftInput) {
+  const { data, error } = await requireSupabase().rpc('create_capture_draft', {
+    requested_organization_id: input.organizationId,
+    requested_handoff_id: input.handoffId,
+    requested_title: input.title.trim(),
+    requested_prompt_id: input.promptId ?? null,
+    requested_text_content: input.textContent?.trim() || null,
+  });
+  throwDataError(error);
+  return data;
+}
+
+async function functionErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof FunctionsHttpError) {
+    try {
+      const body = await error.context.clone().json();
+      if (typeof body?.error === 'string' && body.error.trim()) return body.error.trim();
+    } catch {
+      // Keep the safe fallback when the response has no readable JSON body.
+    }
+  }
+  return fallback;
+}
+
+export async function startGoogleDriveImport(captureId: string, returnUrl: string): Promise<GoogleDriveImportStart> {
+  const result = await requireSupabase().functions.invoke('google-drive-import', {
+    body: { captureId, returnUrl },
   });
   if (result.error) {
-    throw new Error('Relay could not create suggestions from this source. Check its status and retry.');
+    throw new Error(await functionErrorMessage(result.error, 'Google Drive could not be opened. Try again.'));
+  }
+  const authUrl = typeof result.data?.authUrl === 'string' ? result.data.authUrl : '';
+  if (!/^https:\/\/accounts\.google\.com\//.test(authUrl)) {
+    throw new Error('Google Drive could not be opened. Try again.');
+  }
+  return { authUrl };
+}
+
+export async function submitCapture(input: CaptureInput, userId: string): Promise<CaptureSubmitResult> {
+  const client = requireSupabase();
+  let captureId = input.captureId ?? null;
+  const creating = !captureId;
+  if (!captureId) {
+    const created = await client.rpc('create_capture_draft', {
+      requested_organization_id: input.organizationId,
+      requested_handoff_id: input.handoffId,
+      requested_title: input.title.trim(),
+      requested_prompt_id: input.promptId ?? null,
+      requested_text_content: input.textContent?.trim() || null,
+    });
+    throwDataError(created.error);
+    captureId = created.data;
+  }
+
+  const attachmentSourceIds = [...input.retainedAttachmentSourceIds];
+  const newlyAttachedSourceIds: string[] = [];
+  const duplicateTitles: string[] = [];
+  try {
+    for (const [index, attachment] of input.attachments.entries()) {
+      const result = await createDocumentSource({
+        organizationId: input.organizationId,
+        handoffId: input.handoffId,
+        kind: 'document',
+        title: attachment.title,
+        file: attachment,
+        captureId,
+        capturePosition: attachmentSourceIds.length + index + 1,
+      }, userId);
+      attachmentSourceIds.push(result.sourceId);
+      if (!input.retainedAttachmentSourceIds.includes(result.sourceId)) {
+        newlyAttachedSourceIds.push(result.sourceId);
+      }
+      if (result.status === 'duplicate') duplicateTitles.push(result.title);
+    }
+
+    const saved = await client.rpc('save_capture', {
+      requested_capture_id: captureId,
+      requested_title: input.title.trim(),
+      requested_prompt_id: input.promptId ?? null,
+      requested_text_content: input.textContent?.trim() || null,
+      requested_attachment_source_ids: [...new Set(attachmentSourceIds)],
+    });
+    throwDataError(saved.error);
+    return { captureId, duplicateTitles };
+  } catch (error) {
+    if (creating) await discardCaptureDraft(captureId).catch(() => undefined);
+    else {
+      for (const sourceId of newlyAttachedSourceIds.reverse()) {
+        await rollbackCaptureAttachment(captureId, sourceId).catch(() => undefined);
+      }
+    }
+    throw error;
+  }
+}
+
+export async function generateCaptureProposals(captureId: string) {
+  const client = requireSupabase();
+  const { data: relations, error: relationError } = await client.from('capture_sources')
+    .select('source_id, removed_at')
+    .eq('capture_id', captureId)
+    .eq('relationship', 'attachment');
+  throwDataError(relationError);
+
+  for (const relation of relations.filter((item) => item.removed_at)) {
+    await removeDocumentAttachment(captureId, relation.source_id);
+  }
+
+  const activeIds = relations.filter((item) => !item.removed_at).map((item) => item.source_id);
+  const { data: activeSources, error: sourceError } = activeIds.length
+    ? await client.from('sources').select('id, processing_status').in('id', activeIds)
+    : { data: [], error: null };
+  throwDataError(sourceError);
+  const toProcess = activeSources.filter((source) => source.processing_status === 'pending' || source.processing_status === 'failed');
+  if (toProcess.length) {
+    await Promise.all(toProcess.map((source) => processDocumentSource(source.id)));
+    return 0;
+  }
+  if (activeSources.some((source) => source.processing_status === 'processing')) return 0;
+
+  const result = await client.functions.invoke('generate-knowledge-proposals', {
+    body: { captureId },
+  });
+  if (result.error) {
+    let message = "We couldn't organize this capture. Try again.";
+    if (result.error instanceof FunctionsHttpError) {
+      try {
+        const body = await result.error.context.clone().json();
+        if (typeof body?.error === 'string' && body.error.trim()) message = body.error.trim();
+      } catch {
+        // Retain the safe fallback when the function response has no readable JSON body.
+      }
+    }
+    throw new Error(message);
   }
   return Number(result.data?.proposalCount ?? 0);
 }

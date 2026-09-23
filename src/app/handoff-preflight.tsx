@@ -173,10 +173,10 @@ export default function HandoffPreflightScreen() {
     ?? findingsQuery.error
     ?? evidenceQuery.error;
 
-  if (!handoffId) return <Screen><MessageState icon="shield-alert-outline" title="Choose a handoff first" body="Preflight must belong to a handoff." /></Screen>;
-  if (pending) return <Screen><LoadingState label="Opening Preflight…" /></Screen>;
+  if (!handoffId) return <Screen><MessageState icon="shield-alert-outline" title="Choose a handoff first" body="The handoff check must belong to a handoff." /></Screen>;
+  if (pending) return <Screen><LoadingState label="Opening handoff check…" /></Screen>;
   if (error || !handoffQuery.data || !roleQuery.data || !knowledgeQuery.data) {
-    return <Screen><MessageState icon="shield-alert-outline" title="Preflight unavailable" body={error?.message ?? 'This handoff could not be checked.'} /></Screen>;
+    return <Screen><MessageState icon="shield-alert-outline" title="Handoff check unavailable" body={error?.message ?? 'This handoff could not be checked.'} /></Screen>;
   }
 
   const approved = knowledgeQuery.data.filter((item) => item.status === 'approved');
@@ -222,7 +222,7 @@ export default function HandoffPreflightScreen() {
       <View style={styles.heading}>
         <AppText variant="caption" color={colors.moss} style={styles.eyebrow}>{roleQuery.data.title.toUpperCase()}</AppText>
         <AppText variant="display">Could someone take over without guessing?</AppText>
-        <AppText color={colors.inkMuted}>Preflight checks approved knowledge and authorized evidence. It asks questions; it never invents the answer.</AppText>
+        <AppText color={colors.inkMuted}>Relay checks what you added for meaningful missing detail, ambiguity, incomplete instructions, and contradictions. It never invents the answer.</AppText>
       </View>
 
       {proposed.length ? (
@@ -239,12 +239,12 @@ export default function HandoffPreflightScreen() {
       {!run ? (
         <View style={styles.startCard}>
           <View style={styles.startIcon}><MaterialCommunityIcons color={colors.moss} name="shield-check-outline" size={34} /></View>
-          <AppText variant="heading">Run Preflight</AppText>
+          <AppText variant="heading">Check your handoff</AppText>
           <AppText color={colors.inkMuted}>Relay will check {approved.length} approved {approved.length === 1 ? 'item' : 'items'} against the available source evidence.</AppText>
           <Button
             disabled={!approved.length || proposed.length > 0 || runMutation.isPending}
             icon="shield-check-outline"
-            label={runMutation.isPending ? 'Checking the handoff…' : 'Run Preflight'}
+            label={runMutation.isPending ? 'Checking the handoff…' : 'Try check again'}
             onPress={() => void startPreflight()}
           />
         </View>
@@ -261,9 +261,9 @@ export default function HandoffPreflightScreen() {
         <View style={run.status === 'failed' ? styles.failureCard : styles.noticeCard}>
           <MaterialCommunityIcons color={run.status === 'failed' ? colors.emergency : colors.saffron} name={run.status === 'failed' ? 'alert-circle-outline' : 'refresh-circle'} size={27} />
           <View style={styles.flex}>
-            <AppText variant="label">{run.status === 'failed' ? 'Preflight needs attention' : 'Knowledge changed after this Preflight'}</AppText>
+            <AppText variant="label">{run.status === 'failed' ? 'The handoff check needs attention' : 'The handoff changed after this check'}</AppText>
             <AppText variant="caption" color={colors.inkMuted}>
-              {run.failureReason ?? 'Run Preflight again so readiness reflects the current approved knowledge.'}
+              {run.failureReason ?? 'Check the handoff again so readiness reflects the current information.'}
             </AppText>
           </View>
           <Button

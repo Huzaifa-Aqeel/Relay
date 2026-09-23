@@ -326,13 +326,11 @@ Deno.serve(async (request) => {
     if (linkError) throw linkError;
     const linkedSourceIds = [...new Set((links ?? []).map((link) => link.source_id))];
     const { data: linkedSources, error: sourceError } = linkedSourceIds.length
-      ? await client.from('sources').select('id, title, is_current').in('id', linkedSourceIds)
+      ? await client.from('sources').select('id, title').in('id', linkedSourceIds)
       : { data: [], error: null };
     if (sourceError) throw sourceError;
     const sourceTitles = new Map((linkedSources ?? []).map((source) => [source.id, source.title]));
-    const currentLinkedSourceIds = new Set((linkedSources ?? [])
-      .filter((source) => source.is_current)
-      .map((source) => source.id));
+    const linkedSourceIdSet = new Set((linkedSources ?? []).map((source) => source.id));
 
     const evidence: Evidence[] = approved.map((item, index) => ({
       ref: `K${index + 1}`,
@@ -345,7 +343,7 @@ Deno.serve(async (request) => {
     }));
     const seenSourceEvidence = new Set<string>();
     for (const link of links ?? []) {
-      if (!currentLinkedSourceIds.has(link.source_id)) continue;
+      if (!linkedSourceIdSet.has(link.source_id)) continue;
       const excerpt = link.source_excerpt?.trim();
       if (!excerpt) continue;
       const key = `${link.source_id}:${excerpt}`;
@@ -367,13 +365,21 @@ Deno.serve(async (request) => {
       role.description,
       ...approved.flatMap((item) => [item.title, item.content]),
     ].join(' ');
-    const { data: currentDocumentSources, error: currentSourcesError } = await client
-      .from('sources')
-      .select('id')
+    const { data: activeDocumentLinks, error: activeLinksError } = await client
+      .from('capture_sources')
+      .select('source_id')
       .eq('handoff_id', handoff.id)
-      .eq('kind', 'document')
-      .eq('is_current', true)
-      .eq('processing_status', 'ready');
+      .eq('relationship', 'attachment')
+      .is('removed_at', null);
+    if (activeLinksError) throw activeLinksError;
+    const activeDocumentIds = [...new Set((activeDocumentLinks ?? []).map((link) => link.source_id))];
+    const { data: currentDocumentSources, error: currentSourcesError } = activeDocumentIds.length
+      ? await client.from('sources')
+        .select('id')
+        .in('id', activeDocumentIds)
+        .eq('kind', 'document')
+        .eq('processing_status', 'ready')
+      : { data: [], error: null };
     if (currentSourcesError) throw currentSourcesError;
     const documents = await documentEvidence(
       config,

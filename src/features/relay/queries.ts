@@ -9,10 +9,9 @@ import {
   advanceHandoffToPreview,
   askRelay,
   createHandoff,
-  createDocumentSource,
+  createCaptureDraft,
   createOrganization,
   createRole,
-  createTypedSource,
   compareRoleHandoffs,
   confirmMemoryChangeReason,
   deleteKnowledgeItem,
@@ -21,8 +20,9 @@ import {
   getHandoff,
   getHandoffPublication,
   getHandoffSource,
+  findExactDocumentDuplicate,
   getSharedHandoff,
-  generateKnowledgeProposals,
+  generateCaptureProposals,
   getKnowledgeItem,
   getLatestPreflightRun,
   getLatestRoleMemoryComparison,
@@ -30,6 +30,8 @@ import {
   getOrganizationPlan,
   getRole,
   listHandoffSources,
+  listHandoffCaptures,
+  listCaptureAttachments,
   listHandoffPublicationItems,
   listKnowledgeItems,
   listKnowledgeProvenance,
@@ -43,30 +45,29 @@ import {
   listRoleMemoryChanges,
   listRoleLessons,
   listRoles,
-  listSourceVersionChanges,
   moveKnowledgeItem,
-  processDocumentSource,
   publishHandoff,
   replaceHandoffLink,
   resolvePreflightFinding,
   revokeHandoffLink,
   returnHandoffToCapture,
   runPreflight,
-  saveVoiceSource,
+  submitCapture,
+  startGoogleDriveImport,
+  discardCaptureDraft,
+  rollbackCaptureAttachment,
   transcribeVoiceRecording,
-  updateSourceText,
   updateKnowledgeItem,
 } from '@/features/relay/repository';
 import type {
   HandoffInput,
+  CaptureDraftInput,
+  CaptureInput,
+  DocumentDuplicateCheckInput,
   KnowledgeItemUpdateInput,
   OrganizationInput,
   PreflightResolutionInput,
   RoleInput,
-  SaveVoiceSourceInput,
-  DocumentSourceInput,
-  SourceTextInput,
-  TypedSourceInput,
   VoiceRecordingInput,
 } from '@/features/relay/types';
 
@@ -80,10 +81,10 @@ export const relayKeys = {
   roleHandoffs: (roleId: string) => ['relay', 'role-handoffs', roleId] as const,
   handoff: (id: string) => ['relay', 'handoff', id] as const,
   handoffSources: (handoffId: string) => ['relay', 'handoff-sources', handoffId] as const,
+  handoffCaptures: (handoffId: string) => ['relay', 'handoff-captures', handoffId] as const,
   knowledgeItems: (handoffId: string) => ['relay', 'knowledge-items', handoffId] as const,
   knowledgeItem: (id: string) => ['relay', 'knowledge-item', id] as const,
   source: (id: string) => ['relay', 'source', id] as const,
-  sourceVersionChanges: (id: string) => ['relay', 'source-version-changes', id] as const,
   knowledgeProvenance: (handoffId: string) => ['relay', 'knowledge-provenance', handoffId] as const,
   preflightRun: (handoffId: string) => ['relay', 'preflight-run', handoffId] as const,
   preflightFindings: (runId: string) => ['relay', 'preflight-findings', runId] as const,
@@ -204,6 +205,37 @@ export function useHandoffSources(handoffId: string | undefined) {
   });
 }
 
+export function useHandoffCaptures(handoffId: string | undefined) {
+  const enabled = useCloudQueryEnabled(Boolean(handoffId));
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    if (!enabled || !handoffId) return;
+    const client = requireSupabase();
+    const refresh = () => {
+      void Promise.all([
+        queryClient.invalidateQueries({ queryKey: relayKeys.handoffCaptures(handoffId) }),
+        queryClient.invalidateQueries({ queryKey: relayKeys.knowledgeItems(handoffId) }),
+        queryClient.invalidateQueries({ queryKey: relayKeys.knowledgeProvenance(handoffId) }),
+      ]);
+    };
+    const channel = client
+      .channel(realtimeTopic('handoff-captures', handoffId))
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'captures', filter: `handoff_id=eq.${handoffId}`,
+      }, refresh)
+      .on('postgres_changes', {
+        event: 'UPDATE', schema: 'public', table: 'sources', filter: `handoff_id=eq.${handoffId}`,
+      }, refresh)
+      .subscribe((status) => { if (status === 'SUBSCRIBED') refresh(); });
+    return () => { void client.removeChannel(channel); };
+  }, [enabled, handoffId, queryClient]);
+  return useQuery({
+    queryKey: relayKeys.handoffCaptures(handoffId ?? ''),
+    queryFn: () => listHandoffCaptures(handoffId!),
+    enabled,
+  });
+}
+
 export function useHandoffSource(id: string | undefined) {
   const enabled = useCloudQueryEnabled(Boolean(id));
   const queryClient = useQueryClient();
@@ -218,7 +250,6 @@ export function useHandoffSource(id: string | undefined) {
         (payload) => {
           void Promise.all([
             queryClient.invalidateQueries({ queryKey: relayKeys.source(id) }),
-            queryClient.invalidateQueries({ queryKey: relayKeys.sourceVersionChanges(id) }),
           ]);
           const handoffId = typeof payload.new?.handoff_id === 'string' ? payload.new.handoff_id : null;
           if (handoffId) {
@@ -240,14 +271,6 @@ export function useHandoffSource(id: string | undefined) {
     queryKey: relayKeys.source(id ?? ''),
     queryFn: () => getHandoffSource(id!),
     enabled,
-  });
-}
-
-export function useSourceVersionChanges(sourceId: string | undefined) {
-  return useQuery({
-    queryKey: relayKeys.sourceVersionChanges(sourceId ?? ''),
-    queryFn: () => listSourceVersionChanges(sourceId!),
-    enabled: useCloudQueryEnabled(Boolean(sourceId)),
   });
 }
 
@@ -441,34 +464,59 @@ export function useCreateHandoff() {
   });
 }
 
-export function useCreateTypedSource() {
+export function useSubmitCapture() {
   const queryClient = useQueryClient();
   const { session } = useAuth();
   return useMutation({
-    mutationFn: (input: TypedSourceInput) => {
-      if (!session?.user.id) throw new Error('Sign in again to save these notes.');
-      return createTypedSource(input, session.user.id);
+    mutationFn: (input: CaptureInput) => {
+      if (!session?.user.id) throw new Error('Sign in again to save this capture.');
+      return submitCapture(input, session.user.id);
     },
     onSuccess: (_, input) => Promise.all([
+      queryClient.invalidateQueries({ queryKey: relayKeys.handoffCaptures(input.handoffId) }),
       queryClient.invalidateQueries({ queryKey: relayKeys.handoffSources(input.handoffId) }),
+      queryClient.invalidateQueries({ queryKey: relayKeys.knowledgeItems(input.handoffId) }),
       queryClient.invalidateQueries({ queryKey: relayKeys.handoff(input.handoffId) }),
     ]),
   });
 }
 
-export function useCreateDocumentSource() {
+export function useCreateCaptureDraft() {
+  return useMutation({ mutationFn: (input: CaptureDraftInput) => createCaptureDraft(input) });
+}
+
+export function useGoogleDriveImport() {
   const queryClient = useQueryClient();
-  const { session } = useAuth();
   return useMutation({
-    mutationFn: (input: DocumentSourceInput) => {
-      if (!session?.user.id) throw new Error('Sign in again to save this source.');
-      return createDocumentSource(input, session.user.id);
+    mutationFn: async ({ captureId, returnUrl }: { captureId: string; returnUrl: string; handoffId: string }) => {
+      const started = await startGoogleDriveImport(captureId, returnUrl);
+      return started;
     },
-    onSuccess: (result, input) => Promise.all([
-      queryClient.invalidateQueries({ queryKey: relayKeys.handoffSources(input.handoffId) }),
-      queryClient.invalidateQueries({ queryKey: relayKeys.source(result.sourceId) }),
-      queryClient.invalidateQueries({ queryKey: relayKeys.handoff(input.handoffId) }),
+    onSettled: (_, __, variables) => Promise.all([
+      queryClient.invalidateQueries({ queryKey: relayKeys.handoffCaptures(variables.handoffId) }),
+      queryClient.invalidateQueries({ queryKey: relayKeys.handoffSources(variables.handoffId) }),
     ]),
+  });
+}
+
+export function useDiscardCaptureDraft() {
+  return useMutation({ mutationFn: (captureId: string) => discardCaptureDraft(captureId) });
+}
+
+export function useRollbackCaptureAttachment() {
+  return useMutation({
+    mutationFn: ({ captureId, sourceId }: { captureId: string; sourceId: string }) =>
+      rollbackCaptureAttachment(captureId, sourceId),
+  });
+}
+
+export async function refreshCaptureAttachments(captureId: string) {
+  return listCaptureAttachments(captureId);
+}
+
+export function useFindExactDocumentDuplicate() {
+  return useMutation({
+    mutationFn: (input: DocumentDuplicateCheckInput) => findExactDocumentDuplicate(input),
   });
 }
 
@@ -478,55 +526,15 @@ export function useTranscribeVoiceRecording() {
   });
 }
 
-export function useSaveVoiceSource() {
-  const queryClient = useQueryClient();
-  const { session } = useAuth();
-  return useMutation({
-    mutationFn: (input: SaveVoiceSourceInput) => {
-      if (!session?.user.id) throw new Error('Sign in again to save this voice note.');
-      return saveVoiceSource(input, session.user.id);
-    },
-    onSuccess: (sourceId, input) => Promise.all([
-      queryClient.invalidateQueries({ queryKey: relayKeys.handoffSources(input.recording.handoffId) }),
-      queryClient.invalidateQueries({ queryKey: relayKeys.source(sourceId) }),
-      queryClient.invalidateQueries({ queryKey: relayKeys.handoff(input.recording.handoffId) }),
-    ]),
-  });
-}
-
-export function useRetryDocumentProcessing() {
+export function useGenerateCaptureProposals() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id }: { id: string; handoffId: string }) => processDocumentSource(id),
+    mutationFn: ({ captureId }: { captureId: string; handoffId: string }) =>
+      generateCaptureProposals(captureId),
     onSettled: (_, __, variables) => Promise.all([
-      queryClient.invalidateQueries({ queryKey: relayKeys.handoffSources(variables.handoffId) }),
-      queryClient.invalidateQueries({ queryKey: relayKeys.source(variables.id) }),
-    ]),
-  });
-}
-
-export function useGenerateKnowledgeProposals() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ sourceId }: { sourceId: string; handoffId: string }) =>
-      generateKnowledgeProposals(sourceId),
-    onSettled: (_, __, variables) => Promise.all([
-      queryClient.invalidateQueries({ queryKey: relayKeys.handoffSources(variables.handoffId) }),
-      queryClient.invalidateQueries({ queryKey: relayKeys.source(variables.sourceId) }),
+      queryClient.invalidateQueries({ queryKey: relayKeys.handoffCaptures(variables.handoffId) }),
       queryClient.invalidateQueries({ queryKey: relayKeys.knowledgeItems(variables.handoffId) }),
       queryClient.invalidateQueries({ queryKey: relayKeys.knowledgeProvenance(variables.handoffId) }),
-    ]),
-  });
-}
-
-export function useUpdateSourceText() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (input: SourceTextInput) => updateSourceText(input),
-    onSuccess: (_, input) => Promise.all([
-      queryClient.invalidateQueries({ queryKey: relayKeys.handoffSources(input.handoffId) }),
-      queryClient.invalidateQueries({ queryKey: relayKeys.source(input.id) }),
-      queryClient.invalidateQueries({ queryKey: relayKeys.handoff(input.handoffId) }),
     ]),
   });
 }
