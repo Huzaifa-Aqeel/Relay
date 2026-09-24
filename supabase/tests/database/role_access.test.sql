@@ -157,8 +157,6 @@ select throws_ok($$select public.accept_role_assignment_invite(pg_temp.token('fr
 select is((select count(*) from public.role_assignments where service_period = '2028–2029'),0::bigint,'Failed plan check rolls back entire acceptance');
 select is((select status from public.role_assignments where role_id = pg_temp.id('treasurer') and service_period = '2027–2028'),'active','Failed workspace creation rolls back outgoing assignment ending');
 select throws_ok($$select public.create_role_assignment_invite(pg_temp.id('treasurer'),'2027-28')$$,'22023','Confirm replacement of the existing Role Holder','Equivalent period spelling cannot bypass the current assignment');
-select lives_ok($$select public.end_role_assignment((select id from public.role_assignments where role_id = pg_temp.id('treasurer') and service_period = '2027–2028' and status = 'active'))$$,'Owner deliberately ends assignment');
-select ok(not public.is_role_holder_for_handoff(pg_temp.id('next_handoff')),'Ended Owner-holder loses edit authority too');
 select throws_ok($$select public.create_role_assignment_invite(pg_temp.id('treasurer'),'2026-2029')$$,'22023','Service period must span consecutive years','Ambiguous period ordering rejected');
 select set_config('test.expiring',public.create_role_assignment_invite(pg_temp.id('treasurer'),'2029-30')->>'token',true);
 select is(public.preview_role_assignment_invite(pg_temp.token('expiring'))->>'servicePeriod','2029–2030','New service periods normalized');

@@ -3,7 +3,7 @@ import * as Clipboard from 'expo-clipboard';
 import type { Href } from 'expo-router';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { Modal, Pressable, Share, StyleSheet, View } from 'react-native';
+import { Share, StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/ui/app-text';
 import { LoadingState, MessageState } from '@/components/ui/async-state';
@@ -14,22 +14,19 @@ import { Screen } from '@/components/ui/screen';
 import { useAuth } from '@/features/auth/auth-provider';
 import {
   acceptAssignment,
-  checkContinuityError,
   createAssignmentInvite,
   useContinuity,
   useContinuityAction,
 } from '@/features/relay/continuity';
 import { useRole } from '@/features/relay/queries';
 import { assignmentInviteUrl } from '@/features/relay/share-link';
-import { requireSupabase } from '@/lib/supabase';
 import { colors, radii, spacing } from '@/theme/tokens';
 
 type Assignment = { id: string; userId: string; name: string; servicePeriod: string };
 type IssuedInvite = { token: string; expiresAt: string; servicePeriod: string; replacement: boolean };
 type AssignmentAction =
   | { kind: 'invite'; servicePeriod: string; replacement: boolean }
-  | { kind: 'self'; servicePeriod: string }
-  | { kind: 'end'; assignmentId: string };
+  | { kind: 'self'; servicePeriod: string };
 
 function periodStart(value?: string) {
   const match = value?.match(/^([0-9]{4})\s*[-–—/]\s*([0-9]{2}|[0-9]{4})$/);
@@ -66,8 +63,6 @@ export default function RoleAssignmentScreen() {
   const [replacing, setReplacing] = useState(false);
   const [issued, setIssued] = useState<IssuedInvite | null>(null);
   const [notice, setNotice] = useState('');
-  const [showHolderMenu, setShowHolderMenu] = useState(false);
-  const [confirmingEnd, setConfirmingEnd] = useState(false);
 
   useEffect(() => {
     if (!periods.some((choice) => choice.value === period)) setPeriod(periods[0]?.value ?? '');
@@ -75,17 +70,6 @@ export default function RoleAssignmentScreen() {
 
   const action = useContinuityAction(async (input: AssignmentAction) => {
     setNotice('');
-    if (input.kind === 'end') {
-      const { error } = await requireSupabase().rpc('end_role_assignment', {
-        requested_assignment_id: input.assignmentId,
-      });
-      checkContinuityError(error);
-      setShowHolderMenu(false);
-      setConfirmingEnd(false);
-      setNotice('Assignment ended. This person no longer has private workspace access.');
-      return;
-    }
-
     const invite = await createAssignmentInvite(
       roleId,
       input.servicePeriod,
@@ -119,19 +103,7 @@ export default function RoleAssignmentScreen() {
       </View>
 
       {currentAssignment ? (
-        <InfoCard
-          action={overview.data.isOwner ? (
-            <Pressable
-              accessibilityLabel="Current holder options"
-              accessibilityRole="button"
-              hitSlop={8}
-              onPress={() => { setConfirmingEnd(false); setShowHolderMenu(true); }}
-              style={({ pressed }) => [styles.moreButton, pressed && styles.pressed]}>
-              <MaterialCommunityIcons color={colors.ink} name="dots-horizontal" size={25} />
-            </Pressable>
-          ) : undefined}
-          eyebrow="Current holder"
-          title={currentAssignment.name || 'Role Holder'}>
+        <InfoCard eyebrow="Current holder" title={currentAssignment.name || 'Role Holder'}>
           <InfoRow label="Service period" value={currentAssignment.servicePeriod} />
         </InfoCard>
       ) : (
@@ -242,55 +214,6 @@ export default function RoleAssignmentScreen() {
 
       {action.error ? <AppText accessibilityLiveRegion="polite" color={colors.emergency}>{action.error.message}</AppText> : null}
       {notice ? <AppText accessibilityLiveRegion="polite" color={colors.moss}>{notice}</AppText> : null}
-
-      <Modal
-        animationType="fade"
-        onRequestClose={() => { setShowHolderMenu(false); setConfirmingEnd(false); }}
-        transparent
-        visible={showHolderMenu && Boolean(currentAssignment)}>
-        <View style={styles.modalBackdrop}>
-          <View accessibilityViewIsModal style={styles.modalCard}>
-            {confirmingEnd ? (
-              <>
-                <AppText variant="heading">End this assignment?</AppText>
-                <AppText color={colors.inkMuted}>
-                  {currentAssignment?.name || 'This person'} will lose access to this Role's private workspace. Existing history and attribution will remain.
-                </AppText>
-                <View style={styles.modalActions}>
-                  <Button
-                    disabled={action.isPending || !currentAssignment}
-                    label={action.isPending ? 'Ending…' : 'End assignment'}
-                    tone="emergency"
-                    onPress={() => currentAssignment && action.mutate({ kind: 'end', assignmentId: currentAssignment.id })}
-                  />
-                  <Button
-                    disabled={action.isPending}
-                    label="Keep assignment"
-                    tone="secondary"
-                    onPress={() => setConfirmingEnd(false)}
-                  />
-                </View>
-              </>
-            ) : (
-              <>
-                <AppText variant="heading">Current holder</AppText>
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => setConfirmingEnd(true)}
-                  style={({ pressed }) => [styles.menuItem, pressed && styles.pressed]}>
-                  <MaterialCommunityIcons color={colors.emergency} name="account-minus-outline" size={22} />
-                  <AppText variant="label" color={colors.emergency}>End assignment</AppText>
-                </Pressable>
-                <Button
-                  label="Cancel"
-                  tone="ghost"
-                  onPress={() => setShowHolderMenu(false)}
-                />
-              </>
-            )}
-          </View>
-        </View>
-      </Modal>
     </Screen>
   );
 }
@@ -318,37 +241,4 @@ const styles = StyleSheet.create({
     backgroundColor: colors.mossSoft,
   },
   inviteCopy: { gap: spacing.xxs },
-  moreButton: {
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radii.pill,
-  },
-  pressed: { opacity: 0.68 },
-  modalBackdrop: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    padding: spacing.lg,
-    backgroundColor: 'rgba(22,20,17,0.48)',
-  },
-  modalCard: {
-    width: '100%',
-    maxWidth: 520,
-    alignSelf: 'center',
-    gap: spacing.md,
-    padding: spacing.lg,
-    borderRadius: radii.lg,
-    backgroundColor: colors.surface,
-  },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    minHeight: 56,
-    paddingHorizontal: spacing.md,
-    borderRadius: radii.md,
-    backgroundColor: '#FFF5F2',
-  },
-  modalActions: { gap: spacing.sm, marginTop: spacing.xs },
 });

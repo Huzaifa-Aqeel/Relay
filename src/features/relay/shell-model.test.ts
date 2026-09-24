@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  captureReviewSummary,
   handoffStageIndex,
   HANDOFF_STAGES,
   isPublicRootSegment,
@@ -35,5 +36,16 @@ describe('Relay shell boundaries', () => {
     expect(shouldRunHandoffCheck({
       stage: 'review', proposalCount: 0, approvedCount: 2, hasRun: true, attempted: false,
     })).toBe(false);
+  });
+
+  it('shows the live Capture review state instead of the historical Organize count', () => {
+    expect(captureReviewSummary({ structuredProposalCount: 6, pendingProposalCount: 6 }))
+      .toBe('6 things to review');
+    expect(captureReviewSummary({ structuredProposalCount: 6, pendingProposalCount: 5 }))
+      .toBe('5 things to review');
+    expect(captureReviewSummary({ structuredProposalCount: 6, pendingProposalCount: 0 }))
+      .toBeNull();
+    expect(captureReviewSummary({ structuredProposalCount: 0, pendingProposalCount: 0 }))
+      .toBe('Checked · nothing new found');
   });
 });

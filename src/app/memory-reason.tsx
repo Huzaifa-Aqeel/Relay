@@ -14,6 +14,7 @@ import {
   useRoleLessons,
   useRoleMemoryChanges,
 } from '@/features/relay/queries';
+import { broadKnowledgeType } from '@/features/relay/types';
 import { colors, radii, spacing } from '@/theme/tokens';
 
 type ConfirmableReason = 'lesson_driven' | 'leadership_preference' | 'contact_resource' | 'unknown';
@@ -35,9 +36,12 @@ export default function MemoryReasonScreen() {
   if (changesQuery.error || lessonsQuery.error || !change) {
     return <Screen><MessageState icon="source-branch-remove" title="Change unavailable" body={(changesQuery.error ?? lessonsQuery.error)?.message ?? 'This comparison change is unavailable.'} /></Screen>;
   }
-  const supportsContact = [change.beforeSnapshot?.knowledgeType, change.afterSnapshot?.knowledgeType]
-    .some((type) => type === 'contact' || type === 'resource');
-  const supportsLesson = ['process', 'warning', 'responsibility'].includes(change.afterSnapshot?.knowledgeType ?? '')
+  const broadTypes = [change.beforeSnapshot?.knowledgeType, change.afterSnapshot?.knowledgeType]
+    .filter((type): type is NonNullable<typeof type> => Boolean(type))
+    .map(broadKnowledgeType);
+  const supportsContact = broadTypes.some((type) => type === 'contact' || type === 'access_resource');
+  const supportsLesson = Boolean(change.afterSnapshot)
+    && ['process', 'warning_lesson'].includes(broadKnowledgeType(change.afterSnapshot!.knowledgeType))
     && Boolean(lessonsQuery.data?.length);
   const choices = [
     ...(supportsLesson ? [{ label: 'Lesson-driven', value: 'lesson_driven' }] : []),

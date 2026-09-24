@@ -7,7 +7,7 @@ import { FunctionsHttpError } from '@supabase/supabase-js';
 
 import { requireSupabase } from '@/lib/supabase';
 import type { Database } from '@/types/database';
-import { KNOWLEDGE_TYPES } from '@/features/relay/types';
+import { ALL_KNOWLEDGE_TYPES } from '@/features/relay/types';
 import type {
   AskRelayAnswer,
   CaptureInput,
@@ -300,7 +300,7 @@ const sharedHandoffSchema = z.object({
   publishedAt: z.string(),
   items: z.array(z.object({
     id: z.string().uuid(),
-    knowledgeType: z.enum(KNOWLEDGE_TYPES),
+    knowledgeType: z.enum(ALL_KNOWLEDGE_TYPES),
     title: z.string().min(1).max(160),
     content: z.string().min(1).max(5000),
     sortOrder: z.number().int().nonnegative(),
@@ -313,7 +313,7 @@ const askRelayAnswerSchema = z.object({
   citations: z.array(z.object({
     ref: z.string().regex(/^E\d+$/),
     title: z.string().min(1).max(160),
-    knowledgeType: z.enum(KNOWLEDGE_TYPES),
+    knowledgeType: z.enum(ALL_KNOWLEDGE_TYPES),
     sources: z.array(z.object({
       label: z.string().min(1).max(160),
       locator: z.string().max(200).nullable(),
@@ -1086,10 +1086,19 @@ export async function listRolePublications(roleId: string) {
 }
 
 export async function publishHandoff(handoffId: string) {
-  const { data, error } = await requireSupabase().rpc('publish_handoff', {
+  const client = requireSupabase();
+  const { data, error } = await client.rpc('publish_handoff', {
     requested_handoff_id: handoffId,
   });
   throwDataError(error);
+  const indexResult = await client.functions.invoke('index-publication-knowledge', {
+    body: { handoffId },
+  });
+  if (indexResult.error) {
+    // The immutable publication is already complete. Ask Relay can repair a
+    // missing vector index lazily and still retains lexical BM25F fallback.
+    console.warn('Published handoff vector indexing was deferred.');
+  }
   return data;
 }
 
@@ -1154,7 +1163,7 @@ function parseMemorySnapshot(value: unknown): MemorySnapshot | null {
   if (typeof snapshot.id !== 'string'
     || typeof snapshot.sourceKnowledgeItemId !== 'string'
     || typeof snapshot.knowledgeType !== 'string'
-    || !KNOWLEDGE_TYPES.includes(snapshot.knowledgeType as typeof KNOWLEDGE_TYPES[number])
+    || !ALL_KNOWLEDGE_TYPES.includes(snapshot.knowledgeType as typeof ALL_KNOWLEDGE_TYPES[number])
     || typeof snapshot.title !== 'string'
     || typeof snapshot.content !== 'string') return null;
   return {
@@ -1259,7 +1268,7 @@ export async function listRoleLessons(roleId: string): Promise<Array<Pick<Knowle
     .from('handoff_publication_items')
     .select('source_knowledge_item_id, title, content')
     .in('publication_id', publications.map(p => p.id))
-    .eq('knowledge_type', 'lesson')
+    .in('knowledge_type', ['lesson', 'warning_lesson'])
     .order('created_at', { ascending: false });
   throwDataError(error);
   return data.map(item => ({ id: item.source_knowledge_item_id, title: item.title, content: item.content }));

@@ -33,6 +33,14 @@ type PublicationItem = {
 
 type EvidenceItem = PublicationItem & { ref: string; period: 'previous' | 'current' };
 
+function broadKnowledgeType(type: string) {
+  if (type === 'responsibility') return 'process';
+  if (type === 'deadline') return 'rule_deadline';
+  if (type === 'warning' || type === 'lesson') return 'warning_lesson';
+  if (type === 'resource') return 'access_resource';
+  return type;
+}
+
 class MemoryError extends Error {
   constructor(public readonly publicMessage: string, public readonly status = 422) {
     super(publicMessage);
@@ -159,12 +167,13 @@ function groundedReason(
     && /\b(policy|rule|regulation|constitution|university requirement|institutional requirement)\b/i.test(text)
     && hasExplicitPolicyCause(text)) return requested;
   if (requested === 'lesson_driven'
-    && evidence.some((item) => item.knowledge_type === 'lesson')
+    && evidence.some((item) => broadKnowledgeType(item.knowledge_type) === 'warning_lesson')
     && hasExplicitLessonCause(text)) return requested;
   if (requested === 'leadership_preference'
     && /\b(?:committee|leadership|officers?|board|president|chair)\b[^.\n]{0,100}\b(decided|chose|selected|preferred|voted)\b/i.test(text)) return requested;
   if (requested === 'contact_resource'
-    && [before, after].some((item) => item?.knowledge_type === 'contact' || item?.knowledge_type === 'resource')) {
+    && [before, after].some((item) => item
+      && ['contact', 'access_resource'].includes(broadKnowledgeType(item.knowledge_type)))) {
     return requested;
   }
   return 'unknown';
@@ -213,7 +222,8 @@ function validateChanges(value: unknown, evidenceByRef: Map<string, EvidenceItem
       if (change.match_basis === 'same_lineage' && before!.knowledge_lineage_id !== after!.knowledge_lineage_id) {
         throw new MemoryError('Relay could not verify a claimed knowledge lineage match.');
       }
-      if (change.match_basis === 'strong_semantic' && before!.knowledge_type !== after!.knowledge_type) {
+      if (change.match_basis === 'strong_semantic'
+        && broadKnowledgeType(before!.knowledge_type) !== broadKnowledgeType(after!.knowledge_type)) {
         throw new MemoryError('Relay could not verify a semantic knowledge match.');
       }
       if (change.match_basis === 'strong_semantic' && !hasStrongSemanticAnchor(before!, after!)) {
@@ -345,7 +355,7 @@ Deno.serve(async (request) => {
     const prompt = evidence.map((item) => [
       `[${item.ref}] ${item.period.toUpperCase()}`,
       `Lineage: ${item.knowledge_lineage_id}`,
-      `Type: ${item.knowledge_type}`,
+      `Type: ${broadKnowledgeType(item.knowledge_type)}`,
       `Title: ${item.title}`,
       `Content: ${item.content}`,
     ].join('\n')).join('\n\n');
@@ -443,8 +453,8 @@ Deno.serve(async (request) => {
       if (inserted.error) throw inserted.error;
 
       if (change.reasonCategory === 'lesson_driven' && change.after
-        && ['process', 'warning', 'responsibility'].includes(change.after.knowledge_type)) {
-        const lesson = change.reasonItems.find((item) => item.knowledge_type === 'lesson');
+        && ['process', 'warning_lesson'].includes(broadKnowledgeType(change.after.knowledge_type))) {
+        const lesson = change.reasonItems.find((item) => broadKnowledgeType(item.knowledge_type) === 'warning_lesson');
         if (lesson) {
           await admin.from('knowledge_relationships').upsert({
             organization_id: role.organization_id,

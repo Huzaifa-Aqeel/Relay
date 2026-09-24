@@ -13,6 +13,9 @@ export const KNOWLEDGE_META: Record<KnowledgeType, { label: string; icon: IconNa
   warning: { label: 'Warning', icon: 'alert-outline' },
   resource: { label: 'Resource', icon: 'link-variant' },
   lesson: { label: 'Lesson', icon: 'lightbulb-on-outline' },
+  rule_deadline: { label: 'Rule or deadline', icon: 'calendar-alert' },
+  access_resource: { label: 'Access or resource', icon: 'folder-key-outline' },
+  warning_lesson: { label: 'Warning or lesson', icon: 'alert-circle-outline' },
 };
 
 export const SOURCE_META: Record<SourceKind, { label: string; icon: IconName }> = {

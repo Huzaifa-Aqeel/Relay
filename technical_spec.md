@@ -81,7 +81,8 @@ The OAuth client is a Google **Web application** because Google returns to the H
 - Stopped voice audio remains temporary on the device and is sent as the authenticated Edge Function request body directly to Groq; it is never written to Supabase Storage or `sources`.
 - On successful transcription, the client shows the full editable transcript. Only explicit **Continue** confirmation inserts a Ready voice Source containing the reviewed transcript and Groq provenance reference; no audio object is uploaded or retained.
 - On transcription failure, Relay offers **Record again** and the existing typed-note capture through **Write instead**. It creates no failed voice Source, persistent audio object, retry queue, or saved-source reprocessing state.
-- AI structuring accepts only the seven allow-listed knowledge types. Each proposal must include an exact source excerpt, pass server-side validation, and enter Relay as `proposed` rather than approved.
+- AI structuring accepts only the five broad categories `process`, `contact`, `rule_deadline`, `access_resource`, and `warning_lesson` for new suggestions. Existing legacy category values remain readable so immutable published history is preserved. Each proposal must include an exact source excerpt, pass server-side validation, and enter Relay as `proposed` rather than approved.
+- Organize extracts grounded facts, groups them into independently useful operational units, incorporates dependent steps, task-specific contacts, rules, warnings, rationale, examples, and historical context, and only then assigns one primary category. A final boundary-and-coverage audit removes cross-category duplication without dropping useful grounded guidance. Independently useful or separately evidenced workflows remain separate for retrieval and provenance integrity.
 - Provider output never writes directly to published or approved knowledge.
 
 ## Processing-state delivery
@@ -163,15 +164,16 @@ The OAuth client is a Google **Web application** because Google returns to the H
 ### Permission and evidence boundary
 
 - A valid active 64-hex publication token is the only public capability accepted by the `ask-relay` Edge Function. Publication and snapshot tables remain inaccessible directly.
-- The server resolves the immutable publication snapshot first. Astra retrieval is filtered by both `organization_id` and `handoff_id` before ranking any evidence.
-- Astra document matches are used only to rank the already-published Knowledge Items linked to those sources. Raw Astra chunks, private source text, transcripts, rejected proposals, and unpublished knowledge are never included in the Ask prompt or response.
-- Published items remain answerable through deterministic text relevance even when they have no Astra document chunk.
+- The server resolves the immutable publication snapshot first. Each snapshot item's normalized `title + content` is stored as an Astra Vectorize record with an exact `publication_id` and `record_kind=published_knowledge` boundary. Category is metadata only.
+- Ask runs semantic search only inside that exact publication, ranks the same Supabase snapshot rows with BM25F, then combines the two ranked lists with reciprocal-rank fusion using `k=60`. BM25F uses `k1=1.2`, title weight `1.0`, content weight `1.15`, and `b=0.75` for both fields.
+- Only Supabase `handoff_publication_items` become answer evidence. Raw Astra document chunks, private source text, transcripts, rejected proposals, and unpublished knowledge are never included in the Ask prompt or response. If Astra is unavailable, BM25F remains the complete fallback.
+- Publication invokes authenticated snapshot indexing after the database publication transaction. Ask lazily repairs a missing index for older publications without changing their immutable snapshot.
 - Citation labels and locators are copied into `handoff_publication_items.citation_sources` during publication. Ask therefore returns immutable citation metadata rather than reading mutable private source metadata at request time.
 
 ### Answer contract
 
 - Groq receives only the recipient question and a bounded set of published snapshot items. The question and evidence are both treated as untrusted data.
-- The model must return strict JSON with `answered` or `unsupported`, a bounded answer, and up to five valid evidence references. The Edge Function validates exact keys, reference membership, uniqueness, and citation presence before returning a factual answer.
+- The model must return strict JSON with `answered`, `unsupported`, or `conflict`, a bounded answer, and up to five valid evidence references. The Edge Function validates exact keys, reference membership, uniqueness, citation presence, and the requirement that a conflict cite at least two relevant items before returning a factual answer.
 - An unsupported response is normalized server-side to: `This handoff does not contain a reliable answer to that question.` It has no citations.
 - Ask is read-only. It has no database path that writes approved knowledge, source material, or publication content.
 - Usage is claimed atomically before provider work. Defaults are 10 requests per published Handoff per UTC day for Free and 100 for Pro; both are server-configurable and Pro remains bounded to protect shared links from abuse.

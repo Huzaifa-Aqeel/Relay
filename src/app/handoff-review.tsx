@@ -2,7 +2,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import type { Href } from 'expo-router';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/ui/app-text';
 import { LoadingState, MessageState } from '@/components/ui/async-state';
@@ -138,13 +138,20 @@ export default function HandoffReviewScreen() {
   const captureMutation = useReturnHandoffToCapture();
   const checkMutation = useRunPreflight();
   const checkAttempted = useRef(false);
+  const initialProposalIds = useRef<Set<string> | null>(null);
   const [decisionNotice, setDecisionNotice] = useState<string | null>(null);
+  const [reviewDecisions, setReviewDecisions] = useState<Record<string, 'approved' | 'rejected'>>({});
   const pending = handoffQuery.isPending || knowledgeQuery.isPending || capturesQuery.isPending
     || provenanceQuery.isPending || preflightQuery.isPending || (handoffQuery.data && roleQuery.isPending);
   const error = handoffQuery.error ?? roleQuery.error ?? knowledgeQuery.error
     ?? capturesQuery.error ?? provenanceQuery.error ?? preflightQuery.error;
   const proposals = knowledgeQuery.data?.filter((item) => item.status === 'proposed') ?? [];
   const approved = knowledgeQuery.data?.filter((item) => item.status === 'approved') ?? [];
+
+  useEffect(() => {
+    if (pending || initialProposalIds.current) return;
+    initialProposalIds.current = new Set(proposals.map((item) => item.id));
+  }, [pending, proposals]);
 
   useEffect(() => {
     if (!shouldRunHandoffCheck({
@@ -177,35 +184,28 @@ export default function HandoffReviewScreen() {
     title: captureId === 'legacy' ? 'Earlier capture' : captureById.get(captureId)?.title ?? 'Capture',
     proposals: proposals.filter((item) => (item.captureId ?? 'legacy') === captureId),
   }));
+  const allReviewedSuggestionsRejected = Boolean(
+    initialProposalIds.current?.size
+    && proposals.length === 0
+    && [...initialProposalIds.current].every((id) => reviewDecisions[id] === 'rejected'),
+  );
 
   function decide(item: KnowledgeItem, decision: 'approved' | 'rejected') {
     setDecisionNotice(null);
     decisionMutation.mutate(
       { id: item.id, handoffId, decision },
       {
-        onSuccess: () => setDecisionNotice(decision === 'approved'
-          ? item.proposalAction === 'update'
-            ? 'Update applied to the handoff.'
-            : item.proposalAction === 'retire'
-              ? 'Item retired from the current handoff.'
-              : 'Added to the handoff.'
-          : 'Suggestion not added.'),
+        onSuccess: () => {
+          setReviewDecisions((current) => ({ ...current, [item.id]: decision }));
+          setDecisionNotice(decision === 'approved'
+            ? item.proposalAction === 'update'
+              ? 'Update applied to the handoff.'
+              : item.proposalAction === 'retire'
+                ? 'Item retired from the current handoff.'
+                : 'Added to the handoff.'
+            : 'Suggestion not added.');
+        },
       },
-    );
-  }
-  function reject(item: KnowledgeItem) {
-    const message = 'It will not appear in the handoff. Your original capture remains unchanged.';
-    if (Platform.OS === 'web') {
-      if (window.confirm(`Don't add this?\n\n${message}`)) decide(item, 'rejected');
-      return;
-    }
-    Alert.alert(
-      'Don\'t add this?',
-      message,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Reject', style: 'destructive', onPress: () => decide(item, 'rejected') },
-      ],
     );
   }
   async function returnToCapture() {
@@ -221,19 +221,21 @@ export default function HandoffReviewScreen() {
         <AppText color={colors.inkMuted}>Add only what belongs in the handoff. You can edit anything before adding it.</AppText>
       </View>
 
-      <View style={styles.reviewSummary}>
-        <View style={styles.summaryIcon}>
-          <MaterialCommunityIcons color={proposals.length ? colors.saffron : colors.moss} name={proposals.length ? 'clipboard-text-clock-outline' : 'check-decagram-outline'} size={28} />
+      {proposals.length ? (
+        <View style={styles.reviewSummary}>
+          <View style={styles.summaryIcon}>
+            <MaterialCommunityIcons color={colors.saffron} name="clipboard-text-clock-outline" size={28} />
+          </View>
+          <View style={styles.rowCopy}>
+            <AppText variant="heading">
+              {`${proposals.length} ${proposals.length === 1 ? 'thing' : 'things'} to review`}
+            </AppText>
+            <AppText color={colors.inkMuted}>{approved.length} {approved.length === 1 ? 'item is' : 'items are'} already in your handoff.</AppText>
+          </View>
         </View>
-        <View style={styles.rowCopy}>
-          <AppText variant="heading">
-            {proposals.length ? `${proposals.length} ${proposals.length === 1 ? 'thing' : 'things'} to review` : 'Everything reviewed'}
-          </AppText>
-          <AppText color={colors.inkMuted}>{approved.length} {approved.length === 1 ? 'item is' : 'items are'} already in your handoff.</AppText>
-        </View>
-      </View>
+      ) : null}
 
-      {decisionNotice ? (
+      {proposals.length && decisionNotice ? (
         <View accessibilityLiveRegion="polite" style={styles.decisionNotice}>
           <MaterialCommunityIcons color={colors.moss} name="check-circle-outline" size={20} />
           <AppText variant="label" color={colors.moss} style={styles.rowCopy}>{decisionNotice}</AppText>
@@ -261,7 +263,7 @@ export default function HandoffReviewScreen() {
                       ? approved.find((candidate) => candidate.id === item.proposalTargetId) ?? null
                       : null}
                     onAccept={() => decide(item, 'approved')}
-                    onReject={() => reject(item)}
+                    onReject={() => decide(item, 'rejected')}
                   />
                 ))}
               </View>
@@ -270,10 +272,24 @@ export default function HandoffReviewScreen() {
         </View>
       ) : null}
 
-      {!proposals.length && !approved.length ? (
-        <View style={styles.empty}>
-          <AppText variant="label">Nothing has been added yet</AppText>
-          <AppText color={colors.inkMuted}>Return to Capture and add what the next leader should know.</AppText>
+      {!proposals.length ? (
+        <View style={styles.reviewEmpty}>
+          <View style={styles.sectionHeading}>
+            <AppText variant="heading">
+              {allReviewedSuggestionsRejected ? 'Everything reviewed' : 'Nothing to review right now'}
+            </AppText>
+            <AppText color={colors.inkMuted}>
+              {allReviewedSuggestionsRejected
+                ? 'You chose not to add any of these suggestions to the handoff.'
+                : 'Add more to Capture, then Organize when you’re ready.'}
+            </AppText>
+          </View>
+          <Button
+            disabled={captureMutation.isPending}
+            icon="arrow-left"
+            label={captureMutation.isPending ? 'Returning…' : 'Return to Capture'}
+            onPress={() => void returnToCapture()}
+          />
         </View>
       ) : null}
 
@@ -308,13 +324,15 @@ export default function HandoffReviewScreen() {
         </AppText>
       ) : null}
 
-      <Button
-        disabled={captureMutation.isPending}
-        icon="arrow-left"
-        label={captureMutation.isPending ? 'Returning…' : 'Return to Capture'}
-        tone="secondary"
-        onPress={() => void returnToCapture()}
-      />
+      {proposals.length ? (
+        <Button
+          disabled={captureMutation.isPending}
+          icon="arrow-left"
+          label={captureMutation.isPending ? 'Returning…' : 'Return to Capture'}
+          tone="secondary"
+          onPress={() => void returnToCapture()}
+        />
+      ) : null}
     </Screen>
   );
 }
@@ -373,10 +391,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm, borderRadius: radii.md, backgroundColor: colors.mossSoft,
   },
   evidence: { gap: spacing.xs, padding: spacing.sm, borderRadius: radii.md, backgroundColor: colors.mossSoft },
-  empty: {
-    gap: spacing.xs, marginTop: spacing.xl, padding: spacing.lg, borderWidth: 1, borderStyle: 'dashed',
-    borderColor: colors.line, borderRadius: radii.lg, backgroundColor: colors.surface,
-  },
+  reviewEmpty: { gap: spacing.lg, marginTop: spacing.xl },
   preflightCard: { gap: spacing.md, marginTop: spacing.xl, padding: spacing.lg, borderRadius: radii.lg, backgroundColor: colors.mossSoft },
   pressed: { opacity: 0.72 },
 });

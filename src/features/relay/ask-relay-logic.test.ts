@@ -4,7 +4,9 @@ import {
   BM25F_PARAMETERS,
   meaningfulQueryTerms,
   normalizeModelAnswer,
+  rankPublicationItemsHybrid,
   rankPublicationItems,
+  RRF_K,
   selectEvidence,
   UNSUPPORTED_ANSWER,
   type PublicationItem,
@@ -21,6 +23,10 @@ function item(overrides: Partial<PublicationItem> & Pick<PublicationItem, 'id' |
 }
 
 describe('Ask Relay published-knowledge retrieval', () => {
+  it('uses deterministic reciprocal-rank fusion parameters', () => {
+    expect(RRF_K).toBe(60);
+  });
+
   it('ignores generic question words', () => {
     expect(meaningfulQueryTerms('What should I do with the event budget?')).toEqual(['event', 'budget']);
   });
@@ -166,6 +172,54 @@ describe('Ask Relay published-knowledge retrieval', () => {
       answer: 'Complete the shared-drive form, then send it to the faculty advisor.',
       citation_refs: ['E1', 'E2'],
     }, new Set(['E1', 'E2', 'E3']))).toMatchObject({ status: 'answered', citationRefs: ['E1', 'E2'] });
+  });
+
+  it('retrieves a semantically related published entry when the wording differs', () => {
+    const venue = item({
+      id: 'venue',
+      title: 'Engineering Hall reservation',
+      content: 'Reserve Engineering Hall through the university facilities portal.',
+      knowledge_type: 'process',
+      sort_order: 50,
+    });
+    const finance = item({
+      id: 'finance',
+      title: 'Weekly budget update',
+      content: 'Send the spreadsheet to the faculty advisor every Friday.',
+      knowledge_type: 'process',
+      sort_order: 1,
+    });
+
+    const ranked = rankPublicationItemsHybrid(
+      'Where should I arrange the gathering location?',
+      [finance, venue],
+      ['venue', 'finance'],
+    );
+
+    expect(ranked[0].item.id).toBe('venue');
+  });
+
+  it('keeps exact names and numbers strong through BM25F inside hybrid retrieval', () => {
+    const general = item({
+      id: 'general',
+      title: 'Expense overview',
+      content: 'Follow the organization finance process.',
+      sort_order: 1,
+    });
+    const exact = item({
+      id: 'exact',
+      title: 'Large reimbursement approval',
+      content: 'Dr. Maya Khan must approve reimbursements over $500 before purchase.',
+      sort_order: 50,
+    });
+
+    const ranked = rankPublicationItemsHybrid(
+      'Who approves reimbursements over $500?',
+      [general, exact],
+      ['general', 'exact'],
+    );
+
+    expect(ranked[0].item.id).toBe('exact');
   });
 
   it('requires both conflicting evidence references instead of choosing one', () => {

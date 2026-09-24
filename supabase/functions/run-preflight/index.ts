@@ -8,7 +8,7 @@ const corsHeaders = {
 const FINDING_TYPES = new Set(['missing', 'ambiguous', 'incomplete', 'contradiction']);
 const SEVERITIES = new Set(['critical', 'optional']);
 const KNOWLEDGE_TYPES = new Set([
-  'responsibility', 'deadline', 'contact', 'process', 'warning', 'resource', 'lesson',
+  'process', 'contact', 'rule_deadline', 'access_resource', 'warning_lesson',
 ]);
 const MAX_FINDINGS = 30;
 
@@ -96,7 +96,7 @@ const preflightSchema = {
           suggested_knowledge_type: {
             type: ['string', 'null'],
             enum: [
-              'responsibility', 'deadline', 'contact', 'process', 'warning', 'resource', 'lesson', null,
+              'process', 'contact', 'rule_deadline', 'access_resource', 'warning_lesson', null,
             ],
           },
           primary_evidence_ref: { type: ['string', 'null'] },

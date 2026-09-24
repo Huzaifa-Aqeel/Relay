@@ -63,16 +63,32 @@ export type HandoffInput = {
 };
 
 export const KNOWLEDGE_TYPES = [
-  'responsibility',
-  'deadline',
-  'contact',
   'process',
-  'warning',
-  'resource',
-  'lesson',
+  'contact',
+  'rule_deadline',
+  'access_resource',
+  'warning_lesson',
 ] as const;
 
-export type KnowledgeType = (typeof KNOWLEDGE_TYPES)[number];
+export const LEGACY_KNOWLEDGE_TYPES = [
+  'responsibility', 'deadline', 'warning', 'resource', 'lesson',
+] as const;
+
+export const ALL_KNOWLEDGE_TYPES = [
+  ...KNOWLEDGE_TYPES,
+  ...LEGACY_KNOWLEDGE_TYPES,
+] as const;
+
+export type BroadKnowledgeType = (typeof KNOWLEDGE_TYPES)[number];
+export type KnowledgeType = (typeof ALL_KNOWLEDGE_TYPES)[number];
+
+export function broadKnowledgeType(type: KnowledgeType): BroadKnowledgeType {
+  if (type === 'responsibility') return 'process';
+  if (type === 'deadline') return 'rule_deadline';
+  if (type === 'warning' || type === 'lesson') return 'warning_lesson';
+  if (type === 'resource') return 'access_resource';
+  return type;
+}
 export type SourceKind = 'typed_text' | 'voice' | 'document';
 export type SourceProcessingStatus = 'pending' | 'processing' | 'ready' | 'failed';
 export type SourceStructuringStatus = 'not_started' | 'processing' | 'ready' | 'failed';

@@ -20,8 +20,8 @@ import {
   useOrganization,
   useRole,
 } from '@/features/relay/queries';
-import { handoffStageIndex, HANDOFF_STAGES } from '@/features/relay/shell-model';
-import type { HandoffCapture, KnowledgeItem } from '@/features/relay/types';
+import { captureReviewSummary, handoffStageIndex, HANDOFF_STAGES } from '@/features/relay/shell-model';
+import { broadKnowledgeType, type HandoffCapture, type KnowledgeItem } from '@/features/relay/types';
 import { checkContinuityError, useContinuity, useContinuityAction } from '@/features/relay/continuity';
 import { requireSupabase } from '@/lib/supabase';
 import { colors, radii, spacing } from '@/theme/tokens';
@@ -29,12 +29,14 @@ import { colors, radii, spacing } from '@/theme/tokens';
 function CaptureCard({
   capture,
   editable,
+  pendingProposalCount,
   structuring,
   onStructure,
   onEdit,
 }: {
   capture: HandoffCapture;
   editable: boolean;
+  pendingProposalCount: number;
   structuring: boolean;
   onStructure: () => void;
   onEdit: () => void;
@@ -42,6 +44,10 @@ function CaptureCard({
   const [expanded, setExpanded] = useState(false);
   const processing = capture.attachments.some((source) => source.processingStatus === 'processing');
   const failed = capture.attachments.some((source) => source.processingStatus === 'failed');
+  const reviewSummary = captureReviewSummary({
+    structuredProposalCount: capture.structuredProposalCount,
+    pendingProposalCount,
+  });
   const summary = [
     capture.attachments.length
       ? `${capture.attachments.length} ${capture.attachments.length === 1 ? 'file' : 'files'}`
@@ -119,30 +125,28 @@ function CaptureCard({
             <AppText variant="caption" color={colors.emergency} style={styles.captureStatus}>
               A file could not be prepared. Choose Organize to try again, or edit this capture.
             </AppText>
-          ) : capture.structuringStatus === 'ready' ? (
+          ) : structuring || capture.structuringStatus === 'processing' ? (
+            <View style={styles.structureResult}>
+              <MaterialCommunityIcons color={colors.moss} name="creation-outline" size={19} />
+              <AppText variant="caption" color={colors.inkMuted} style={styles.cardCopy}>Organizing this capture…</AppText>
+            </View>
+          ) : capture.structuringStatus === 'ready' && reviewSummary ? (
             <View style={styles.structureResult}>
               <MaterialCommunityIcons color={colors.moss} name="check-circle-outline" size={19} />
               <AppText variant="caption" color={colors.moss} style={styles.cardCopy}>
-                {capture.structuredProposalCount
-                  ? `${capture.structuredProposalCount} ${capture.structuredProposalCount === 1 ? 'thing' : 'things'} found`
-                  : 'Checked · nothing new found'}
+                {reviewSummary}
               </AppText>
             </View>
           ) : capture.structuringStatus === 'failed' ? (
             <AppText variant="caption" color={colors.emergency} style={styles.captureStatus}>
               {capture.structuringFailureReason ?? "We couldn't organize this capture. Choose Organize to try again."}
             </AppText>
-          ) : capture.structuringStatus === 'processing' ? (
-            <View style={styles.structureResult}>
-              <MaterialCommunityIcons color={colors.moss} name="creation-outline" size={19} />
-              <AppText variant="caption" color={colors.inkMuted} style={styles.cardCopy}>Organizing this capture…</AppText>
-            </View>
-          ) : (
+          ) : capture.structuringStatus !== 'ready' ? (
             <View style={styles.structureResult}>
               <MaterialCommunityIcons color={colors.moss} name="content-save-check-outline" size={19} />
               <AppText variant="caption" color={colors.inkMuted} style={styles.cardCopy}>Saved · ready to organize</AppText>
             </View>
-          )}
+          ) : null}
         </View>
       ) : null}
     </View>
@@ -165,23 +169,24 @@ function KnowledgeCard({
   onMove: (direction: 'up' | 'down') => void;
 }) {
   const meta = KNOWLEDGE_META[item.knowledgeType];
+  const warning = broadKnowledgeType(item.knowledgeType) === 'warning_lesson';
   return (
-    <View style={[styles.knowledgeCard, item.knowledgeType === 'warning' && styles.warningCard]}>
+    <View style={[styles.knowledgeCard, warning && styles.warningCard]}>
       <Pressable
         accessibilityRole={editable ? 'button' : undefined}
         accessibilityLabel={editable ? `Edit ${item.title}` : item.title}
         disabled={!editable}
         onPress={editable ? () => router.push((`/knowledge/${item.id}`) as Href) : undefined}
         style={({ pressed }) => [styles.knowledgeMain, pressed && styles.pressed]}>
-        <View style={[styles.knowledgeIcon, item.knowledgeType === 'warning' && styles.warningIcon]}>
+        <View style={[styles.knowledgeIcon, warning && styles.warningIcon]}>
           <MaterialCommunityIcons
-            color={item.knowledgeType === 'warning' ? colors.emergency : colors.moss}
+            color={warning ? colors.emergency : colors.moss}
             name={meta.icon}
             size={23}
           />
         </View>
         <View style={styles.cardCopy}>
-          <AppText variant="caption" color={item.knowledgeType === 'warning' ? colors.emergency : colors.moss} style={styles.typeLabel}>
+          <AppText variant="caption" color={warning ? colors.emergency : colors.moss} style={styles.typeLabel}>
             {meta.label}
           </AppText>
           <AppText variant="label">{item.title}</AppText>
@@ -420,6 +425,7 @@ export default function HandoffScreen() {
                 capture={capture}
                 editable={handoff.status === 'draft'}
                 key={capture.id}
+                pendingProposalCount={proposedItems.filter((item) => item.captureId === capture.id).length}
                 structuring={structureMutation.isPending && structureMutation.variables?.captureId === capture.id}
                 onEdit={() => setEditingCapture(capture)}
                 onStructure={() => structureMutation.mutate({ captureId: capture.id, handoffId: capture.handoffId })}

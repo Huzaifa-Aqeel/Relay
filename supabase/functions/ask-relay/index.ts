@@ -1,11 +1,17 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.116.0';
 import {
+  MAX_EVIDENCE_ITEMS,
   normalizeModelAnswer,
   selectEvidence,
   UNSUPPORTED_ANSWER,
   type Evidence,
   type PublicationItem,
 } from '../_shared/ask-relay-logic.ts';
+import {
+  replacePublicationKnowledgeIndex,
+  searchPublicationKnowledge,
+  type AstraPublicationConfig,
+} from '../_shared/publication-vectors.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -15,7 +21,7 @@ const corsHeaders = {
 const TOKEN_PATTERN = /^[0-9a-f]{64}$/;
 const MAX_QUESTION_CHARS = 500;
 
-type ServerConfig = {
+type ServerConfig = AstraPublicationConfig & {
   supabaseUrl: string;
   serviceRoleKey: string;
   groqApiUrl: string;
@@ -59,6 +65,10 @@ function readConfig(): ServerConfig {
     groqApiUrl: requiredEnv('GROQ_API_URL').replace(/\/$/, ''),
     groqApiKey: requiredEnv('GROQ_API_KEY'),
     reasoningModel: requiredEnv('GROQ_REASONING_MODEL'),
+    astraEndpoint: requiredEnv('ASTRA_DB_API_ENDPOINT').replace(/\/$/, ''),
+    astraToken: requiredEnv('ASTRA_DB_APPLICATION_TOKEN'),
+    astraKeyspace: requiredEnv('ASTRA_DB_KEYSPACE'),
+    astraCollection: requiredEnv('ASTRA_DB_COLLECTION'),
     freeDailyLimit,
     proDailyLimit,
   };
@@ -192,7 +202,35 @@ Deno.serve(async (request) => {
       .order('sort_order', { ascending: true });
     if (itemError || !itemRows?.length) throw new AskError('This published handoff does not contain answerable information.', 422);
     const items = itemRows as PublicationItem[];
-    const evidence = selectEvidence(question, items);
+    let vectorRankedItemIds: string[] = [];
+    try {
+      vectorRankedItemIds = await searchPublicationKnowledge({
+        config,
+        publicationId: claim.publication_id,
+        question,
+        limit: MAX_EVIDENCE_ITEMS,
+      });
+      if (!vectorRankedItemIds.length) {
+        await replacePublicationKnowledgeIndex({
+          config,
+          publicationId: claim.publication_id,
+          organizationId: claim.organization_id,
+          handoffId: claim.handoff_id,
+          items,
+        });
+        vectorRankedItemIds = await searchPublicationKnowledge({
+          config,
+          publicationId: claim.publication_id,
+          question,
+          limit: MAX_EVIDENCE_ITEMS,
+        });
+      }
+    } catch (error) {
+      // Published Supabase knowledge remains authoritative and BM25F remains a
+      // complete fallback if the derived semantic index is temporarily down.
+      console.error('Ask Relay vector retrieval unavailable', error instanceof Error ? error.message : 'unknown error');
+    }
+    const evidence = selectEvidence(question, items, vectorRankedItemIds);
     if (!evidence.length) return json({ status: 'unsupported', answer: UNSUPPORTED_ANSWER, citations: [], remaining: claim.remaining });
     const result = await answerWithGroq(config, question, evidence);
     const evidenceByRef = new Map(evidence.map((item) => [item.ref, item]));

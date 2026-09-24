@@ -78,7 +78,8 @@ A feature belongs in Relay only if it helps **capture, structure, verify, transf
 | ACT-06 | Organization membership records active/ended membership independently of active/ended Role assignments. Only one active maintainer exists per Role and service period. Pending invites grant no edit authority. | P0 |
 | ACT-07 | The Owner may create a time-limited, single-use assignment invite for any Role. The latest active Role Holder may create one only for a future service period of their own Role or to replace themselves in their current service period. The app-opening invite preserves the preselected Role/period while the invitee authenticates and explicitly accepts; ending the outgoing assignment, activating membership/the successor assignment, and opening the correct workspace are atomic. The outgoing account and attribution remain, but its prior Role assignment no longer grants private/edit access. | P0 |
 | ACT-08 | A mid-year replacement requires deliberate confirmation and an existing holder for that Role/service period. The Owner may replace any current Role Holder; a Role Holder may replace only themselves. Acceptance ends the former assignment, removes its private working/edit access, and preserves the same workspace, contributor attribution, and published recipient access. | P0 |
-| ACT-09 | Owner oversight shows Role Holder, service period, lifecycle, updated date, approved knowledge count, unresolved Handoff-check status/count, and publication/history. Owners may inspect approved knowledge and published Organization Memory, but raw Captures/Sources, transcripts, draft files, and unresolved suggestions require the exact active Role Assignment. | P0 |
+| ACT-08A | Relay has no standalone manual End assignment action. An outgoing active assignment ends only when the invited replacement or successor explicitly accepts and the atomic assignment/workspace transfer succeeds. | P0 |
+| ACT-09 | The Organization overview keeps Role cards intentionally compact, showing the Role, current service period, and assigned holder without approved/unresolved counters, Handoff-check or publication labels, or draft-stage pills. Detailed continuity and published history remain available through the Role view. Owners may inspect approved knowledge and published Organization Memory, but raw Captures/Sources, transcripts, draft files, and unresolved suggestions require the exact active Role Assignment. | P0 |
 
 ---
 
@@ -105,17 +106,17 @@ Supporting lineage metadata connects:
 
 - revisions of canonical Knowledge Items
 - logically equivalent Knowledge Items across Handoffs for the same Role
-- an approved Lesson to a resulting Process, Warning, or Responsibility when evidence or human confirmation establishes the relationship
+- an approved Warning / Lesson entry to a resulting Process when evidence or human confirmation establishes the relationship
 
-v1.3 uses only seven knowledge types:
+New knowledge uses five broad primary categories:
 
-1. Responsibility / Task
-2. Deadline
-3. Contact
-4. Process
-5. Warning
-6. Resource
-7. Lesson
+1. Process
+2. Contact
+3. Rule / Deadline
+4. Access / Resource
+5. Warning / Lesson
+
+The category is assigned only after related facts have been consolidated into one independently useful operational entry. Existing published data using the earlier Responsibility, Deadline, Warning, Resource, or Lesson values remains readable and is mapped into the corresponding broad presentation category; immutable historical snapshots are not rewritten.
 
 ### Requirements
 
@@ -176,7 +177,7 @@ The Handoff page shows one compact capture entry point. Opening it presents the 
 | CAP-07 | Guided prompt chips cover responsibilities, registration/training, finances, recurring events, advisor/vendor contacts, account/tool access, calendars/deadlines, policies, and lessons/common mistakes. Selecting one opens the same composer and keeps its fixed guiding question visible. `prompt_id` is lightweight context only: it is not evidence and cannot determine Source meaning, Knowledge Item type, or proposal classification. | P0 |
 | CAP-08 | A Capture is an editable working draft. **Save** persists only its latest text, prompt metadata, and current attachment set. Save never parses documents, calls Groq, indexes/reindexes Astra, or runs Organize. | P0 |
 | CAP-09 | **Organize** is the only user action that starts document preparation/indexing and AI structuring. It processes only current pending/failed attachments, reuses already-ready unchanged attachments, removes stale indexed material for removed attachments, then organizes the current Capture into reviewable suggestions. Failure preserves the Capture and exposes Organize as the retry; concurrency claims block duplicate AI runs. | P0 |
-| CAP-10 | Capture history presents one card per contribution, summarizes note/file count and things found, and may expand to attachment detail. It does not present internal Capture-text evidence or every attachment as separate primary captures. | P0 |
+| CAP-10 | Capture history presents one card per contribution, summarizes note/file count and the live Review state, and may expand to attachment detail. Pending counts decrease as suggestions are decided and disappear when none remain; the card does not keep presenting the historical Organize count as pending work. It does not present internal Capture-text evidence or every attachment as separate primary captures. | P0 |
 | CAP-11 | Attachment identity is byte-exact: Relay uses deterministic SHA-256 hashing, rejects identical bytes already present in the same Handoff or open composer before upload, and treats different bytes as a different current attachment. Relay does not infer file lineage, fuzzy versions, or deltas. | P0 |
 | CAP-12 | **Google Drive** is an additional attachment source in the same Capture composer. Each selection uses Google's supported redirect-based One Picker with the `drive.file` scope, required consent, and `allow_multiple=true`. Google Docs, Sheets, and Slides are imported as DOCX, XLSX, and PPTX, while supported ordinary files retain their original bytes. Imported bytes use the same type, 25 MB, SHA-256 duplicate, private Storage, pending attachment, Save, and Organize behavior as local files. Relay stores no Google access/refresh token, provides no live synchronization, and does not parse/index or call Groq during import or Save. | P0 |
 
@@ -282,19 +283,15 @@ Example source:
 Relay may propose:
 
 **Contact**  
-Sarah — Facilities
+Engineering Hall facilities contact
 
-**Process**  
-Reserve Engineering Hall for RoboFest
-
-**Warning**  
-Do not leave venue booking too late
+Content: Sarah from Facilities handles Engineering Hall. Contact her early; the organization nearly lost RoboFest last year.
 
 ### Requirements
 
 | ID | Requirement | Priority |
 |---|---|---|
-| AI-01 | When the Role Holder explicitly chooses Organize, Relay organizes the complete current Capture into zero or more reviewable create, update, or retire suggestions using the seven v1.3 knowledge types. | P0 |
+| AI-01 | When the Role Holder explicitly chooses Organize, Relay organizes the complete current Capture into zero or more reviewable create, update, or retire suggestions using the five broad knowledge categories. | P0 |
 | AI-02 | Model output is validated against an allow-listed structured schema before it can become product data. | P0 |
 | AI-03 | Relay must not invent names, dates, contact details, policies, or procedures absent from evidence. | P0 |
 | AI-04 | Uncertain information is surfaced for human review instead of being silently guessed. | P0 |
@@ -303,7 +300,7 @@ Do not leave venue booking too late
 | AI-07 | Model-selected update targets and exact Capture-text/attachment evidence excerpts are independently validated before suggestions are stored. Low-confidence targets or unsupported excerpts are rejected or omitted. | P0 |
 | AI-08 | Actual Capture text and attachment content determine classification. Capture display labels and optional prompt guidance are context only, are not evidence, and may not force the Knowledge Item type. | P0 |
 | AI-09 | Suggestions produced by one Organize run retain their Capture relationship for grouped Review while preserving exact individual Source provenance. | P0 |
-| AI-10 | Organize creates separate Knowledge Items only when each is independently useful. An explicitly linked incident/lesson that merely explains a Process, Warning, or Responsibility is retained as grounded rationale within that operational item rather than duplicated as a standalone Lesson. A separate Lesson requires independently reusable guidance, and causality is never inferred from chronology or proximity. | P0 |
+| AI-10 | A Knowledge Item is the smallest independently useful piece of operational knowledge, not the smallest extractable fact. Organize extracts grounded facts, groups them by operational unit, incorporates dependent steps, task-specific contacts, thresholds, warnings, reasons, examples, and historical context, and only then assigns one primary broad category. Separate items must remain useful if retrieved alone; the same fact is not duplicated across categories; unrelated workflows are not merged into broad summaries; and consolidation must not omit useful grounded guidance. Every included fact remains grounded by its selected exact Source excerpt, and causality is never inferred from chronology or proximity. | P0 |
 
 ---
 
@@ -467,7 +464,7 @@ Unsupported question:
 |---|---|---|
 | ASK-01 | Recipient can ask natural-language questions from the published handoff. | P0 |
 | ASK-02 | Retrieval is permission-filtered before evidence is provided to the LLM. | P0 |
-| ASK-03 | Ask Relay ranks immutable published Knowledge Items with field-aware BM25F over title and content. Both fields contribute with modest configurable weights; corpus IDF, term-frequency saturation, and field-length normalization prevent common, repeated, or long text from dominating mechanically. Source type and Astra/document availability must not make document-derived knowledge more authoritative than approved voice/text-derived knowledge. Generation is grounded in the publication snapshot and never receives raw/private Source chunks. | P0 |
+| ASK-03 | Ask Relay searches only the immutable published Knowledge Item snapshot. It combines field-aware BM25F title/content ranking with Astra semantic ranking of embeddings derived from each published entry's title plus content, using deterministic reciprocal-rank fusion. Category and Source type are metadata rather than ranking boosts. Corpus IDF, term-frequency saturation, and field-length normalization preserve exact-term quality, while semantic retrieval supports meaning-equivalent wording. Supabase publication rows remain the answer evidence sent to Groq; raw/private Capture or document chunks never enter the Ask prompt. | P0 |
 | ASK-04 | Every factual organization-specific answer includes source references. | P0 |
 | ASK-05 | If evidence is insufficient, Relay explicitly says the handoff does not contain a reliable answer. | P0 |
 | ASK-06 | Relay must not fabricate organization-specific answers from general model knowledge. | P0 |
@@ -517,10 +514,10 @@ Chronology is not causality. A 2026 projector failure followed by a 2027 equipme
 | MEM-06 | Every displayed change allows inspection of the before/after approved knowledge and safe source provenance from the immutable publications. | P0 |
 | MEM-07 | Relay never invents a reason for change or infers causality merely because events occurred in sequence. Unsupported reasons display `Unknown / not established`. | P0 |
 | MEM-08 | Policy-driven requires explicit approved policy/requirement evidence; human assertion alone cannot relabel a change as policy-driven without that evidence. | P0 |
-| MEM-09 | Lesson-driven requires explicit approved causal evidence or attributable human confirmation selecting an approved Lesson and resulting Process, Warning, or Responsibility. | P0 |
+| MEM-09 | Lesson-driven requires explicit approved causal evidence or attributable human confirmation selecting an approved Warning / Lesson entry and the resulting Process. Legacy Lesson/Warning/Responsibility rows remain compatible. | P0 |
 | MEM-10 | Leadership preference requires an explicit approved statement or attributable human confirmation that leadership chose the approach. | P0 |
-| MEM-11 | Contact/resource change requires directly changed Contact or Resource knowledge. | P0 |
-| MEM-12 | An evidence-backed or human-confirmed `Lesson → Process/Warning/Responsibility` relationship is stored explicitly as lineage metadata; AI speculation never creates the link. | P0 |
+| MEM-11 | Contact/resource change requires directly changed Contact or Access / Resource knowledge. Legacy Resource rows remain compatible. | P0 |
+| MEM-12 | An evidence-backed or human-confirmed `Warning / Lesson → Process` relationship is stored explicitly as lineage metadata; AI speculation never creates the link, and legacy relationship values remain readable. | P0 |
 | MEM-13 | Organization Memory does not rank leaders/years, claim improvement without supplied factual metrics, or expose health, quality, completeness, or performance scores. | P0 |
 
 Organization Memory is a focused learning view, not a generic analytics dashboard.
@@ -608,7 +605,7 @@ Relay should feel like a calm transition tool, not an AI dashboard.
 | ID | Requirement | Priority |
 |---|---|---|
 | UI-01 | Every primary screen has one obvious next action and clear empty/error/loading states. | P0 |
-| UI-02 | Review groups suggestions by Capture as concise typed cards, gives updates/retirements an explicit current-versus-suggested structure, and uses user language such as **Add to handoff**, **Edit**, and **Don't add**. Exact provenance remains available through expandable supporting detail without cluttering the default view. | P0 |
+| UI-02 | Review groups suggestions by Capture as concise typed cards, gives updates/retirements an explicit current-versus-suggested structure, and uses user language such as **Add to handoff**, **Edit**, and **Don't add**. Exact provenance remains available through expandable supporting detail without cluttering the default view. When nothing is pending, Review shows one concise empty/completed state with a primary **Return to Capture** action rather than stacked summary, success, and empty cards. | P0 |
 | UI-03 | Handoff-check findings use plain language and citations/source context are easy to open. | P0 |
 | UI-04 | Shared handoff is optimized for fast mobile scanning and core controls support accessibility semantics. | P0 |
 | UI-05 | AI failure never prevents further source capture, editing or publishing already-approved content, or reading a published handoff. | P0 |

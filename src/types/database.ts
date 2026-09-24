@@ -328,7 +328,6 @@ export type Database = {
       create_role_assignment_invite: { Args: { requested_role_id: string; requested_service_period: string; replace_existing: boolean }; Returns: Json };
       preview_role_assignment_invite: { Args: { requested_token: string }; Returns: Json };
       accept_role_assignment_invite: { Args: { requested_token: string }; Returns: string };
-      end_role_assignment: { Args: { requested_assignment_id: string }; Returns: undefined };
       reopen_handoff_for_revision: { Args: { requested_handoff_id: string }; Returns: undefined };
       request_organization_ownership_transfer: { Args: { requested_organization_id: string; requested_user_id: string }; Returns: string };
       accept_organization_ownership_transfer: { Args: { requested_transfer_id: string }; Returns: undefined };

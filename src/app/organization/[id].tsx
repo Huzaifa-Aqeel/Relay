@@ -14,12 +14,6 @@ import { useOrganization, useOrganizationHandoffs, useRoles } from '@/features/r
 import type { Handoff } from '@/features/relay/types';
 import { colors, radii, shadow, spacing } from '@/theme/tokens';
 
-function handoffLabel(handoff: Handoff | undefined) {
-  if (!handoff) return 'Not started';
-  if (handoff.status === 'published') return 'Published';
-  return `${handoff.stage[0].toUpperCase()}${handoff.stage.slice(1)} · Draft`;
-}
-
 export default function OrganizationScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const organizationQuery = useOrganization(id);
@@ -105,10 +99,6 @@ export default function OrganizationScreen() {
                   <AppText variant="heading">{role.title}</AppText>
                   <AppText variant="caption" color={colors.inkMuted}>{latest?.servicePeriod ?? 'No handoff yet'}</AppText>
                   <AppText variant="caption">{holder?.name || 'No assigned holder'}</AppText>
-                  {workspace ? <AppText variant="caption">{workspace.approvedCount} approved · {workspace.unresolvedCount} unresolved · Preflight {workspace.preflightStatus ?? 'not run'} · Publication {workspace.publicationStatus ?? 'none'}</AppText> : null}
-                </View>
-                <View style={[styles.state, latest?.status === 'draft' && styles.stateDraft]}>
-                  <AppText variant="caption" color={latest ? colors.moss : colors.inkMuted}>{handoffLabel(latest)}</AppText>
                 </View>
               </Pressable>
             );
@@ -146,8 +136,6 @@ const styles = StyleSheet.create({
   },
   roleIcon: { width: 48, height: 48, borderRadius: radii.md, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.mossSoft },
   roleCopy: { flex: 1, gap: spacing.xxs },
-  state: { maxWidth: 118, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs, borderRadius: radii.pill, backgroundColor: colors.surfaceMuted },
-  stateDraft: { backgroundColor: colors.mossSoft },
   emptyCard: {
     alignItems: 'center', gap: spacing.sm, padding: spacing.xl,
     borderRadius: radii.lg, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface,

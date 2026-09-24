@@ -4,17 +4,20 @@ import { Linking, Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/ui/app-text';
 import { KNOWLEDGE_META } from '@/features/relay/knowledge-meta';
-import { KNOWLEDGE_TYPES, type KnowledgeType, type PublishedHandoffItem } from '@/features/relay/types';
+import {
+  KNOWLEDGE_TYPES,
+  broadKnowledgeType,
+  type BroadKnowledgeType,
+  type PublishedHandoffItem,
+} from '@/features/relay/types';
 import { colors, radii, shadow, spacing } from '@/theme/tokens';
 
-const SECTION_LABELS: Record<KnowledgeType, string> = {
-  responsibility: 'Responsibilities',
-  deadline: 'Deadlines',
-  contact: 'Contacts',
+const SECTION_LABELS: Record<BroadKnowledgeType, string> = {
   process: 'Processes',
-  warning: 'Warnings',
-  resource: 'Resources',
-  lesson: 'Lessons',
+  contact: 'Contacts',
+  rule_deadline: 'Rules and deadlines',
+  access_resource: 'Access and resources',
+  warning_lesson: 'Warnings and lessons',
 };
 
 function actionsFromContact(content: string) {
@@ -30,8 +33,9 @@ function actionsFromContact(content: string) {
 
 function KnowledgeCard({ item }: { item: PublishedHandoffItem }) {
   const meta = KNOWLEDGE_META[item.knowledgeType];
-  const warning = item.knowledgeType === 'warning';
-  const contactActions = item.knowledgeType === 'contact' ? actionsFromContact(item.content) : [];
+  const category = broadKnowledgeType(item.knowledgeType);
+  const warning = category === 'warning_lesson';
+  const contactActions = category === 'contact' ? actionsFromContact(item.content) : [];
   return (
     <View style={[styles.itemCard, warning && styles.warningCard]}>
       <View style={[styles.itemIcon, warning && styles.warningIcon]}>
@@ -78,13 +82,13 @@ export function HandoffDocument({
   items: PublishedHandoffItem[];
   preview?: boolean;
 }) {
-  const [selectedType, setSelectedType] = useState<KnowledgeType | 'all'>('all');
+  const [selectedType, setSelectedType] = useState<BroadKnowledgeType | 'all'>('all');
   const groups = useMemo(() => KNOWLEDGE_TYPES
-    .map((type) => ({ type, items: items.filter((item) => item.knowledgeType === type) }))
+    .map((type) => ({ type, items: items.filter((item) => broadKnowledgeType(item.knowledgeType) === type) }))
     .filter((group) => group.items.length), [items]);
   const startItems = useMemo(() => items.filter((item) => {
     const text = `${item.title} ${item.content}`.toLocaleLowerCase();
-    return item.knowledgeType === 'deadline'
+    return broadKnowledgeType(item.knowledgeType) === 'rule_deadline'
       || /\b(re-?registration|register|training|required training|closeout|reimbursement|financial handoff|introduc|advisor|faculty|vendor|account access|tool access|login|credential|deadline|due|before|first week|first month)\b/.test(text);
   }).slice(0, 6), [items]);
   const visibleGroups = selectedType === 'all'
@@ -185,9 +189,9 @@ export function HandoffDocument({
       {visibleGroups.map((group) => (
         <View key={group.type} style={styles.group}>
           <View style={styles.sectionTitleRow}>
-            <View style={[styles.sectionIcon, group.type === 'warning' && styles.warningIcon]}>
+            <View style={[styles.sectionIcon, group.type === 'warning_lesson' && styles.warningIcon]}>
               <MaterialCommunityIcons
-                color={group.type === 'warning' ? colors.emergency : colors.moss}
+                color={group.type === 'warning_lesson' ? colors.emergency : colors.moss}
                 name={KNOWLEDGE_META[group.type].icon}
                 size={22}
               />

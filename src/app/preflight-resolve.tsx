@@ -5,6 +5,7 @@ import { LoadingState, MessageState } from '@/components/ui/async-state';
 import { Screen } from '@/components/ui/screen';
 import { KnowledgeEditor, type KnowledgeEditorValues } from '@/features/relay/knowledge-editor';
 import { usePreflightFindings, useResolvePreflightFinding } from '@/features/relay/queries';
+import { broadKnowledgeType } from '@/features/relay/types';
 
 export default function ResolvePreflightFindingScreen() {
   const { handoffId, runId, findingId } = useLocalSearchParams<{
@@ -64,7 +65,9 @@ export default function ResolvePreflightFindingScreen() {
       title="Turn the answer into approved knowledge"
       description={`${finding.question} Your answer becomes part of the handoff. Relay will ask you to check it again so readiness reflects the change.`}
       defaultValues={{
-        knowledgeType: finding.suggestedKnowledgeType ?? 'process',
+        knowledgeType: finding.suggestedKnowledgeType
+          ? broadKnowledgeType(finding.suggestedKnowledgeType)
+          : 'process',
         title: finding.title,
         content: '',
       }}

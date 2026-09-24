@@ -9,11 +9,11 @@ import { Button } from '@/components/ui/button';
 import { ChoiceGroup, FormInput, FormSection } from '@/components/ui/form-controls';
 import { Screen } from '@/components/ui/screen';
 import { KNOWLEDGE_META } from '@/features/relay/knowledge-meta';
-import { KNOWLEDGE_TYPES, type KnowledgeType } from '@/features/relay/types';
+import { ALL_KNOWLEDGE_TYPES, KNOWLEDGE_TYPES, type KnowledgeType } from '@/features/relay/types';
 import { colors, radii, spacing } from '@/theme/tokens';
 
 const schema = z.object({
-  knowledgeType: z.enum(KNOWLEDGE_TYPES),
+  knowledgeType: z.enum(ALL_KNOWLEDGE_TYPES),
   title: z.string().trim().min(1, 'Give this item a clear title.').max(160, 'Keep the title under 160 characters.'),
   content: z.string().trim().min(1, 'Add the information your successor needs.').max(5000, 'Keep this item under 5,000 characters.'),
 });

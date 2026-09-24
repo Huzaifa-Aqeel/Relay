@@ -1,6 +1,7 @@
 export const MAX_EVIDENCE_ITEMS = 24;
 export const MAX_EVIDENCE_CHARS = 32_000;
 export const UNSUPPORTED_ANSWER = 'This handoff does not contain a reliable answer to that question.';
+export const RRF_K = 60;
 
 const GENERIC_QUERY_TERMS = new Set([
   'a', 'about', 'an', 'are', 'can', 'do', 'does', 'for', 'how', 'i', 'in', 'is', 'it', 'me', 'my', 'of', 'on',
@@ -140,12 +141,43 @@ export function rankPublicationItems(
   });
 }
 
+export function rankPublicationItemsHybrid(
+  question: string,
+  items: PublicationItem[],
+  vectorRankedItemIds: string[],
+  parameters: Readonly<Bm25fParameters> = BM25F_PARAMETERS,
+) {
+  const lexical = rankPublicationItems(question, items, parameters);
+  const itemsById = new Map(items.map((item) => [item.id, item]));
+  const scores = new Map<string, number>();
+
+  // Zero-score lexical rows carry no query signal and must not receive an RRF
+  // contribution merely because they happened to have a low sort_order.
+  lexical.filter((entry) => entry.score > 0).forEach((entry, index) => {
+    scores.set(entry.item.id, (scores.get(entry.item.id) ?? 0) + (1 / (RRF_K + index + 1)));
+  });
+  [...new Set(vectorRankedItemIds)].forEach((id, index) => {
+    if (!itemsById.has(id)) return;
+    scores.set(id, (scores.get(id) ?? 0) + (1 / (RRF_K + index + 1)));
+  });
+
+  if (!scores.size) return lexical;
+  return [...scores.entries()].map(([id, score]) => ({ item: itemsById.get(id)!, score }))
+    .sort((left, right) => {
+      if (left.score !== right.score) return right.score - left.score;
+      return left.item.sort_order - right.item.sort_order;
+    });
+}
+
 export function selectEvidence(
   question: string,
   items: PublicationItem[],
+  vectorRankedItemIds: string[] = [],
   parameters: Readonly<Bm25fParameters> = BM25F_PARAMETERS,
 ) {
-  const ranked = rankPublicationItems(question, items, parameters);
+  const ranked = vectorRankedItemIds.length
+    ? rankPublicationItemsHybrid(question, items, vectorRankedItemIds, parameters)
+    : rankPublicationItems(question, items, parameters);
 
   const evidence: Evidence[] = [];
   let usedChars = 0;

@@ -924,7 +924,7 @@ select is(
           'title', 'Venue confirmation owner is missing',
           'question', 'Who confirms that the venue request was accepted?',
           'explanation', 'The process has no accountable person for confirmation.',
-          'suggested_knowledge_type', 'responsibility',
+          'suggested_knowledge_type', 'process',
           'primary_knowledge_item_id', '88888888-8888-4888-8888-888888888888',
           'evidence', jsonb_build_array(jsonb_build_object(
             'evidence_kind', 'knowledge',
@@ -941,7 +941,7 @@ select is(
           'title', 'Confirmation storage is unspecified',
           'question', 'Where should the venue confirmation be stored?',
           'explanation', 'A shared location would make the confirmation easier to find.',
-          'suggested_knowledge_type', 'resource',
+          'suggested_knowledge_type', 'access_resource',
           'primary_knowledge_item_id', null,
           'evidence', jsonb_build_array(jsonb_build_object(
             'evidence_kind', 'source',
@@ -1705,7 +1705,7 @@ select lives_ok(
     '[{
       "proposal_action":"update",
       "target_knowledge_item_id":"13131313-1010-4010-8010-101010101010",
-      "knowledge_type":"deadline",
+      "knowledge_type":"rule_deadline",
       "title":"Book Engineering Hall",
       "content":"Book Engineering Hall sixteen weeks before RoboFest.",
       "uncertainty_note":null,
@@ -1777,7 +1777,7 @@ select lives_ok(
     '[{
       "proposal_action":"retire",
       "target_knowledge_item_id":"13131313-1010-4010-8010-101010101010",
-      "knowledge_type":"deadline",
+      "knowledge_type":"rule_deadline",
       "title":"Book Engineering Hall",
       "content":"Book Engineering Hall sixteen weeks before RoboFest.",
       "uncertainty_note":null,
@@ -2133,7 +2133,7 @@ select lives_ok(
       ),
       jsonb_build_object(
         'proposal_action', 'create', 'target_knowledge_item_id', null,
-        'knowledge_type', 'process', 'title', 'Send the updated budget to the advisor',
+        'knowledge_type', 'rule_deadline', 'title', 'Send the updated budget to the advisor',
         'content', 'Send the updated budget to the faculty advisor.',
         'uncertainty_note', null,
         'evidence_source_id', '17171717-1010-4010-8010-101010101010',

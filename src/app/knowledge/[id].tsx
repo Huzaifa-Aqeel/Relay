@@ -5,6 +5,7 @@ import { Alert } from 'react-native';
 import { LoadingState, MessageState } from '@/components/ui/async-state';
 import { Screen } from '@/components/ui/screen';
 import { KnowledgeEditor, type KnowledgeEditorValues } from '@/features/relay/knowledge-editor';
+import { broadKnowledgeType } from '@/features/relay/types';
 import {
   useDeleteKnowledgeItem,
   useKnowledgeItem,
@@ -80,7 +81,7 @@ export default function EditKnowledgeScreen() {
       eyebrow={`${item.status} · ${item.origin}`}
       title="Edit knowledge"
       description="Keep the instruction accurate, actionable, and easy for a new leader to scan."
-      defaultValues={{ knowledgeType: item.knowledgeType, title: item.title, content: item.content }}
+      defaultValues={{ knowledgeType: broadKnowledgeType(item.knowledgeType), title: item.title, content: item.content }}
       error={updateMutation.error?.message ?? resolveMutation.error?.message ?? deleteMutation.error?.message}
       isPending={updateMutation.isPending || resolveMutation.isPending}
       isDeleting={deleteMutation.isPending}
