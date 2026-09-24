@@ -12,7 +12,7 @@ import { colors, radii, spacing } from '@/theme/tokens';
 
 function Unavailable() {
   return (
-    <Screen>
+    <Screen safeTop>
       <View style={styles.brand}>
         <View style={styles.brandMark}><MaterialCommunityIcons color={colors.moss} name="source-branch" size={20} /></View>
         <AppText variant="label" color={colors.moss}>RELAY</AppText>
@@ -34,11 +34,11 @@ export default function SharedHandoffScreen() {
   const handoffQuery = useSharedHandoff(validToken ? token : undefined);
 
   if (!validToken) return <Unavailable />;
-  if (handoffQuery.isPending) return <Screen><LoadingState label="Opening the handoff…" /></Screen>;
+  if (handoffQuery.isPending) return <Screen safeTop><LoadingState label="Opening the handoff…" /></Screen>;
   if (handoffQuery.error || !handoffQuery.data) return <Unavailable />;
 
   return (
-    <Screen>
+    <Screen safeTop>
       <HandoffDocument
         organizationName={handoffQuery.data.organizationName}
         organizationInstitution={handoffQuery.data.organizationInstitution}

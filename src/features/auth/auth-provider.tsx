@@ -151,20 +151,21 @@ export function AuthProvider({ children }: PropsWithChildren) {
     throwFriendly(error);
   }, []);
 
+  const userId = session?.user.id;
   const signOut = useCallback(async () => {
     const client = requireSupabase();
-    if (session?.user.id) await unregisterPushToken(session.user.id);
+    if (userId) await unregisterPushToken(userId);
     const { error } = await client.auth.signOut();
     throwFriendly(error);
-  }, [session?.user.id]);
+  }, [userId]);
 
   const deleteAccount = useCallback(async () => {
     const client = requireSupabase();
-    if (session?.user.id) await unregisterPushToken(session.user.id);
+    if (userId) await unregisterPushToken(userId);
     const { error } = await client.functions.invoke('delete-account', { body: {} });
     throwFriendly(error);
     await client.auth.signOut({ scope: 'local' });
-  }, [session?.user.id]);
+  }, [userId]);
 
   const value = useMemo<AuthContextValue>(() => ({
     status,

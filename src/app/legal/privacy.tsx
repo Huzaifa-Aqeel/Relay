@@ -34,6 +34,6 @@ export default function PrivacyScreen() {
 }
 
 const styles = StyleSheet.create({
-  heading: { gap: spacing.xs, marginTop: spacing.lg, marginBottom: spacing.xl },
+  heading: { gap: spacing.xs, marginBottom: spacing.xl },
   cards: { gap: spacing.md },
 });

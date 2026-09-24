@@ -329,7 +329,6 @@ export default function HandoffScreen() {
       <View style={styles.heading}>
         <AppText variant="caption" color={colors.moss} style={styles.eyebrow}>{organization.name.toUpperCase()}</AppText>
         <AppText variant="display">{role.title} handoff</AppText>
-        <AppText color={colors.inkMuted}>{handoff.servicePeriod} · {handoff.status === 'draft' ? 'Private draft' : 'Published snapshot'}</AppText>
         <AppText color={colors.inkMuted}>Keep this living workspace current throughout your term. Review and publish when preparing to transfer the Role; routine edits are saved without publishing.</AppText>
         {handoff.status === 'published' ? <Button tone="secondary" label="Resume working draft" disabled={reopen.isPending} onPress={() => reopen.mutate()} /> : null}
         {reopen.error ? <AppText>{reopen.error.message}</AppText> : null}
@@ -357,8 +356,9 @@ export default function HandoffScreen() {
       {handoff.status === 'draft' ? (
         <UnifiedCaptureComposer
           editingCapture={editingCapture}
-          organizationId={handoff.organizationId}
           handoffId={handoff.id}
+          key={editingCapture?.id ?? 'new-capture'}
+          organizationId={handoff.organizationId}
           onEditComplete={() => setEditingCapture(null)}
         />
       ) : null}
@@ -452,7 +452,7 @@ export default function HandoffScreen() {
 }
 
 const styles = StyleSheet.create({
-  heading: { gap: spacing.xs, marginTop: spacing.lg, marginBottom: spacing.lg },
+  heading: { gap: spacing.xs, marginBottom: spacing.lg },
   eyebrow: { letterSpacing: 1.2 },
   stages: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.xxs, marginBottom: spacing.lg, paddingVertical: spacing.sm },
   stage: { flex: 1, alignItems: 'center', gap: spacing.xs },

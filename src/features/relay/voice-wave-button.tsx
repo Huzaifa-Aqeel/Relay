@@ -1,5 +1,5 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useEffect, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { Animated, Easing, Pressable, StyleSheet, View } from 'react-native';
 
 import { colors, radii } from '@/theme/tokens';
@@ -21,8 +21,8 @@ export function VoiceWaveButton({
   isRecording: boolean;
   onPress: () => void;
 }) {
-  const levels = useRef(WAVE_HEIGHTS.map((_, index) => new Animated.Value(IDLE_LEVELS[index]))).current;
-  const pulse = useRef(new Animated.Value(0)).current;
+  const [levels] = useState(() => WAVE_HEIGHTS.map((_, index) => new Animated.Value(IDLE_LEVELS[index])));
+  const [pulse] = useState(() => new Animated.Value(0));
 
   useEffect(() => {
     if (!isRecording) {

@@ -8,9 +8,32 @@ import { AppText } from '@/components/ui/app-text';
 import { Button } from '@/components/ui/button';
 import { Screen } from '@/components/ui/screen';
 import { useAuth } from '@/features/auth/auth-provider';
+import { useBilling } from '@/features/billing/billing-provider';
+import { useOrganizationPlan, useOrganizations } from '@/features/relay/queries';
+import type { Organization } from '@/features/relay/types';
 import { colors, radii, spacing } from '@/theme/tokens';
 
 type IconName = ComponentProps<typeof MaterialCommunityIcons>['name'];
+
+function OrganizationPlanStatus({ organization }: { organization: Organization }) {
+  const plan = useOrganizationPlan(organization.id);
+  const label = plan.isPending
+    ? 'Checking…'
+    : plan.data?.plan === 'pro'
+      ? 'Relay Pro'
+      : plan.error
+        ? 'Unavailable'
+        : 'Free';
+  const isPro = plan.data?.plan === 'pro';
+  return (
+    <View style={styles.planStatusRow}>
+      <AppText variant="label" style={styles.rowCopy} numberOfLines={1}>{organization.name}</AppText>
+      <View style={[styles.planStatusBadge, isPro && styles.planStatusBadgePro]}>
+        <AppText variant="caption" color={isPro ? colors.moss : colors.inkMuted}>{label}</AppText>
+      </View>
+    </View>
+  );
+}
 
 function SettingRow({
   icon,
@@ -44,11 +67,16 @@ function SettingRow({
 
 export default function SettingsScreen() {
   const auth = useAuth();
+  const billing = useBilling();
+  const organizations = useOrganizations();
   const [showDelete, setShowDelete] = useState(false);
   const [busy, setBusy] = useState(false);
   const [accountError, setAccountError] = useState<string | null>(null);
   const displayName = auth.session?.user.user_metadata.display_name as string | undefined;
   const email = auth.session?.user.email;
+  const canManagePlan = organizations.data?.some(
+    (organization) => organization.createdBy === auth.session?.user.id,
+  ) || billing.subscription?.isActive === true;
 
   async function signOut() {
     if (auth.status === 'demo') {
@@ -82,7 +110,7 @@ export default function SettingsScreen() {
 
   return (
     <>
-      <Screen>
+      <Screen safeTop>
         <View style={styles.headingBlock}>
           <AppText variant="display">Settings</AppText>
           <AppText color={colors.inkMuted}>Your account, plan, and privacy.</AppText>
@@ -91,14 +119,21 @@ export default function SettingsScreen() {
         <Pressable onPress={() => router.push('/paywall')} style={({ pressed }) => [styles.planCard, pressed && styles.pressed]}>
           <View style={styles.planBadge}>
             <MaterialCommunityIcons color={colors.moss} name="star-four-points-outline" size={18} />
-            <AppText variant="caption" color={colors.moss}>ORGANIZATION PLANS</AppText>
+            <AppText variant="caption" color={colors.moss}>ORGANIZATION PLAN</AppText>
           </View>
-          <AppText variant="heading">Relay Pro belongs to the organization</AppText>
+          <AppText variant="heading">Organization plans</AppText>
           <AppText color={colors.inkMuted}>
-            Choose an organization to view or restore its plan. Recipients always remain free.
+            Relay Pro is shared by authorized Role Holders in your organization.
           </AppText>
+          {organizations.data?.length ? (
+            <View style={styles.planStatuses}>
+              {organizations.data.map((organization) => (
+                <OrganizationPlanStatus key={organization.id} organization={organization} />
+              ))}
+            </View>
+          ) : null}
           <View style={styles.planLink}>
-            <AppText variant="label" color={colors.moss}>Choose organization</AppText>
+            <AppText variant="label" color={colors.moss}>{canManagePlan ? 'Manage plan' : 'View plan'}</AppText>
             <MaterialCommunityIcons color={colors.moss} name="arrow-right" size={20} />
           </View>
         </Pressable>
@@ -154,12 +189,22 @@ export default function SettingsScreen() {
 }
 
 const styles = StyleSheet.create({
-  headingBlock: { marginTop: spacing.lg, marginBottom: spacing.lg, gap: spacing.xxs },
+  headingBlock: { marginBottom: spacing.lg, gap: spacing.xxs },
   planCard: {
-    gap: spacing.sm, padding: spacing.lg, borderRadius: radii.lg,
+    gap: spacing.xs, padding: spacing.md + spacing.xxs / 2, borderRadius: radii.lg,
     backgroundColor: colors.mossSoft, borderWidth: 1, borderColor: '#BED1C3',
   },
   planBadge: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  planStatuses: { gap: spacing.xs, marginTop: spacing.xs },
+  planStatusRow: {
+    minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    paddingHorizontal: spacing.sm, borderRadius: radii.md, backgroundColor: colors.surface,
+  },
+  planStatusBadge: {
+    paddingHorizontal: spacing.sm, paddingVertical: spacing.xxs,
+    borderRadius: radii.pill, backgroundColor: colors.canvas,
+  },
+  planStatusBadgePro: { backgroundColor: colors.mossSoft },
   planLink: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginTop: spacing.xs },
   sectionLabel: { marginTop: spacing.xl, marginBottom: spacing.xs, letterSpacing: 1.2 },
   group: {

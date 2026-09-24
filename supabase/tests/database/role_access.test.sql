@@ -25,12 +25,16 @@ select set_config('test.owner_invite',(public.create_role_assignment_invite(pg_t
 select set_config('test.president_handoff',public.accept_role_assignment_invite(pg_temp.token('owner_invite'))::text,true);
 select ok(public.is_role_holder_for_handoff(pg_temp.id('president_handoff')),'Owner explicitly assigned as President can maintain President');
 select throws_ok($$select public.accept_role_assignment_invite(pg_temp.token('owner_invite'))$$,'22023','Invite unavailable or expired','Invite is single use');
+select is(public.get_organization_plan(pg_temp.id('org'))->>'isPurchaser','false','Free Organization without a subscription has no purchaser');
+select is(public.get_organization_plan(pg_temp.id('org'))->>'willRenew',null,'Free Organization without a subscription has no renewal state');
 select throws_ok($$select public.create_role(pg_temp.id('org'),'Treasurer','')$$,'P0001','RELAY_PRO_REQUIRED:role','Free role creation limit remains');
 
 set local role postgres;
-insert into public.organization_subscriptions(organization_id,purchaser_user_id,revenuecat_app_user_id,entitlement_id,status)
-values(pg_temp.id('org'),'a0000000-0000-4000-8000-000000000001','a0000000-0000-4000-8000-000000000001','relay_pro','active');
+insert into public.organization_subscriptions(organization_id,purchaser_user_id,revenuecat_app_user_id,entitlement_id,status,store,will_renew)
+values(pg_temp.id('org'),'a0000000-0000-4000-8000-000000000001','a0000000-0000-4000-8000-000000000001','relay_pro','active','test_store',true);
 set local role authenticated;
+select is(public.get_organization_plan(pg_temp.id('org'))->>'isPurchaser','true','Purchaser can identify their store-management responsibility');
+select is(public.get_organization_plan(pg_temp.id('org'))->>'willRenew','true','Organization plan exposes verified renewal state');
 select set_config('test.treasurer',public.create_role(pg_temp.id('org'),'Treasurer','')::text,true);
 select set_config('test.treasurer_invite',public.create_role_assignment_invite(pg_temp.id('treasurer'),'2026–2027')->>'token',true);
 select pg_temp.actor(2);
@@ -42,6 +46,7 @@ select ok(public.is_organization_member(pg_temp.id('org')),'Explicit acceptance 
 select ok(public.is_role_holder_for_handoff(pg_temp.id('treasurer_handoff')),'Treasurer assigned to exact role-period');
 select ok(not public.is_role_holder_for_handoff(pg_temp.id('president_handoff')),'Treasurer cannot maintain President');
 select is(public.get_organization_plan(pg_temp.id('org'))->>'plan','pro','Role Holder benefits from Organization Pro without purchasing');
+select is(public.get_organization_plan(pg_temp.id('org'))->>'isPurchaser','false','Role Holder cannot manage another person’s store subscription');
 select ok(not public.is_organization_admin(pg_temp.id('org')),'Role Holder is not Owner');
 select is(public.get_organization_continuity(pg_temp.id('org'))->>'currentOwnerName','Original Owner','Active member sees the current Owner name without receiving the Owner-only member list');
 select is(jsonb_array_length(public.get_organization_continuity(pg_temp.id('org'))->'members'),0,'Nonowner still receives no Organization member list');
@@ -128,10 +133,14 @@ select ok(public.is_organization_admin(pg_temp.id('org')),'Accepted recipient is
 select is(public.get_organization_continuity(pg_temp.id('org'))->>'currentOwnerName','Treasurer Holder','Continuity context reflects the accepted new Owner');
 select ok(not public.is_role_holder_for_handoff(pg_temp.id('president_handoff')),'New ownership grants no President editing');
 select is(public.get_organization_plan(pg_temp.id('org'))->>'plan','pro','Ownership transfer preserves Organization Pro');
+select is(public.get_organization_plan(pg_temp.id('org'))->>'isPurchaser','false','New Owner does not inherit the former Owner store account');
+select is(public.get_organization_plan(pg_temp.id('org'))->>'willRenew','true','Ownership transfer preserves the Organization subscription renewal state');
 select pg_temp.actor(1);
 select ok(not public.is_organization_admin(pg_temp.id('org')),'Old Owner loses Owner authority');
 select ok(public.is_role_holder_for_handoff(pg_temp.id('president_handoff')),'Old Owner retains separately assigned President authority');
+select is(public.get_organization_plan(pg_temp.id('org'))->>'isPurchaser','true','Original purchaser retains store-management responsibility after ownership transfer');
 select is((select purchaser_user_id from public.organization_subscriptions where organization_id = pg_temp.id('org')),'a0000000-0000-4000-8000-000000000001'::uuid,'Purchaser identity unchanged');
+select set_config('test.public_preview_invite',public.create_role_assignment_invite(pg_temp.id('president'),'2027–2028')->>'token',true);
 
 select pg_temp.actor(4);
 select is((select count(*) from public.organizations),0::bigint,'Unrelated user sees no Organization data');
@@ -142,7 +151,10 @@ set local role anon;
 select set_config('request.jwt.claims','{"role":"anon"}',true);
 select ok(public.get_shared_handoff(pg_temp.token('public_token')) is not null,'No-login recipient works');
 select throws_ok($$select public.accept_role_assignment_invite(pg_temp.token('next_year'))$$,'42501',null,'Anonymous invite acceptance denied');
-select throws_ok($$select public.preview_role_assignment_invite(pg_temp.token('next_year'))$$,'42501',null,'Anonymous invite metadata denied');
+select is(public.preview_role_assignment_invite(pg_temp.token('public_preview_invite'))->>'organizationName','Multi Role Club','Invite link safely identifies the Organization before sign-in');
+select is(public.preview_role_assignment_invite(pg_temp.token('public_preview_invite'))->>'roleTitle','President','Invite link safely identifies the Role before sign-in');
+select is(public.preview_role_assignment_invite(pg_temp.token('public_preview_invite'))->>'servicePeriod','2027–2028','Invite link safely identifies the service period before sign-in');
+select throws_ok($$select public.preview_role_assignment_invite('not-a-token')$$,'22023','Invite unavailable or expired','Malformed invite token discloses no context');
 select throws_ok($$select public.mark_preflight_stale_for_handoff(pg_temp.id('president_handoff'))$$,'42501',null,'Anonymous internal mutation denied');
 
 set local role postgres;

@@ -137,8 +137,8 @@ export default function HandoffReviewScreen() {
   const decisionMutation = useDecideKnowledgeProposal();
   const captureMutation = useReturnHandoffToCapture();
   const checkMutation = useRunPreflight();
+  const runHandoffCheck = checkMutation.mutate;
   const checkAttempted = useRef(false);
-  const initialProposalIds = useRef<Set<string> | null>(null);
   const [decisionNotice, setDecisionNotice] = useState<string | null>(null);
   const [reviewDecisions, setReviewDecisions] = useState<Record<string, 'approved' | 'rejected'>>({});
   const pending = handoffQuery.isPending || knowledgeQuery.isPending || capturesQuery.isPending
@@ -149,11 +149,6 @@ export default function HandoffReviewScreen() {
   const approved = knowledgeQuery.data?.filter((item) => item.status === 'approved') ?? [];
 
   useEffect(() => {
-    if (pending || initialProposalIds.current) return;
-    initialProposalIds.current = new Set(proposals.map((item) => item.id));
-  }, [pending, proposals]);
-
-  useEffect(() => {
     if (!shouldRunHandoffCheck({
       stage: handoffQuery.data?.stage ?? '',
       proposalCount: proposals.length,
@@ -162,8 +157,8 @@ export default function HandoffReviewScreen() {
       attempted: checkAttempted.current,
     })) return;
     checkAttempted.current = true;
-    checkMutation.mutate({ handoffId });
-  }, [approved.length, handoffId, handoffQuery.data?.stage, preflightQuery.data, proposals.length]);
+    runHandoffCheck({ handoffId });
+  }, [approved.length, handoffId, handoffQuery.data?.stage, preflightQuery.data, proposals.length, runHandoffCheck]);
 
   if (pending) return <Screen><LoadingState label="Preparing review…" /></Screen>;
   if (error || !handoffQuery.data || !roleQuery.data || !knowledgeQuery.data || !capturesQuery.data || !provenanceQuery.data) {
@@ -184,11 +179,10 @@ export default function HandoffReviewScreen() {
     title: captureId === 'legacy' ? 'Earlier capture' : captureById.get(captureId)?.title ?? 'Capture',
     proposals: proposals.filter((item) => (item.captureId ?? 'legacy') === captureId),
   }));
-  const allReviewedSuggestionsRejected = Boolean(
-    initialProposalIds.current?.size
-    && proposals.length === 0
-    && [...initialProposalIds.current].every((id) => reviewDecisions[id] === 'rejected'),
-  );
+  const reviewDecisionValues = Object.values(reviewDecisions);
+  const allReviewedSuggestionsRejected = proposals.length === 0
+    && reviewDecisionValues.length > 0
+    && reviewDecisionValues.every((decision) => decision === 'rejected');
 
   function decide(item: KnowledgeItem, decision: 'approved' | 'rejected') {
     setDecisionNotice(null);
@@ -338,7 +332,7 @@ export default function HandoffReviewScreen() {
 }
 
 const styles = StyleSheet.create({
-  heading: { gap: spacing.xs, marginTop: spacing.lg, marginBottom: spacing.xl },
+  heading: { gap: spacing.xs, marginBottom: spacing.xl },
   eyebrow: { letterSpacing: 1, textTransform: 'uppercase' },
   reviewSummary: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.md,

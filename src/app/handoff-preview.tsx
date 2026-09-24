@@ -247,7 +247,7 @@ export default function HandoffPreviewScreen() {
 }
 
 const styles = StyleSheet.create({
-  heading: { gap: spacing.xs, marginTop: spacing.lg, marginBottom: spacing.xl },
+  heading: { gap: spacing.xs, marginBottom: spacing.xl },
   eyebrow: { letterSpacing: 1.1 },
   flex: { flex: 1 },
   publishCard: { gap: spacing.md, marginTop: spacing.xxl, padding: spacing.lg, borderRadius: radii.lg, backgroundColor: colors.mossSoft },

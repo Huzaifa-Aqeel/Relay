@@ -1,7 +1,7 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import type { Href } from 'expo-router';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/ui/app-text';
@@ -22,18 +22,29 @@ function suggestedPeriod() {
 
 export default function CreateHandoffScreen() {
   const params = useLocalSearchParams<{ organizationId?: string; roleId?: string }>();
+  return (
+    <CreateHandoffForm
+      initialOrganizationId={params.organizationId ?? ''}
+      initialRoleId={params.roleId ?? ''}
+      key={`${params.organizationId ?? ''}:${params.roleId ?? ''}`}
+    />
+  );
+}
+
+function CreateHandoffForm({
+  initialOrganizationId,
+  initialRoleId,
+}: {
+  initialOrganizationId: string;
+  initialRoleId: string;
+}) {
   const organizationsQuery = useOrganizations();
-  const [organizationId, setOrganizationId] = useState(params.organizationId ?? '');
-  const [roleId, setRoleId] = useState(params.roleId ?? '');
+  const [organizationId, setOrganizationId] = useState(initialOrganizationId);
+  const [roleId, setRoleId] = useState(initialRoleId);
   const [servicePeriod, setServicePeriod] = useState(suggestedPeriod());
   const [validationError, setValidationError] = useState<string | null>(null);
   const rolesQuery = useRoles(organizationId || undefined);
   const mutation = useCreateHandoff();
-
-  useEffect(() => {
-    if (params.organizationId) setOrganizationId(params.organizationId);
-    if (params.roleId) setRoleId(params.roleId);
-  }, [params.organizationId, params.roleId]);
 
   const selectedOrganization = useMemo(
     () => organizationsQuery.data?.find((organization) => organization.id === organizationId),
@@ -199,7 +210,7 @@ export default function CreateHandoffScreen() {
 }
 
 const styles = StyleSheet.create({
-  heading: { gap: spacing.xs, marginTop: spacing.lg, marginBottom: spacing.xl },
+  heading: { gap: spacing.xs, marginBottom: spacing.xl },
   eyebrow: { letterSpacing: 1.2 },
   section: {
     gap: spacing.md, marginBottom: spacing.lg, padding: spacing.lg,

@@ -186,7 +186,7 @@ export default function OrganizationMemoryScreen() {
 }
 
 const styles = StyleSheet.create({
-  heading: { gap: spacing.xs, marginTop: spacing.lg, marginBottom: spacing.xl },
+  heading: { gap: spacing.xs, marginBottom: spacing.xl },
   eyebrow: { letterSpacing: 1.1 },
   copy: { flex: 1, gap: spacing.xxs },
   historyCard: { gap: spacing.sm, padding: spacing.lg, borderWidth: 1, borderColor: colors.line, borderRadius: radii.lg, backgroundColor: colors.surface },

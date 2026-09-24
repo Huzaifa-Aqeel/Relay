@@ -16,7 +16,7 @@ const flow = [
 
 export default function HandoffActionScreen() {
   return (
-    <Screen>
+    <Screen safeTop>
       <View style={styles.heading}>
         <AppText variant="caption" color={colors.moss} style={styles.eyebrow}>CREATE A HANDOFF</AppText>
         <AppText variant="display">Pass on more than files</AppText>
@@ -46,7 +46,7 @@ export default function HandoffActionScreen() {
 }
 
 const styles = StyleSheet.create({
-  heading: { gap: spacing.xs, marginTop: spacing.lg, marginBottom: spacing.xl },
+  heading: { gap: spacing.xs, marginBottom: spacing.xl },
   eyebrow: { letterSpacing: 1.2 },
   flowCard: { gap: spacing.md, marginBottom: spacing.lg, padding: spacing.lg, borderRadius: radii.lg, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface },
   flowRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },

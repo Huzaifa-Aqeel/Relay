@@ -51,12 +51,14 @@ export function ChoiceGroup({
   choices,
   onChange,
   helper,
+  selectionTone = 'solid',
 }: {
   label: string;
   value: string;
   choices: Choice[];
   onChange: (value: string) => void;
   helper?: string;
+  selectionTone?: 'solid' | 'soft';
 }) {
   return (
     <View style={styles.field}>
@@ -72,10 +74,12 @@ export function ChoiceGroup({
               onPress={() => onChange(choice.value)}
               style={({ pressed }) => [
                 styles.choice,
-                selected && styles.choiceSelected,
+                selected && (selectionTone === 'soft' ? styles.choiceSelectedSoft : styles.choiceSelected),
                 pressed && styles.pressed,
               ]}>
-              <AppText variant="label" color={selected ? colors.white : colors.ink}>
+              <AppText
+                variant="label"
+                color={selected ? (selectionTone === 'soft' ? colors.moss : colors.white) : colors.ink}>
                 {choice.label}
               </AppText>
             </Pressable>
@@ -140,6 +144,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   choiceSelected: { borderColor: colors.moss, backgroundColor: colors.moss },
+  choiceSelectedSoft: { borderColor: colors.moss, backgroundColor: colors.mossSoft },
   pressed: { opacity: 0.78 },
   section: {
     gap: spacing.lg,

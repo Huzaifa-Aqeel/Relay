@@ -61,7 +61,7 @@ export default function SourceScreen() {
 }
 
 const styles = StyleSheet.create({
-  heading: { gap: spacing.xs, marginTop: spacing.lg, marginBottom: spacing.xl },
+  heading: { gap: spacing.xs, marginBottom: spacing.xl },
   badge: {
     alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: spacing.xs,
     paddingHorizontal: spacing.sm, paddingVertical: spacing.xxs,

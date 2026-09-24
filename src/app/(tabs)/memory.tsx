@@ -11,10 +11,10 @@ import { colors, radii, spacing } from '@/theme/tokens';
 
 export default function MemoryScreen() {
   const query = useMemoryRoles();
-  if (query.isPending) return <Screen><LoadingState label="Opening organization memory…" /></Screen>;
+  if (query.isPending) return <Screen safeTop><LoadingState label="Opening organization memory…" /></Screen>;
   if (query.error) {
     return (
-      <Screen>
+      <Screen safeTop>
         <MessageState
           icon="book-alert-outline"
           title="Organization Memory unavailable"
@@ -27,14 +27,14 @@ export default function MemoryScreen() {
   }
   const roles = query.data ?? [];
   return (
-    <Screen scrollProps={{
+    <Screen safeTop scrollProps={{
       refreshControl: <RefreshControl refreshing={query.isRefetching} tintColor={colors.moss} onRefresh={() => void query.refetch()} />,
     }}>
       <View style={styles.heading}>
         <AppText variant="caption" color={colors.moss} style={styles.eyebrow}>INSTITUTIONAL MEMORY</AppText>
         <AppText variant="display">What materially changed</AppText>
         <AppText color={colors.inkMuted}>
-          Compare adjacent published service periods for the same role. Relay omits uncertain or wording-only differences and never guesses why.
+          Compare adjacent published service periods for the same role.
         </AppText>
       </View>
 
@@ -64,25 +64,17 @@ export default function MemoryScreen() {
         <MessageState
           icon="book-open-page-variant-outline"
           title="No published handoffs yet"
-          body="Published, human-approved knowledge will appear here—not raw uploads or unreviewed AI output."
+          body=""
         />
       )}
 
-      <View style={styles.boundaryCard}>
-        <MaterialCommunityIcons color={colors.saffron} name="shield-check-outline" size={24} />
-        <View style={styles.copy}>
-          <AppText variant="label">Grounded memory only</AppText>
-          <AppText variant="caption" color={colors.inkMuted}>
-            No leader rankings, improvement scores, cross-role comparisons, or causal claims without approved evidence.
-          </AppText>
-        </View>
-      </View>
+
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  heading: { gap: spacing.xs, marginTop: spacing.lg, marginBottom: spacing.xl },
+  heading: { gap: spacing.xs, marginBottom: spacing.xl },
   eyebrow: { letterSpacing: 1.2 },
   list: { gap: spacing.sm },
   roleCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.lg, borderWidth: 1, borderColor: colors.line, borderRadius: radii.lg, backgroundColor: colors.surface },

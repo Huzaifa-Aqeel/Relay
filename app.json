@@ -12,6 +12,23 @@
     },
     "android": {
       "package": "com.relay.leadershiphandoff",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "relay-handoff.expo.app",
+              "pathPrefix": "/assignment"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#F4EFE7",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -34,7 +51,7 @@
         {
           "photosPermission": "Choose images for an organization or handoff source.",
           "cameraPermission": "Capture an image for a handoff source.",
-          "microphonePermission": false
+          "microphonePermission": "Allow Relay to record handoff knowledge you choose to capture."
         }
       ],
       [

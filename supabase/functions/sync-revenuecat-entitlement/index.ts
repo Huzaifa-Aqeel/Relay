@@ -63,7 +63,10 @@ async function fetchEntitlement(config: Config, revenueCatAppUserId: string) {
     : null;
   const subscription = productIdentifier && subscriber?.subscriptions?.[productIdentifier];
   const store = subscription && typeof subscription.store === 'string' ? subscription.store.slice(0, 40) : null;
-  return { isActive, productIdentifier, store, expiresAt: expiresAt ?? null };
+  const willRenew = subscription && typeof subscription === 'object' && expiresAt !== null
+    ? subscription.unsubscribe_detected_at == null
+    : null;
+  return { isActive, productIdentifier, store, expiresAt: expiresAt ?? null, willRenew };
 }
 
 Deno.serve(async (request) => {
@@ -118,11 +121,19 @@ Deno.serve(async (request) => {
       ? 'Only the current Organization Owner can attach a purchase.'
       : 'This purchase or Organization is already associated, or could not be verified. Try Restore purchases.' }, 409);
 
+    const { error: renewalError } = await admin
+      .from('organization_subscriptions')
+      .update({ will_renew: entitlement.willRenew })
+      .eq('revenuecat_app_user_id', data.user.id)
+      .eq('entitlement_id', config.entitlementId);
+    if (renewalError) return json({ error: 'Relay could not save the subscription renewal status.' }, 503);
+
     return json({
       hasActiveEntitlement: entitlement.isActive,
       organizationId: associatedOrganizationId,
       organizationIsPro: Boolean(entitlement.isActive && organizationId && associatedOrganizationId === organizationId),
       expiresAt: entitlement.expiresAt,
+      willRenew: entitlement.willRenew,
     });
   } catch {
     return json({ error: 'Relay could not verify your subscription. Please try again.' }, 503);

@@ -223,7 +223,7 @@ function TransferImpact({ name = 'The new Owner' }: { name?: string }) {
 }
 
 const styles = StyleSheet.create({
-  heading: { marginTop: spacing.lg, marginBottom: spacing.xl },
+  heading: { marginBottom: spacing.xl },
   ownerCard: {
     gap: spacing.xs,
     padding: spacing.lg,

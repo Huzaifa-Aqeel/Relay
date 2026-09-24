@@ -115,7 +115,7 @@ export default function CreateRoleScreen() {
 }
 
 const styles = StyleSheet.create({
-  heading: { gap: spacing.xs, marginTop: spacing.lg, marginBottom: spacing.xl },
+  heading: { gap: spacing.xs, marginBottom: spacing.xl },
   eyebrow: { letterSpacing: 1.2 },
   error: {
     flexDirection: 'row', alignItems: 'flex-start', gap: spacing.xs,

@@ -13,6 +13,10 @@ import type { PurchasesPackage } from 'react-native-purchases';
 import Purchases from 'react-native-purchases';
 
 import { useAuth } from '@/features/auth/auth-provider';
+import {
+  type StoreSubscriptionState,
+  subscriptionStateFromCustomerInfo,
+} from '@/features/billing/subscription-state';
 import { requireSupabase } from '@/lib/supabase';
 
 type BillingStatus = 'loading' | 'ready' | 'unavailable';
@@ -21,6 +25,7 @@ type BillingContextValue = {
   status: BillingStatus;
   isPurchaseAvailable: boolean;
   annualPackage: PurchasesPackage | null;
+  subscription: StoreSubscriptionState | null;
   message: string | null;
   refresh: () => Promise<void>;
   purchase: (selectedPackage: PurchasesPackage, organizationId: string) => Promise<boolean>;
@@ -87,6 +92,7 @@ export function BillingProvider({ children }: PropsWithChildren) {
   const queryClient = useQueryClient();
   const [status, setStatus] = useState<BillingStatus>('loading');
   const [annualPackage, setAnnualPackage] = useState<PurchasesPackage | null>(null);
+  const [subscription, setSubscription] = useState<StoreSubscriptionState | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const apiKey = platformApiKey();
   const isPurchaseAvailable = Boolean(apiKey && Platform.OS !== 'web');
@@ -108,14 +114,21 @@ export function BillingProvider({ children }: PropsWithChildren) {
     if (auth.status !== 'authenticated' || !auth.session?.user.id) {
       setStatus(auth.status === 'loading' ? 'loading' : 'ready');
       setAnnualPackage(null);
+      setSubscription(null);
       return;
     }
     setMessage(null);
     try {
       await prepareNativeSdk();
       if (isPurchaseAvailable) {
-        const offerings = await Purchases.getOfferings();
+        const [offerings, customerInfo] = await Promise.all([
+          Purchases.getOfferings(),
+          Purchases.getCustomerInfo(),
+        ]);
         setAnnualPackage(offerings.current?.annual ?? null);
+        setSubscription(subscriptionStateFromCustomerInfo(customerInfo, ENTITLEMENT_ID));
+      } else {
+        setSubscription(null);
       }
       await syncServerEntitlement();
       await queryClient.invalidateQueries({ queryKey: ['relay', 'organization-plan'] });
@@ -129,7 +142,8 @@ export function BillingProvider({ children }: PropsWithChildren) {
   }, [auth.session?.user.id, auth.status, isPurchaseAvailable, prepareNativeSdk, queryClient]);
 
   useEffect(() => {
-    void refresh();
+    const refreshTimer = setTimeout(() => void refresh(), 0);
+    return () => clearTimeout(refreshTimer);
   }, [refresh]);
 
   useEffect(() => {
@@ -157,6 +171,7 @@ export function BillingProvider({ children }: PropsWithChildren) {
       await requirePurchaseOwner(organizationId);
       await prepareNativeSdk();
       const result = await Purchases.purchasePackage(selectedPackage);
+      setSubscription(subscriptionStateFromCustomerInfo(result.customerInfo, ENTITLEMENT_ID));
       const hasActiveEntitlement = Boolean(result.customerInfo.entitlements.active[ENTITLEMENT_ID]);
       if (!hasActiveEntitlement) throw new Error('Relay Pro entitlement is not active for this purchase.');
       storePurchaseIsActive = true;
@@ -187,6 +202,7 @@ export function BillingProvider({ children }: PropsWithChildren) {
       await prepareNativeSdk();
       await requirePurchaseOwner(organizationId);
       const customerInfo = await Purchases.restorePurchases();
+      setSubscription(subscriptionStateFromCustomerInfo(customerInfo, ENTITLEMENT_ID));
       const hasActiveEntitlement = Boolean(customerInfo.entitlements.active[ENTITLEMENT_ID]);
       const server = await syncServerEntitlement(organizationId);
       await queryClient.invalidateQueries({ queryKey: ['relay', 'organization-plan'] });
@@ -209,6 +225,7 @@ export function BillingProvider({ children }: PropsWithChildren) {
     status,
     isPurchaseAvailable,
     annualPackage,
+    subscription,
     message,
     refresh,
     purchase,
@@ -217,6 +234,7 @@ export function BillingProvider({ children }: PropsWithChildren) {
     status,
     isPurchaseAvailable,
     annualPackage,
+    subscription,
     message,
     refresh,
     purchase,

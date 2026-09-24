@@ -7,21 +7,23 @@ import { colors, spacing } from '@/theme/tokens';
 
 type ScreenProps = PropsWithChildren<{
   scroll?: boolean;
+  safeTop?: boolean;
   contentStyle?: ViewStyle;
   scrollProps?: ScrollViewProps;
 }>;
 
-export function Screen({ children, scroll = true, contentStyle, scrollProps }: ScreenProps) {
+export function Screen({ children, scroll = true, safeTop = false, contentStyle, scrollProps }: ScreenProps) {
+  const edges = safeTop ? (['top'] as const) : ([] as const);
   if (!scroll) {
     return (
-      <SafeAreaView style={styles.safe} edges={['top']}>
+      <SafeAreaView style={styles.safe} edges={edges}>
         <View style={[styles.content, styles.fill, contentStyle]}>{children}</View>
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={styles.safe} edges={edges}>
       <ScrollView
         {...scrollProps}
         contentContainerStyle={[styles.content, contentStyle]}
@@ -45,7 +47,7 @@ const styles = StyleSheet.create({
     maxWidth: 760,
     alignSelf: 'center',
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
+    paddingTop: spacing.sm,
     paddingBottom: 120,
   },
 });

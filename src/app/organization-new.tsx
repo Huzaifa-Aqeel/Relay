@@ -165,7 +165,7 @@ export default function CreateOrganizationScreen() {
 }
 
 const styles = StyleSheet.create({
-  heading: { gap: spacing.xs, marginTop: spacing.lg, marginBottom: spacing.xl },
+  heading: { gap: spacing.xs, marginBottom: spacing.xl },
   eyebrow: { letterSpacing: 1.2 },
   logoField: { gap: spacing.xs },
   logoHeading: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.sm },

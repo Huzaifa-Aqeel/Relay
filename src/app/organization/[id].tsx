@@ -8,6 +8,7 @@ import { LoadingState, MessageState } from '@/components/ui/async-state';
 import { Button } from '@/components/ui/button';
 import { InfoCard, InfoRow } from '@/components/ui/info-card';
 import { Screen } from '@/components/ui/screen';
+import { useAuth } from '@/features/auth/auth-provider';
 import { OrganizationMark } from '@/features/relay/organization-mark';
 import { useContinuity } from '@/features/relay/continuity';
 import { useOrganization, useOrganizationHandoffs, useRoles } from '@/features/relay/queries';
@@ -16,6 +17,7 @@ import { colors, radii, shadow, spacing } from '@/theme/tokens';
 
 export default function OrganizationScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const auth = useAuth();
   const organizationQuery = useOrganization(id);
   const continuity = useContinuity(id);
   const rolesQuery = useRoles(id);
@@ -86,14 +88,18 @@ export default function OrganizationScreen() {
           {roles.map((role) => {
             const latest = latestByRole.get(role.id);
             const overview = continuity.data?.roles.find(r => r.roleId === role.id);
-            const workspace = overview?.handoffs[0];
-            const holder = overview?.assignments.find(a => a.servicePeriod === workspace?.servicePeriod);
+            const holder = overview?.assignments[0];
+            const canOpenRole = Boolean(
+              continuity.data?.isOwner
+              || overview?.assignments.some(assignment => assignment.userId === auth.session?.user.id),
+            );
             return (
               <Pressable
-                accessibilityRole="button"
+                accessibilityRole={canOpenRole ? 'button' : undefined}
+                disabled={!canOpenRole}
                 key={role.id}
-                onPress={() => router.push((`/role/${role.id}`) as Href)}
-                style={({ pressed }) => [styles.roleCard, pressed && styles.pressed]}>
+                onPress={canOpenRole ? () => router.push((`/role/${role.id}`) as Href) : undefined}
+                style={({ pressed }) => [styles.roleCard, canOpenRole && pressed && styles.pressed]}>
                 <View style={styles.roleIcon}><MaterialCommunityIcons color={colors.moss} name="account-tie-outline" size={25} /></View>
                 <View style={styles.roleCopy}>
                   <AppText variant="heading">{role.title}</AppText>
@@ -119,7 +125,7 @@ export default function OrganizationScreen() {
 }
 
 const styles = StyleSheet.create({
-  headingRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.lg },
+  headingRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   headingCopy: { flex: 1, gap: spacing.xxs },
   description: { marginTop: spacing.sm, marginBottom: spacing.lg },
   sectionHeadingRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.xl, marginBottom: spacing.sm },

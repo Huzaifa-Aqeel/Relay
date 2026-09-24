@@ -4,13 +4,14 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
 import {
+  getRecordingPermissionsAsync,
   RecordingPresets,
   requestRecordingPermissionsAsync,
   setAudioModeAsync,
   useAudioRecorder,
   useAudioRecorderState,
 } from 'expo-audio';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/ui/app-text';
@@ -112,23 +113,15 @@ export function UnifiedCaptureComposer({
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recorderState = useAudioRecorderState(recorder, 250);
   const stopping = useRef(false);
-  const [composerOpen, setComposerOpen] = useState(false);
-  const [selectedPrompt, setSelectedPrompt] = useState<CapturePrompt>();
-  const [composerText, setComposerText] = useState('');
+  const [composerOpen, setComposerOpen] = useState(Boolean(editingCapture));
+  const [selectedPrompt, setSelectedPrompt] = useState<CapturePrompt | undefined>(() => (
+    editingCapture ? CAPTURE_PROMPTS.find((prompt) => prompt.id === editingCapture.promptId) : undefined
+  ));
+  const [composerText, setComposerText] = useState(editingCapture?.textContent ?? '');
   const [voicePreview, setVoicePreview] = useState<VoiceTranscriptPreview | null>(null);
   const [recordingUri, setRecordingUri] = useState<string | null>(null);
-  const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const [draftCaptureId, setDraftCaptureId] = useState<string | null>(null);
-  const [driveImportedSourceIds, setDriveImportedSourceIds] = useState<string[]>([]);
-  const [driveImporting, setDriveImporting] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [localError, setLocalError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!editingCapture) return;
-    setSelectedPrompt(CAPTURE_PROMPTS.find((prompt) => prompt.id === editingCapture.promptId));
-    setComposerText(editingCapture.textContent ?? '');
-    setAttachments(editingCapture.attachments.map((source) => ({
+  const [attachments, setAttachments] = useState<Attachment[]>(() => (
+    editingCapture?.attachments.map((source) => ({
       key: source.id,
       sourceId: source.id,
       name: source.title,
@@ -136,28 +129,28 @@ export function UnifiedCaptureComposer({
       mimeType: source.mimeType ?? 'application/octet-stream',
       title: source.title,
       contentHash: source.contentHash,
-    })));
-    setVoicePreview(null);
-    setRecordingUri(null);
-    setDraftCaptureId(null);
-    setDriveImportedSourceIds([]);
-    setLocalError(null);
-    captureMutation.reset();
-    duplicateMutation.reset();
-    transcribeMutation.reset();
-    setComposerOpen(true);
-  }, [editingCapture?.id]);
+    })) ?? []
+  ));
+  const [draftCaptureId, setDraftCaptureId] = useState<string | null>(null);
+  const [driveImportedSourceIds, setDriveImportedSourceIds] = useState<string[]>([]);
+  const [driveImporting, setDriveImporting] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
+  const stopRecordingAtLimit = useEffectEvent(() => {
+    void stopRecording();
+  });
 
   useEffect(() => {
     if (recorderState.isRecording && recorderState.durationMillis >= MAX_RECORDING_SECONDS * 1000) {
-      void stopRecording();
+      stopRecordingAtLimit();
     }
   }, [recorderState.durationMillis, recorderState.isRecording]);
 
   useEffect(() => () => {
-    if (recorder.isRecording) void recorder.stop();
-    void setAudioModeAsync({ allowsRecording: false });
-  }, [recorder]);
+    // useAudioRecorder owns and releases the native recorder. Reading it from
+    // this cleanup can race with that release and crash on Android.
+    void setAudioModeAsync({ allowsRecording: false }).catch(() => undefined);
+  }, []);
 
   async function transcribeRecording(uri: string) {
     setLocalError(null);
@@ -201,16 +194,32 @@ export function UnifiedCaptureComposer({
     transcribeMutation.reset();
     setRecordingUri(null);
     setVoicePreview(null);
-    const permission = await requestRecordingPermissionsAsync();
-    if (!permission.granted) {
-      return setLocalError('Microphone access is needed to record. You can still write the note instead.');
-    }
     try {
+      let permission = await getRecordingPermissionsAsync();
+      if (!permission.granted) {
+        permission = await requestRecordingPermissionsAsync();
+      }
+      if (!permission.granted) {
+        setLocalError('Microphone access is needed to record. You can still write the note instead.');
+        if (Platform.OS !== 'web') {
+          Alert.alert(
+            'Allow microphone access',
+            'Microphone access is turned off for Relay. Enable it in your device settings to record a note.',
+            [
+              { text: 'Not now', style: 'cancel' },
+              { text: 'Open settings', onPress: () => void Linking.openSettings() },
+            ],
+          );
+        }
+        return;
+      }
       await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true, shouldPlayInBackground: false });
       await recorder.prepareToRecordAsync();
       recorder.record({ forDuration: MAX_RECORDING_SECONDS });
-    } catch {
-      setLocalError('Relay could not start recording. Check microphone access and try again.');
+    } catch (caught) {
+      setLocalError(caught instanceof Error
+        ? caught.message
+        : 'Relay could not start recording. Check microphone access and try again.');
     }
   }
 

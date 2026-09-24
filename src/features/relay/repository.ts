@@ -326,6 +326,9 @@ const organizationPlanSchema = z.object({
   organizationId: z.string().uuid(),
   plan: z.enum(['free', 'pro']),
   expiresAt: z.string().nullable(),
+  willRenew: z.boolean().nullable(),
+  store: z.string().nullable(),
+  isPurchaser: z.boolean(),
 }).strict();
 
 const voiceTranscriptPreviewSchema = z.object({
@@ -1260,7 +1263,7 @@ export async function listRoleMemoryChanges(comparisonId: string): Promise<RoleM
   return data.map(mapMemoryChange);
 }
 
-export async function listRoleLessons(roleId: string): Promise<Array<Pick<KnowledgeItem, 'id' | 'title' | 'content'>>> {
+export async function listRoleLessons(roleId: string): Promise<Pick<KnowledgeItem, 'id' | 'title' | 'content'>[]> {
   const client = requireSupabase();
   const publications = await listRolePublications(roleId);
   if (!publications.length) return [];

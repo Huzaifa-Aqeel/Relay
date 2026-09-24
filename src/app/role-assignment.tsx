@@ -2,7 +2,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import type { Href } from 'expo-router';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Share, StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/ui/app-text';
@@ -59,14 +59,13 @@ export default function RoleAssignmentScreen() {
   const isCurrentHolder = currentAssignment?.userId === auth.session?.user.id;
   const canManage = Boolean(overview.data?.isOwner || isCurrentHolder);
   const periods = useMemo(() => nextPeriodChoices(currentAssignment?.servicePeriod), [currentAssignment?.servicePeriod]);
-  const [period, setPeriod] = useState('');
+  const [selectedPeriod, setSelectedPeriod] = useState('');
+  const period = periods.some((choice) => choice.value === selectedPeriod)
+    ? selectedPeriod
+    : periods[0]?.value ?? '';
   const [replacing, setReplacing] = useState(false);
   const [issued, setIssued] = useState<IssuedInvite | null>(null);
   const [notice, setNotice] = useState('');
-
-  useEffect(() => {
-    if (!periods.some((choice) => choice.value === period)) setPeriod(periods[0]?.value ?? '');
-  }, [period, periods]);
 
   const action = useContinuityAction(async (input: AssignmentAction) => {
     setNotice('');
@@ -134,7 +133,8 @@ export default function RoleAssignmentScreen() {
                 label={currentAssignment ? 'Next service period' : 'Service period'}
                 value={period}
                 choices={periods}
-                onChange={(value) => { setPeriod(value); setIssued(null); }}
+                selectionTone="soft"
+                onChange={(value) => { setSelectedPeriod(value); setIssued(null); }}
               />
               <Button
                 disabled={!period || action.isPending}
@@ -153,7 +153,6 @@ export default function RoleAssignmentScreen() {
               {currentAssignment ? (
                 <Button
                   label="Replace current holder"
-                  tone="ghost"
                   onPress={() => { setReplacing(true); setIssued(null); }}
                 />
               ) : null}
@@ -187,7 +186,7 @@ export default function RoleAssignmentScreen() {
               <View style={styles.inviteCopy}>
                 <AppText variant="heading">Invite ready</AppText>
                 <AppText color={colors.inkMuted}>
-                  {issued.replacement ? 'Replacement' : roleTitle} · {issued.servicePeriod}
+                  {issued.replacement ? `Replacement ${roleTitle}` : roleTitle} · {issued.servicePeriod}
                 </AppText>
                 <AppText variant="caption" color={colors.inkMuted}>
                   This single-use link expires {new Date(issued.expiresAt).toLocaleDateString()}.
@@ -202,7 +201,11 @@ export default function RoleAssignmentScreen() {
                   <Button
                     label="Share invite"
                     tone="secondary"
-                    onPress={() => void Share.share({ message: `Open this Relay invitation for ${roleTitle}: ${inviteUrl}` })}
+                    onPress={() => void Share.share({
+                      title: `${roleTitle} invitation`,
+                      message: `You’re invited to become ${roleTitle} for ${issued.servicePeriod} in Relay.\n\n${inviteUrl}`,
+                      url: inviteUrl,
+                    })}
                   />
                 </>
               ) : null}
@@ -219,7 +222,7 @@ export default function RoleAssignmentScreen() {
 }
 
 const styles = StyleSheet.create({
-  heading: { gap: spacing.xs, marginTop: spacing.lg, marginBottom: spacing.xl },
+  heading: { gap: spacing.xs, marginBottom: spacing.xl },
   eyebrow: { letterSpacing: 1.2 },
   section: { gap: spacing.lg, marginTop: spacing.xl },
   sectionHeading: { gap: spacing.xxs },

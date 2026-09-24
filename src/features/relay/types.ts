@@ -14,6 +14,9 @@ export type OrganizationPlan = {
   organizationId: string;
   plan: 'free' | 'pro';
   expiresAt: string | null;
+  willRenew: boolean | null;
+  store: string | null;
+  isPurchaser: boolean;
 };
 
 export type OrganizationRole = {
@@ -374,7 +377,7 @@ export type MemorySnapshot = {
   knowledgeType: KnowledgeType;
   title: string;
   content: string;
-  citationSources: Array<{ label: string; locator: string | null }>;
+  citationSources: { label: string; locator: string | null }[];
 };
 
 export type RoleMemoryComparison = {
@@ -410,7 +413,7 @@ export type RoleMemoryChange = {
   reasonEvidence: string[];
   beforeSnapshot: MemorySnapshot | null;
   afterSnapshot: MemorySnapshot | null;
-  supportingProvenance: Array<{ label: string; locator: string | null }>;
+  supportingProvenance: { label: string; locator: string | null }[];
   humanConfirmed: boolean;
 };
 
@@ -418,7 +421,7 @@ export type AskRelayCitation = {
   ref: string;
   title: string;
   knowledgeType: KnowledgeType;
-  sources: Array<{ label: string; locator: string | null }>;
+  sources: { label: string; locator: string | null }[];
 };
 
 export type AskRelayAnswer = {

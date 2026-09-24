@@ -86,7 +86,6 @@ export default function RoleScreen() {
         <>
           <View style={styles.sectionHeading}>
             <AppText variant="heading">Handoff history</AppText>
-            <AppText color={colors.inkMuted}>Earlier periods remain separate instead of silently becoming current truth.</AppText>
           </View>
           <View style={styles.historyList}>
             {handoffs.map((handoff) => (
@@ -126,7 +125,7 @@ export default function RoleScreen() {
 }
 
 const styles = StyleSheet.create({
-  heading: { gap: spacing.xs, marginTop: spacing.lg, marginBottom: spacing.xl },
+  heading: { gap: spacing.xs, marginBottom: spacing.xl },
   eyebrow: { letterSpacing: 1.2 },
   emptyCard: {
     alignItems: 'center', gap: spacing.sm, padding: spacing.xl,

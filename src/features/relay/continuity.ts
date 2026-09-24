@@ -44,6 +44,11 @@ export async function createAssignmentInvite(roleId: string, servicePeriod: stri
   checkContinuityError(error);
   return z.object({ token: z.string(), expiresAt: z.string() }).parse(data);
 }
+export async function previewAssignmentInvite(token: string) {
+  const { data, error } = await requireSupabase().rpc('preview_role_assignment_invite', { requested_token: token });
+  checkContinuityError(error);
+  return inviteSchema.parse(data);
+}
 export async function acceptAssignment(token: string) {
   const { data, error } = await requireSupabase().rpc('accept_role_assignment_invite', { requested_token: token });
   checkContinuityError(error); return data;

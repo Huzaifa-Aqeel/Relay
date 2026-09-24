@@ -69,6 +69,9 @@ Deno.serve(async (request) => {
       : null;
     const subscription = productIdentifier && subscriber?.subscriptions?.[productIdentifier];
     const store = subscription && typeof subscription.store === 'string' ? subscription.store.slice(0, 40) : null;
+    const willRenew = subscription && typeof subscription === 'object' && expiresAt !== null
+      ? subscription.unsubscribe_detected_at == null
+      : null;
 
     const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } });
     const { data: purchaserProfile, error: profileError } = await admin
@@ -93,6 +96,7 @@ Deno.serve(async (request) => {
       product_identifier: productIdentifier,
       store,
       expires_at: expiresAt ?? null,
+      will_renew: willRenew,
       revenuecat_checked_at: new Date().toISOString(),
     };
     const write = existing

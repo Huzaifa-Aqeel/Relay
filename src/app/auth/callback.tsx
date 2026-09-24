@@ -12,18 +12,28 @@ import { colors, radii, spacing } from '@/theme/tokens';
 
 export default function AuthCallbackScreen() {
   const { code, type, returnTo } = useLocalSearchParams<{ code?: string; type?: string; returnTo?: string }>();
+  return <AuthCallbackContent code={code} key={`${code ?? 'missing'}:${type ?? ''}:${returnTo ?? ''}`} returnTo={returnTo} type={type} />;
+}
+
+function AuthCallbackContent({
+  code,
+  type,
+  returnTo,
+}: {
+  code?: string;
+  type?: string;
+  returnTo?: string;
+}) {
   const { exchangeCode } = useAuth();
-  const [error, setError] = useState<string | null>(null);
+  const [exchangeError, setExchangeError] = useState<string | null>(null);
+  const error = code ? exchangeError : 'This sign-in link is incomplete or has expired.';
 
   useEffect(() => {
-    if (!code) {
-      setError('This sign-in link is incomplete or has expired.');
-      return;
-    }
+    if (!code) return;
     const safeReturnTo = returnTo && /^\/assignment\/[0-9a-f]{64}$/.test(returnTo) ? returnTo as Href : null;
     void exchangeCode(code)
       .then(() => router.replace(type === 'recovery' ? '/auth/new-password' : safeReturnTo ?? '/'))
-      .catch((caught) => setError(caught instanceof Error ? caught.message : 'This link could not be completed.'));
+      .catch((caught) => setExchangeError(caught instanceof Error ? caught.message : 'This link could not be completed.'));
   }, [code, exchangeCode, returnTo, type]);
 
   return (

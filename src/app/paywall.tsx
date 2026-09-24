@@ -1,7 +1,8 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import * as Linking from 'expo-linking';
+import { useState } from 'react';
+import { Alert, Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/ui/app-text';
 import { Button } from '@/components/ui/button';
@@ -25,64 +26,127 @@ const reasonCopy: Record<string, string> = {
   handoff: 'A Free organization includes one current handoff. Upgrade it to create another without removing existing work.',
 };
 
+function planDate(value: string | null | undefined) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
+function storeLabel(store: string | null | undefined) {
+  switch (store?.toUpperCase()) {
+    case 'PLAY_STORE': return 'Google Play';
+    case 'APP_STORE': return 'the App Store';
+    case 'TEST_STORE': return 'RevenueCat Test Store';
+    default: return 'your store';
+  }
+}
+
 export default function PaywallScreen() {
   const params = useLocalSearchParams<{ reason?: string; organizationId?: string }>();
+  const initialOrganizationId = typeof params.organizationId === 'string' ? params.organizationId : '';
+  const reason = typeof params.reason === 'string' ? params.reason : undefined;
+  return (
+    <PaywallContent
+      initialOrganizationId={initialOrganizationId}
+      key={`${initialOrganizationId}:${reason ?? ''}`}
+      reason={reason}
+    />
+  );
+}
+
+function PaywallContent({
+  initialOrganizationId,
+  reason,
+}: {
+  initialOrganizationId: string;
+  reason?: string;
+}) {
   const billing = useBilling();
   const { session } = useAuth();
   const organizationsQuery = useOrganizations();
-  const [organizationId, setOrganizationId] = useState(
-    typeof params.organizationId === 'string' ? params.organizationId : '',
-  );
-  const [busy, setBusy] = useState<'purchase' | 'restore' | null>(null);
+  const [selectedOrganizationId, setSelectedOrganizationId] = useState(initialOrganizationId);
+  const organizations = organizationsQuery.data ?? [];
+  const organizationId = organizations.some((candidate) => candidate.id === selectedOrganizationId)
+    ? selectedOrganizationId
+    : organizations.length === 1
+      ? organizations[0].id
+      : '';
+  const [busy, setBusy] = useState<'purchase' | 'restore' | 'refresh' | null>(null);
   const organizationPlanQuery = useOrganizationPlan(organizationId || undefined);
   const selectedPackage = billing.annualPackage;
-  const contextCopy = typeof params.reason === 'string' ? reasonCopy[params.reason] : undefined;
+  const contextCopy = reason ? reasonCopy[reason] : undefined;
   const organization = organizationsQuery.data?.find((candidate) => candidate.id === organizationId);
   const isOrganizationPro = organizationPlanQuery.data?.plan === 'pro';
+  const isOwner = Boolean(organization && organization.createdBy === session?.user.id);
+  const isPurchaser = organizationPlanQuery.data?.isPurchaser === true;
+  const subscription = isPurchaser ? billing.subscription : null;
+  const expiration = subscription?.expirationDate ?? organizationPlanQuery.data?.expiresAt;
+  const expirationLabel = planDate(expiration);
+  const willRenew = subscription?.isActive
+    ? subscription.willRenew
+    : organizationPlanQuery.data?.willRenew;
+  const store = subscription?.store ?? organizationPlanQuery.data?.store;
+  const testStore = store?.toUpperCase() === 'TEST_STORE' || store?.toLowerCase() === 'test_store';
 
-  useEffect(() => {
-    const organizations = organizationsQuery.data;
-    if (!organizations?.length) return;
-    const requested = typeof params.organizationId === 'string' ? params.organizationId : '';
-    if (requested && organizations.some((candidate) => candidate.id === requested)) {
-      setOrganizationId(requested);
-      return;
-    }
-    if (organizations.length === 1) setOrganizationId(organizations[0].id);
-    else if (organizationId && !organizations.some((candidate) => candidate.id === organizationId)) setOrganizationId('');
-  }, [organizationId, organizationsQuery.data, params.organizationId]);
+  function closePaywall() {
+    if (router.canGoBack()) router.back();
+    else router.replace('/settings');
+  }
+
   async function purchase() {
     if (!selectedPackage || !organizationId || !organization || organization.createdBy !== session?.user.id) return;
     setBusy('purchase');
-    const succeeded = await billing.purchase(selectedPackage, organizationId);
-    if (succeeded) await organizationPlanQuery.refetch();
-    setBusy(null);
-    if (succeeded) router.back();
+    try {
+      const succeeded = await billing.purchase(selectedPackage, organizationId);
+      if (succeeded) await organizationPlanQuery.refetch();
+    } finally {
+      setBusy(null);
+    }
   }
 
   async function restore() {
     if (!organizationId || !organization || organization.createdBy !== session?.user.id) return;
     setBusy('restore');
-    const succeeded = await billing.restore(organizationId);
-    if (succeeded) await organizationPlanQuery.refetch();
-    setBusy(null);
-    if (succeeded) router.back();
+    try {
+      const succeeded = await billing.restore(organizationId);
+      if (succeeded) await organizationPlanQuery.refetch();
+    } finally {
+      setBusy(null);
+    }
   }
 
-  if (isOrganizationPro && organization) {
-    return (
-      <Screen contentStyle={styles.completedScreen}>
-        <View style={styles.mark}><MaterialCommunityIcons color={colors.moss} name="check-decagram" size={34} /></View>
-        <AppText variant="display" style={styles.center}>{organization.name} has Relay Pro</AppText>
-        <AppText color={colors.inkMuted} style={styles.center}>
-          Multiple roles, handoffs, history, and larger Relay allowances are active for this organization.
-        </AppText>
-        <Button label="Continue" onPress={() => router.back()} />
-      </Screen>
+  async function refreshStatus() {
+    setBusy('refresh');
+    try {
+      await billing.refresh();
+      await organizationPlanQuery.refetch();
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function openStoreManagement(action: 'cancel' | 'renew') {
+    const url = subscription?.managementUrl;
+    if (!url) return;
+    const cancelling = action === 'cancel';
+    Alert.alert(
+      cancelling ? 'Cancel automatic renewal?' : 'Renew Relay Pro?',
+      cancelling
+        ? `Relay will open ${storeLabel(store)}. If you cancel renewal there, ${organization?.name ?? 'the organization'} keeps Relay Pro${expirationLabel ? ` until ${expirationLabel}` : ' through the paid period'}.`
+        : `Relay will open ${storeLabel(store)} so you can turn automatic renewal back on.`,
+      [
+        { text: 'Not now', style: 'cancel' },
+        {
+          text: cancelling ? 'Open subscriptions' : 'Open store',
+          onPress: () => void Linking.openURL(url),
+        },
+      ],
     );
   }
-
-  if (organization && organization.createdBy !== session?.user.id) return <Screen><AppText variant="display">{organization.name} needs Relay Pro</AppText><AppText>The Organization Owner must upgrade it. All authorized Role Holders benefit from the Organization’s plan.</AppText><Button label="Back" onPress={() => router.back()} /></Screen>;
 
   return (
     <Screen>
@@ -91,10 +155,10 @@ export default function PaywallScreen() {
           <MaterialCommunityIcons color={colors.moss} name="source-branch" size={34} />
         </View>
         <AppText variant="display" style={styles.center}>
-          {organization ? `Upgrade ${organization.name} to Relay Pro` : 'Choose an organization for Relay Pro'}
+          Organization plan
         </AppText>
         <AppText color={colors.inkMuted} style={styles.center}>
-          Preserve your organization’s knowledge for the academic year.
+          View access, renewal, and store billing for Relay Pro.
         </AppText>
       </View>
 
@@ -107,7 +171,7 @@ export default function PaywallScreen() {
 
       {organizationsQuery.data && organizationsQuery.data.length > 1 ? (
         <View style={styles.organizationSection}>
-          <AppText variant="caption" color={colors.inkMuted} style={styles.sectionLabel}>UPGRADE THIS ORGANIZATION</AppText>
+          <AppText variant="caption" color={colors.inkMuted} style={styles.sectionLabel}>SELECT ORGANIZATION</AppText>
           <View accessibilityRole="radiogroup" style={styles.organizationList}>
             {organizationsQuery.data.map((candidate) => {
               const isSelected = candidate.id === organizationId;
@@ -116,7 +180,7 @@ export default function PaywallScreen() {
                   accessibilityRole="radio"
                   accessibilityState={{ checked: isSelected }}
                   key={candidate.id}
-                  onPress={() => setOrganizationId(candidate.id)}
+                  onPress={() => setSelectedOrganizationId(candidate.id)}
                   style={({ pressed }) => [
                     styles.organizationOption,
                     isSelected && styles.organizationOptionSelected,
@@ -151,15 +215,99 @@ export default function PaywallScreen() {
         <View style={styles.notice}><AppText color={colors.inkMuted}>Create an organization before choosing Relay Pro.</AppText></View>
       ) : null}
       {organizationId && organizationPlanQuery.isPending ? (
-        <View style={styles.notice}><AppText color={colors.inkMuted}>Checking this organization's plan…</AppText></View>
+        <View style={styles.notice}><AppText color={colors.inkMuted}>Checking this organization’s plan…</AppText></View>
       ) : null}
       {organizationPlanQuery.error ? (
         <View style={styles.errorNotice}>
-          <AppText variant="caption" color={colors.emergency}>This organization's plan could not be checked. Try again before purchasing.</AppText>
+          <AppText variant="caption" color={colors.emergency}>This organization’s plan could not be checked. Try again before purchasing.</AppText>
         </View>
       ) : null}
 
-      <View style={styles.benefits}>
+      {organization && organizationPlanQuery.data ? (
+        <View style={styles.currentPlan}>
+          <View style={styles.currentPlanHeader}>
+            <View style={styles.flex}>
+              <AppText variant="caption" color={colors.inkMuted}>CURRENT PLAN</AppText>
+              <AppText variant="heading">{organization.name}</AppText>
+            </View>
+            <View style={[styles.statusBadge, isOrganizationPro && styles.statusBadgePro]}>
+              <AppText variant="caption" color={isOrganizationPro ? colors.moss : colors.inkMuted}>
+                {isOrganizationPro ? 'Relay Pro' : 'Free'}
+              </AppText>
+            </View>
+          </View>
+          {isOrganizationPro ? (
+            <>
+              <AppText variant="label">
+                {willRenew === false ? 'Renewal canceled' : willRenew === true ? 'Active · renews automatically' : 'Active'}
+              </AppText>
+              {expirationLabel ? (
+                <AppText color={colors.inkMuted}>
+                  {willRenew === false ? `Relay Pro remains active until ${expirationLabel}.` : `Current period ends ${expirationLabel}.`}
+                </AppText>
+              ) : null}
+            </>
+          ) : (
+            <AppText color={colors.inkMuted}>
+              {expirationLabel ? `The previous Relay Pro period ended ${expirationLabel}.` : 'This organization currently uses the Free plan.'}
+            </AppText>
+          )}
+        </View>
+      ) : null}
+
+      {isOrganizationPro && organization ? (
+        <View style={styles.managementSection}>
+          {isPurchaser && subscription?.managementUrl ? (
+            <Button
+              label={willRenew === false ? 'Renew plan' : 'Cancel plan'}
+              tone={willRenew === false ? 'primary' : 'secondary'}
+              onPress={() => openStoreManagement(willRenew === false ? 'renew' : 'cancel')}
+            />
+          ) : null}
+          {isPurchaser && testStore ? (
+            <View style={styles.notice}>
+              <AppText variant="label">Test subscription</AppText>
+              <AppText variant="caption" color={colors.inkMuted}>
+                RevenueCat Test Store renews annual test plans on an accelerated schedule and expires them automatically. It does not provide a store page for manually cancelling or reactivating renewal.
+              </AppText>
+            </View>
+          ) : null}
+          {isPurchaser && !testStore && !subscription?.managementUrl ? (
+            <View style={styles.notice}>
+              <AppText color={colors.inkMuted}>Open Relay on the purchasing device to manage renewal through its store.</AppText>
+            </View>
+          ) : null}
+          {!isPurchaser ? (
+            <View style={styles.notice}>
+              <AppText variant="label">Billing stays with the purchaser</AppText>
+              <AppText variant="caption" color={colors.inkMuted}>
+                The store account that purchased Relay Pro controls cancellation and renewal. Organization ownership does not transfer that billing account.
+              </AppText>
+            </View>
+          ) : null}
+          {isPurchaser ? (
+            <Button
+              disabled={Boolean(busy)}
+              label={busy === 'refresh' ? 'Refreshing…' : 'Refresh plan status'}
+              tone="ghost"
+              onPress={() => void refreshStatus()}
+            />
+          ) : null}
+          <Button label="Back to settings" tone="ghost" onPress={closePaywall} />
+        </View>
+      ) : null}
+
+      {organization && organizationPlanQuery.data && !isOrganizationPro && !isOwner ? (
+        <View style={styles.managementSection}>
+          <View style={styles.notice}>
+            <AppText variant="label">The Organization Owner manages Relay Pro</AppText>
+            <AppText variant="caption" color={colors.inkMuted}>All authorized Role Holders benefit after the Owner upgrades this organization.</AppText>
+          </View>
+          <Button label="Back to settings" tone="ghost" onPress={closePaywall} />
+        </View>
+      ) : null}
+
+      {organization && organizationPlanQuery.data && !isOrganizationPro && isOwner ? <View style={styles.benefits}>
         {benefits.map((benefit) => (
           <View key={benefit} style={styles.benefit}>
             <View style={styles.check}>
@@ -168,9 +316,9 @@ export default function PaywallScreen() {
             <AppText style={styles.flex}>{benefit}</AppText>
           </View>
         ))}
-      </View>
+      </View> : null}
 
-      <View style={[styles.plan, !selectedPackage && styles.planUnavailable]}>
+      {organization && organizationPlanQuery.data && !isOrganizationPro && isOwner ? <View style={[styles.plan, !selectedPackage && styles.planUnavailable]}>
         <View style={styles.annualIcon}>
           <MaterialCommunityIcons color={colors.moss} name="calendar-check-outline" size={22} />
         </View>
@@ -179,7 +327,7 @@ export default function PaywallScreen() {
           <AppText variant="heading">{selectedPackage?.product.priceString ?? 'Annual subscription'}</AppText>
           <AppText variant="caption" color={colors.inkMuted}>One subscription for the full academic year</AppText>
         </View>
-      </View>
+      </View> : null}
 
       {billing.status === 'loading' ? (
         <View style={styles.notice}><AppText color={colors.inkMuted}>Checking available plans…</AppText></View>
@@ -198,7 +346,7 @@ export default function PaywallScreen() {
         </View>
       ) : null}
 
-      <Button
+      {organization && organizationPlanQuery.data && !isOrganizationPro && isOwner ? <Button
         disabled={
           !organizationId
           || !organization
@@ -209,25 +357,26 @@ export default function PaywallScreen() {
         }
         label={busy === 'purchase'
           ? 'Completing purchase…'
-          : organization ? `Upgrade ${organization.name} · annual` : 'Choose an organization'}
+          : organizationPlanQuery.data.expiresAt
+            ? `Renew ${organization.name} · annual`
+            : `Upgrade ${organization.name} · annual`}
         onPress={() => void purchase()}
-      />
-      <Button
+      /> : null}
+      {organization && organizationPlanQuery.data && !isOrganizationPro && isOwner ? <Button
         disabled={!organizationId || !organization || !billing.isPurchaseAvailable || Boolean(busy)}
         label={busy === 'restore' ? 'Restoring…' : 'Restore purchases'}
         tone="ghost"
         onPress={() => void restore()}
-      />
-      <AppText variant="caption" color={colors.inkMuted} style={styles.center}>
+      /> : null}
+      {organization && organizationPlanQuery.data && !isOrganizationPro && isOwner ? <AppText variant="caption" color={colors.inkMuted} style={styles.center}>
         Existing handoffs are never deleted if Relay Pro ends. Recipients are never paywalled.
-      </AppText>
+      </AppText> : null}
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  completedScreen: { justifyContent: 'center', gap: spacing.md },
-  hero: { alignItems: 'center', gap: spacing.sm, marginTop: spacing.lg, marginBottom: spacing.lg },
+  hero: { alignItems: 'center', gap: spacing.sm, marginBottom: spacing.lg },
   mark: {
     width: 72, height: 72, alignItems: 'center', justifyContent: 'center',
     alignSelf: 'center', borderRadius: radii.pill, backgroundColor: colors.mossSoft,
@@ -248,6 +397,18 @@ const styles = StyleSheet.create({
     borderRadius: radii.md, backgroundColor: colors.surface,
   },
   organizationOptionSelected: { borderColor: colors.moss, backgroundColor: colors.mossSoft },
+  currentPlan: {
+    gap: spacing.sm, marginBottom: spacing.md, padding: spacing.lg,
+    borderWidth: 1, borderColor: colors.line, borderRadius: radii.lg,
+    backgroundColor: colors.surface,
+  },
+  currentPlanHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  statusBadge: {
+    paddingHorizontal: spacing.sm, paddingVertical: spacing.xs,
+    borderRadius: radii.pill, backgroundColor: colors.canvas,
+  },
+  statusBadgePro: { backgroundColor: colors.mossSoft },
+  managementSection: { gap: spacing.sm },
   benefits: {
     gap: spacing.md, padding: spacing.lg, borderRadius: radii.lg,
     borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface,

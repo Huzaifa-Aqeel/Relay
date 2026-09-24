@@ -108,6 +108,7 @@ export default function RootLayout() {
               <Stack.Screen name="knowledge/[id]" options={{ title: 'Edit knowledge' }} />
               <Stack.Screen name="source/[id]" options={{ title: 'Source' }} />
               <Stack.Screen name="shared/[token]" options={{ headerShown: false }} />
+              <Stack.Screen name="assignment/[token]" options={{ headerShown: false }} />
               <Stack.Screen name="auth/welcome" options={{ headerShown: false }} />
               <Stack.Screen name="auth/sign-in" options={{ title: 'Sign in' }} />
               <Stack.Screen name="auth/sign-up" options={{ title: 'Create account' }} />

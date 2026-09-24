@@ -5,7 +5,6 @@ import { Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/ui/app-text';
 import { LoadingState, MessageState } from '@/components/ui/async-state';
-import { Button } from '@/components/ui/button';
 import { Screen } from '@/components/ui/screen';
 import { useAuth } from '@/features/auth/auth-provider';
 import { OrganizationMark } from '@/features/relay/organization-mark';
@@ -18,7 +17,7 @@ export default function OrganizationsScreen() {
 
   if (!isCloudEnabled) {
     return (
-      <Screen>
+      <Screen safeTop>
         <BrandHeading />
         <MessageState
           icon="cloud-outline"
@@ -29,10 +28,10 @@ export default function OrganizationsScreen() {
     );
   }
 
-  if (query.isPending) return <Screen><BrandHeading /><LoadingState label="Loading your organizations…" /></Screen>;
+  if (query.isPending) return <Screen safeTop><BrandHeading /><LoadingState label="Loading your organizations…" /></Screen>;
   if (query.error) {
     return (
-      <Screen>
+      <Screen safeTop>
         <BrandHeading />
         <MessageState
           icon="cloud-alert-outline"
@@ -48,6 +47,7 @@ export default function OrganizationsScreen() {
   const organizations = query.data ?? [];
   return (
     <Screen
+      safeTop
       scrollProps={{
         refreshControl: <RefreshControl refreshing={query.isRefetching} tintColor={colors.moss} onRefresh={() => void query.refetch()} />,
       }}>
@@ -97,13 +97,6 @@ export default function OrganizationsScreen() {
           onAction={() => router.push('/organization-new' as Href)}
         />
       )}
-
-      {organizations.length ? (
-        <View style={styles.promise}>
-          <AppText variant="caption" color={colors.moss} style={styles.eyebrow}>THE RELAY PROMISE</AppText>
-          <AppText variant="heading">Capture how the role actually works throughout the term, then publish a handoff the next leader can trust.</AppText>
-        </View>
-      ) : null}
     </Screen>
   );
 }
@@ -118,7 +111,7 @@ function BrandHeading() {
 }
 
 const styles = StyleSheet.create({
-  brandRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginTop: spacing.sm },
+  brandRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   brandMark: {
     width: 40, height: 40, alignItems: 'center', justifyContent: 'center',
     borderRadius: radii.pill, backgroundColor: colors.mossSoft,
@@ -136,7 +129,5 @@ const styles = StyleSheet.create({
     borderColor: colors.line, backgroundColor: colors.surface, ...shadow,
   },
   organizationCopy: { flex: 1, gap: spacing.xxs },
-  promise: { gap: spacing.sm, marginTop: spacing.xl, padding: spacing.lg, borderRadius: radii.lg, backgroundColor: colors.mossSoft },
-  eyebrow: { letterSpacing: 1.2 },
   pressed: { opacity: 0.78, transform: [{ scale: 0.99 }] },
 });

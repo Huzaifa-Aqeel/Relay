@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.relay.leadershiphandoff",
+      "sha256_cert_fingerprints": [
+        "81:80:09:82:25:CB:DF:C9:28:4C:E1:2D:AC:E5:09:91:E7:63:CD:69:30:7C:2A:B2:4E:63:E8:E1:C1:D9:D2:FE"
+      ]
+    }
+  }
+]

@@ -13,7 +13,7 @@ export function AuthScaffold({
   children,
   footer,
 }: PropsWithChildren<{
-  eyebrow: string;
+  eyebrow?: string;
   title: string;
   intro: string;
   footer?: ReactNode;
@@ -32,7 +32,7 @@ export function AuthScaffold({
         </View>
 
         <View style={styles.heading}>
-          <AppText variant="caption" color={colors.moss} style={styles.eyebrow}>{eyebrow}</AppText>
+          {eyebrow ? <AppText variant="caption" color={colors.moss} style={styles.eyebrow}>{eyebrow}</AppText> : null}
           <AppText variant="display">{title}</AppText>
           <AppText color={colors.inkMuted}>{intro}</AppText>
         </View>

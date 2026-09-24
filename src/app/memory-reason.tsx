@@ -130,7 +130,7 @@ export default function MemoryReasonScreen() {
 }
 
 const styles = StyleSheet.create({
-  heading: { gap: spacing.xs, marginTop: spacing.lg, marginBottom: spacing.xl },
+  heading: { gap: spacing.xs, marginBottom: spacing.xl },
   eyebrow: { letterSpacing: 1.1 },
   changeCard: { gap: spacing.xs, marginBottom: spacing.lg, padding: spacing.lg, borderRadius: radii.lg, backgroundColor: colors.mossSoft },
   lessons: { gap: spacing.xs },

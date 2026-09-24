@@ -299,13 +299,13 @@ export type Database = {
           id: string; organization_id: string | null; purchaser_user_id: string | null;
           revenuecat_app_user_id: string; entitlement_id: string; status: 'active' | 'inactive';
           product_identifier: string | null; store: string | null;
-          expires_at: string | null; revenuecat_checked_at: string;
+          expires_at: string | null; will_renew: boolean | null; revenuecat_checked_at: string;
         },
         {
           id?: string; organization_id?: string | null; purchaser_user_id?: string | null;
           revenuecat_app_user_id: string; entitlement_id: string; status: 'active' | 'inactive';
           product_identifier?: string | null; store?: string | null;
-          expires_at?: string | null; revenuecat_checked_at?: string;
+          expires_at?: string | null; will_renew?: boolean | null; revenuecat_checked_at?: string;
           created_at?: string; updated_at?: string;
         }
       >;
@@ -353,7 +353,7 @@ export type Database = {
       get_organization_plan: { Args: { requested_organization_id: string }; Returns: Json };
       claim_public_ask_request: {
         Args: { requested_token: string; requested_free_limit: number; requested_pro_limit: number };
-        Returns: Array<{ publication_id: string; organization_id: string; handoff_id: string; remaining: number }>;
+        Returns: { publication_id: string; organization_id: string; handoff_id: string; remaining: number }[];
       };
       is_organization_member: { Args: { requested_organization_id: string }; Returns: boolean };
       is_organization_admin: { Args: { requested_organization_id: string }; Returns: boolean };
