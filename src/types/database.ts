@@ -37,11 +37,12 @@ export type Database = {
       organizations: Table<
         Timestamped & {
           id: string; created_by: string; name: string; institution: string;
-          description: string; logo_path: string | null;
+          description: string; logo_path: string | null; free_role_id: string | null;
         },
         {
           id?: string; created_by: string; name: string; institution?: string;
-          description?: string; logo_path?: string | null; created_at?: string; updated_at?: string;
+          description?: string; logo_path?: string | null; free_role_id?: string | null;
+          created_at?: string; updated_at?: string;
         }
       >;
       organization_members: Table<
@@ -349,6 +350,7 @@ export type Database = {
         Returns: string;
       };
       organization_has_relay_pro: { Args: { requested_organization_id: string }; Returns: boolean };
+      organization_role_is_entitled: { Args: { requested_organization_id: string; requested_role_id: string }; Returns: boolean };
       purchaser_has_active_relay_pro: { Args: { requested_user_id: string }; Returns: boolean };
       get_organization_plan: { Args: { requested_organization_id: string }; Returns: Json };
       claim_public_ask_request: {

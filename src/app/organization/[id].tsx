@@ -22,11 +22,11 @@ export default function OrganizationScreen() {
   const continuity = useContinuity(id);
   const rolesQuery = useRoles(id);
   const handoffsQuery = useOrganizationHandoffs(id);
-  const pending = organizationQuery.isPending || rolesQuery.isPending || handoffsQuery.isPending;
-  const error = organizationQuery.error ?? rolesQuery.error ?? handoffsQuery.error;
+  const pending = organizationQuery.isPending || rolesQuery.isPending || handoffsQuery.isPending || continuity.isPending;
+  const error = organizationQuery.error ?? rolesQuery.error ?? handoffsQuery.error ?? continuity.error;
 
   if (pending) return <Screen><LoadingState label="Opening organization…" /></Screen>;
-  if (error || !organizationQuery.data) {
+  if (error || !organizationQuery.data || !continuity.data) {
     return (
       <Screen>
         <MessageState
@@ -47,8 +47,12 @@ export default function OrganizationScreen() {
   for (const handoff of handoffs) if (!latestByRole.has(handoff.roleId)) latestByRole.set(handoff.roleId, handoff);
   const drafts = handoffs.filter((handoff) => handoff.status === 'draft').length;
   const published = handoffs.filter((handoff) => handoff.status === 'published').length;
-  const refreshing = organizationQuery.isRefetching || rolesQuery.isRefetching || handoffsQuery.isRefetching;
-  const refresh = () => void Promise.all([organizationQuery.refetch(), rolesQuery.refetch(), handoffsQuery.refetch()]);
+  const hasLockedRoles = continuity.data.roles.some((role) => !role.planAvailable);
+  const refreshing = organizationQuery.isRefetching || rolesQuery.isRefetching
+    || handoffsQuery.isRefetching || continuity.isRefetching;
+  const refresh = () => void Promise.all([
+    organizationQuery.refetch(), rolesQuery.refetch(), handoffsQuery.refetch(), continuity.refetch(),
+  ]);
 
   return (
     <Screen scrollProps={{ refreshControl: <RefreshControl refreshing={refreshing} tintColor={colors.moss} onRefresh={refresh} /> }}>
@@ -89,26 +93,50 @@ export default function OrganizationScreen() {
             const latest = latestByRole.get(role.id);
             const overview = continuity.data?.roles.find(r => r.roleId === role.id);
             const holder = overview?.assignments[0];
-            const canOpenRole = Boolean(
+            const roleAvailableOnPlan = overview?.planAvailable === true;
+            const roleAuthorized = Boolean(
               continuity.data?.isOwner
               || overview?.assignments.some(assignment => assignment.userId === auth.session?.user.id),
             );
+            const canOpenRole = roleAvailableOnPlan && roleAuthorized;
             return (
               <Pressable
                 accessibilityRole={canOpenRole ? 'button' : undefined}
                 disabled={!canOpenRole}
                 key={role.id}
                 onPress={canOpenRole ? () => router.push((`/role/${role.id}`) as Href) : undefined}
-                style={({ pressed }) => [styles.roleCard, canOpenRole && pressed && styles.pressed]}>
-                <View style={styles.roleIcon}><MaterialCommunityIcons color={colors.moss} name="account-tie-outline" size={25} /></View>
+                style={({ pressed }) => [
+                  styles.roleCard,
+                  !roleAvailableOnPlan && styles.roleCardLocked,
+                  canOpenRole && pressed && styles.pressed,
+                ]}>
+                <View style={[styles.roleIcon, !roleAvailableOnPlan && styles.roleIconLocked]}>
+                  <MaterialCommunityIcons
+                    color={roleAvailableOnPlan ? colors.moss : colors.inkMuted}
+                    name={roleAvailableOnPlan ? 'account-tie-outline' : 'lock-outline'}
+                    size={25}
+                  />
+                </View>
                 <View style={styles.roleCopy}>
                   <AppText variant="heading">{role.title}</AppText>
                   <AppText variant="caption" color={colors.inkMuted}>{latest?.servicePeriod ?? 'No handoff yet'}</AppText>
                   <AppText variant="caption">{holder?.name || 'No assigned holder'}</AppText>
+                  {!roleAvailableOnPlan ? (
+                    <AppText variant="caption" color={colors.inkMuted}>
+                      {continuity.data?.isOwner ? 'Relay Pro required to unlock this Role.' : 'Relay Pro required · Ask the Owner to upgrade.'}
+                    </AppText>
+                  ) : null}
                 </View>
               </Pressable>
             );
           })}
+          {hasLockedRoles && continuity.data?.isOwner ? (
+            <Button
+              label="Upgrade to unlock all Roles"
+              tone="secondary"
+              onPress={() => router.push(`/paywall?reason=role&organizationId=${organization.id}` as Href)}
+            />
+          ) : null}
         </View>
       ) : (
         <View style={styles.emptyCard}>
@@ -140,7 +168,9 @@ const styles = StyleSheet.create({
     padding: spacing.md, borderRadius: radii.lg, borderWidth: 1,
     borderColor: colors.line, backgroundColor: colors.surface, ...shadow,
   },
+  roleCardLocked: { backgroundColor: colors.surfaceMuted, shadowOpacity: 0 },
   roleIcon: { width: 48, height: 48, borderRadius: radii.md, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.mossSoft },
+  roleIconLocked: { backgroundColor: colors.canvas },
   roleCopy: { flex: 1, gap: spacing.xxs },
   emptyCard: {
     alignItems: 'center', gap: spacing.sm, padding: spacing.xl,

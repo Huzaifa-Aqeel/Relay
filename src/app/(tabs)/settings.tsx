@@ -117,10 +117,6 @@ export default function SettingsScreen() {
         </View>
 
         <Pressable onPress={() => router.push('/paywall')} style={({ pressed }) => [styles.planCard, pressed && styles.pressed]}>
-          <View style={styles.planBadge}>
-            <MaterialCommunityIcons color={colors.moss} name="star-four-points-outline" size={18} />
-            <AppText variant="caption" color={colors.moss}>ORGANIZATION PLAN</AppText>
-          </View>
           <AppText variant="heading">Organization plans</AppText>
           <AppText color={colors.inkMuted}>
             Relay Pro is shared by authorized Role Holders in your organization.
@@ -194,7 +190,6 @@ const styles = StyleSheet.create({
     gap: spacing.xs, padding: spacing.md + spacing.xxs / 2, borderRadius: radii.lg,
     backgroundColor: colors.mossSoft, borderWidth: 1, borderColor: '#BED1C3',
   },
-  planBadge: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   planStatuses: { gap: spacing.xs, marginTop: spacing.xs },
   planStatusRow: {
     minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: spacing.sm,

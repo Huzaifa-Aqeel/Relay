@@ -63,11 +63,13 @@ const SOURCE_BUCKET = 'handoff-sources';
 const MAX_LOGO_BYTES = 5 * 1024 * 1024;
 const MAX_SOURCE_BYTES = 25 * 1024 * 1024;
 
-export type RelayPlanLimit = 'organization' | 'role' | 'handoff';
+export type RelayPlanLimit = 'organization' | 'role' | 'role_access' | 'handoff';
 
 export class RelayPlanLimitError extends Error {
   constructor(public readonly limit: RelayPlanLimit) {
-    super(`Relay Pro is required to create another ${limit}.`);
+    super(limit === 'role_access'
+      ? 'Relay Pro is required to open this Role.'
+      : `Relay Pro is required to create another ${limit}.`);
     this.name = 'RelayPlanLimitError';
   }
 }
@@ -95,7 +97,7 @@ function messageFor(error: { code?: string; message: string }) {
 
 function throwDataError(error: { code?: string; message: string } | null): asserts error is null {
   if (!error) return;
-  const planLimit = error.message.match(/RELAY_PRO_REQUIRED:(organization|role|handoff)/)?.[1] as RelayPlanLimit | undefined;
+  const planLimit = error.message.match(/RELAY_PRO_REQUIRED:(organization|role_access|role|handoff)/)?.[1] as RelayPlanLimit | undefined;
   if (planLimit) throw new RelayPlanLimitError(planLimit);
   throw new Error(messageFor(error));
 }

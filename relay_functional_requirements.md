@@ -540,6 +540,8 @@ RevenueCat supports the real paid value: preserving continuity across more roles
 - limited Ask Relay usage
 - recipient access always free
 
+The first Role created for an Organization becomes its stable designated Free Role. Relay Pro temporarily unlocks additional Roles; expiration locks those additional private workspaces without deleting their Roles, assignments, Handoffs, Sources, knowledge, publications, or history. Ownership transfer does not silently switch the designated Free Role.
+
 An authenticated owner account can create one organization on Free. Creating an additional organization requires an active Relay Pro purchase association, but the new organization does not silently inherit another organization's Pro status.
 
 ## Relay Pro
@@ -561,16 +563,17 @@ An authenticated owner account can create one organization on Free. Creating an 
 | MON-04 | Relay Pro is an annual subscription positioned around preserving the Organization's knowledge for the academic year. No monthly, lifetime, consumable, or credit plan is offered. | P0 |
 | MON-05 | Restore Purchases refreshes RevenueCat customer information, reconciles an unambiguous Organization association without creating duplicates, and refreshes that Organization's plan state. | P0 |
 | MON-06 | One Relay Pro subscription unlocks only its associated Organization and must not unlock every unrelated Organization owned by the Purchaser. | P0 |
-| MON-07 | Expiration or downgrade returns the Organization to Free without deleting its roles, handoffs, sources, approved knowledge, publications, or institutional history; premium creation may become gated or existing premium data read-only. | P0 |
+| MON-07 | Expiration or downgrade returns the Organization to Free without deleting its roles, handoffs, sources, approved knowledge, publications, assignments, or institutional history. Its stable designated Free Role remains usable; additional Role workspaces become locked until Pro is restored. | P0 |
 | MON-08 | Purchaser, Organization Owner, Outgoing Leader, and Incoming Leader are conceptually separate roles; subscription association must not require the Purchaser to remain the Organization Owner. | P0 |
 | MON-09 | Minimal explicit-acceptance Organization ownership transfer is P0. It preserves Organization identity, history, Role assignments, handoffs, and active Organization Pro association without transferring the purchaser's App Store/Play Store account. | P0 |
 | MON-10 | Living Handoffs and Organization Memory do not introduce add-ons or new subscription products. Relay Pro remains annual-only and Organization-scoped. | P0 |
 | MON-11 | One verified `relay_pro` entitlement upgrades one Organization for all authorized Role Holders; there is no per-seat billing or individual `isPro` authorization. | P0 |
 | MON-12 | Every protected premium Role action independently checks Role authorization and Organization entitlement server-side. A purchase never grants membership or editing access, including to unrelated Organizations. | P0 |
 | MON-13 | Only the current Owner may initiate/attach an Organization purchase. RevenueCat verification and Organization attachment are reconciled atomically against current ownership; existing purchaser refreshes after transfer preserve the established association. | P0 |
-| MON-14 | Downgrade preserves memberships, assignments, Roles, Sources, knowledge, publications, and recipient access. Free creation limits remain one active Role and one current Handoff; creating further periods and generating Organization Memory comparisons require Organization Pro. Existing information is retained. | P0 |
+| MON-14 | Downgrade preserves memberships, assignments, Roles, Sources, knowledge, publications, and recipient access. Free creation limits remain one active designated Role and one current Handoff; creating further periods and generating Organization Memory comparisons require Organization Pro. Existing information is retained. | P0 |
 | MON-15 | Canceling Relay Pro turns off store auto-renewal but does not revoke the paid entitlement early. The associated Organization remains Pro through RevenueCat's verified expiration, then returns to Free unless the purchaser reactivates renewal or the current Owner purchases a later term after expiry. | P0 |
 | MON-16 | Ownership transfer preserves the current Organization entitlement, renewal state, and expiration without transferring store billing control. The original Purchaser may manage renewal through the purchasing store; the new Owner cannot attach an overlapping purchase while the Organization is already Pro and may purchase a new annual term after the existing entitlement expires. | P0 |
+| MON-17 | Role maintenance requires both an active Role Assignment and plan access to that Role. Relay Pro unlocks every authorized Role; Free unlocks only the Organization's stable designated Free Role. Locked Role cards remain visible but non-interactive, explain that the Owner must upgrade, and pending invitation acceptance rechecks entitlement atomically. | P0 |
 
 Do not build a complex credit/currency system unless actual usage costs later justify it.
 

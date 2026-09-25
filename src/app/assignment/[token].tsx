@@ -98,6 +98,14 @@ export default function AssignmentInviteScreen() {
           <AppText variant="heading" style={styles.center}>This invitation is no longer available</AppText>
           <AppText color={colors.inkMuted} style={styles.center}>It may have expired, been replaced, or already been used.</AppText>
         </View>
+      ) : !invitation.planAvailable ? (
+        <View style={styles.state}>
+          <MaterialCommunityIcons color={colors.inkMuted} name="lock-outline" size={34} />
+          <AppText variant="heading" style={styles.center}>Relay Pro required</AppText>
+          <AppText color={colors.inkMuted} style={styles.center}>
+            This Role is preserved, but the Organization Owner needs to restore Relay Pro before this invitation can be accepted.
+          </AppText>
+        </View>
       ) : (
         <>
           {auth.status === 'loading' ? (

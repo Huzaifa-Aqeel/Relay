@@ -131,7 +131,10 @@ export function BillingProvider({ children }: PropsWithChildren) {
         setSubscription(null);
       }
       await syncServerEntitlement();
-      await queryClient.invalidateQueries({ queryKey: ['relay', 'organization-plan'] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['relay', 'organization-plan'] }),
+        queryClient.invalidateQueries({ queryKey: ['relay', 'continuity'] }),
+      ]);
       setStatus('ready');
     } catch {
       setStatus('unavailable');
@@ -177,7 +180,10 @@ export function BillingProvider({ children }: PropsWithChildren) {
       storePurchaseIsActive = true;
       const server = await syncServerEntitlement(organizationId);
       if (!server.organizationIsPro) throw new Error('Relay Pro could not be associated with this organization.');
-      await queryClient.invalidateQueries({ queryKey: ['relay', 'organization-plan'] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['relay', 'organization-plan'] }),
+        queryClient.invalidateQueries({ queryKey: ['relay', 'continuity'] }),
+      ]);
       setStatus('ready');
       return true;
     } catch (error) {
@@ -205,7 +211,10 @@ export function BillingProvider({ children }: PropsWithChildren) {
       setSubscription(subscriptionStateFromCustomerInfo(customerInfo, ENTITLEMENT_ID));
       const hasActiveEntitlement = Boolean(customerInfo.entitlements.active[ENTITLEMENT_ID]);
       const server = await syncServerEntitlement(organizationId);
-      await queryClient.invalidateQueries({ queryKey: ['relay', 'organization-plan'] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['relay', 'organization-plan'] }),
+        queryClient.invalidateQueries({ queryKey: ['relay', 'continuity'] }),
+      ]);
       setStatus('ready');
       if (!hasActiveEntitlement || !server.organizationIsPro) {
         setMessage('No active Relay Pro purchase was found for this organization.');

@@ -9,7 +9,7 @@ const overviewSchema = z.object({
   members: z.array(z.object({ userId: z.string(), name: z.string() })),
   pendingTransfer: z.object({ id: z.string(), toUserId: z.string(), expiresAt: z.string() }).nullable(),
   roles: z.array(z.object({
-    roleId: z.string(), title: z.string(),
+    roleId: z.string(), title: z.string(), planAvailable: z.boolean(),
     assignments: z.array(z.object({ id: z.string(), userId: z.string(), name: z.string(), servicePeriod: z.string() })),
     handoffs: z.array(z.object({
       id: z.string(), servicePeriod: z.string(), status: z.string(), stage: z.string(), updatedAt: z.string(),
@@ -18,9 +18,20 @@ const overviewSchema = z.object({
     })),
   })),
 });
-export const inviteSchema = z.object({ organizationName: z.string(), roleTitle: z.string(), servicePeriod: z.string(), expiresAt: z.string(), replacement: z.boolean() });
+export const inviteSchema = z.object({
+  organizationName: z.string(),
+  roleTitle: z.string(),
+  servicePeriod: z.string(),
+  expiresAt: z.string(),
+  replacement: z.boolean(),
+  planAvailable: z.boolean(),
+});
 export function checkContinuityError(error: { message: string } | null) {
-  if (error) throw new Error(error.message.includes('RELAY_PRO_REQUIRED')
+  if (!error) return;
+  if (error.message.includes('RELAY_PRO_REQUIRED:role_access')) {
+    throw new Error('This Role requires Relay Pro. Ask the Organization Owner to upgrade.');
+  }
+  throw new Error(error.message.includes('RELAY_PRO_REQUIRED')
     ? 'This Organization needs Relay Pro to start another service period. Its Owner can upgrade it.' : error.message);
 }
 export function useContinuity(organizationId?: string) {

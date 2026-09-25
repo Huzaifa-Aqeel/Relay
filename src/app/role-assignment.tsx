@@ -91,6 +91,24 @@ export default function RoleAssignmentScreen() {
   }
 
   const roleTitle = role.data.title;
+  const roleAvailableOnPlan = roleOverview.planAvailable;
+  if (!roleAvailableOnPlan) {
+    return (
+      <Screen>
+        <MessageState
+          icon="lock-outline"
+          title="Relay Pro required"
+          body={overview.data.isOwner
+            ? `Upgrade this Organization to manage succession for ${roleTitle}.`
+            : `Ask the Organization Owner to upgrade before changing the ${roleTitle} assignment.`}
+          actionLabel={overview.data.isOwner ? 'View Relay Pro' : undefined}
+          onAction={overview.data.isOwner
+            ? () => router.push(`/paywall?reason=role&organizationId=${role.data!.organizationId}` as Href)
+            : undefined}
+        />
+      </Screen>
+    );
+  }
   const inviteUrl = issued ? assignmentInviteUrl(issued.token) : null;
 
   return (

@@ -24,11 +24,12 @@ export default function RoleScreen() {
   const organizationQuery = useOrganization(roleQuery.data?.organizationId);
   const handoffsQuery = useRoleHandoffs(id);
   const continuity = useContinuity(roleQuery.data?.organizationId);
-  const pending = roleQuery.isPending || handoffsQuery.isPending || (roleQuery.data && organizationQuery.isPending);
-  const error = roleQuery.error ?? organizationQuery.error ?? handoffsQuery.error;
+  const pending = roleQuery.isPending || handoffsQuery.isPending
+    || (roleQuery.data && (organizationQuery.isPending || continuity.isPending));
+  const error = roleQuery.error ?? organizationQuery.error ?? handoffsQuery.error ?? continuity.error;
 
   if (pending) return <Screen><LoadingState label="Opening role…" /></Screen>;
-  if (error || !roleQuery.data || !organizationQuery.data) {
+  if (error || !roleQuery.data || !organizationQuery.data || !continuity.data) {
     return (
       <Screen>
         <MessageState
@@ -44,14 +45,34 @@ export default function RoleScreen() {
 
   const role = roleQuery.data;
   const organization = organizationQuery.data;
+  const overview = continuity.data?.roles.find(r => r.roleId === id);
+  const roleAvailableOnPlan = overview?.planAvailable === true;
+  if (!roleAvailableOnPlan) {
+    const isOwner = organization.createdBy === auth.session?.user.id;
+    return (
+      <Screen>
+        <MessageState
+          icon="lock-outline"
+          title="Relay Pro required"
+          body={isOwner
+            ? `Upgrade ${organization.name} to reopen ${role.title} and its private workspace.`
+            : `This Role is preserved but currently locked. Ask the Organization Owner to upgrade ${organization.name}.`}
+          actionLabel={isOwner ? 'View Relay Pro' : undefined}
+          onAction={isOwner ? () => router.push(`/paywall?reason=role&organizationId=${organization.id}` as Href) : undefined}
+        />
+      </Screen>
+    );
+  }
   const handoffs = handoffsQuery.data ?? [];
   const current = handoffs[0];
-  const overview = continuity.data?.roles.find(r => r.roleId === id);
   const canPlanSuccession = Boolean(continuity.data?.isOwner || overview?.assignments[0]?.userId === auth.session?.user.id);
   const canMaintain = (handoffId: string) => overview?.handoffs.some(h => h.id === handoffId && h.canMaintain);
   const publishedCount = overview?.handoffs.filter(h => h.publicationStatus).length ?? 0;
-  const refreshing = roleQuery.isRefetching || organizationQuery.isRefetching || handoffsQuery.isRefetching;
-  const refresh = () => void Promise.all([roleQuery.refetch(), organizationQuery.refetch(), handoffsQuery.refetch()]);
+  const refreshing = roleQuery.isRefetching || organizationQuery.isRefetching
+    || handoffsQuery.isRefetching || continuity.isRefetching;
+  const refresh = () => void Promise.all([
+    roleQuery.refetch(), organizationQuery.refetch(), handoffsQuery.refetch(), continuity.refetch(),
+  ]);
 
   return (
     <Screen scrollProps={{ refreshControl: <RefreshControl refreshing={refreshing} tintColor={colors.moss} onRefresh={refresh} /> }}>
