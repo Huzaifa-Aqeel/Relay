@@ -36,6 +36,7 @@ type AuthContextValue = {
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+const authCodeExchanges = new Map<string, Promise<void>>();
 
 function authMessage(message: string) {
   const normalised = message.toLowerCase();
@@ -50,6 +51,21 @@ function authMessage(message: string) {
 
 function throwFriendly(error: { message: string } | null) {
   if (error) throw new Error(authMessage(error.message));
+}
+
+function exchangeAuthCodeOnce(code: string) {
+  const existing = authCodeExchanges.get(code);
+  if (existing) return existing;
+
+  const exchange = requireSupabase().auth.exchangeCodeForSession(code).then(({ error }) => {
+    throwFriendly(error);
+  });
+  authCodeExchanges.set(code, exchange);
+  void exchange.then(
+    () => setTimeout(() => authCodeExchanges.delete(code), 60_000),
+    () => authCodeExchanges.delete(code),
+  );
+  return exchange;
 }
 
 export function AuthProvider({ children }: PropsWithChildren) {
@@ -115,11 +131,20 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const signInWithGoogle = useCallback(async () => {
     const client = requireSupabase();
     const redirectTo = makeRedirectUri({ scheme: 'relay', path: 'auth/callback' });
+    const isWeb = Platform.OS === 'web';
     const { data, error } = await client.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo, skipBrowserRedirect: true },
+      options: {
+        redirectTo,
+        // A full-page web redirect gives the callback screen sole ownership
+        // of the one-use PKCE code. Native keeps the secure browser session
+        // and completes the exchange in this process.
+        skipBrowserRedirect: !isWeb,
+        queryParams: { prompt: 'select_account' },
+      },
     });
     throwFriendly(error);
+    if (isWeb) return;
     if (!data.url) throw new Error('Google sign-in could not be opened. Please try again.');
 
     const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
@@ -127,8 +152,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     const parsed = Linking.parse(result.url);
     const code = typeof parsed.queryParams?.code === 'string' ? parsed.queryParams.code : null;
     if (!code) throw new Error('Google sign-in did not return a valid session. Please try again.');
-    const exchanged = await client.auth.exchangeCodeForSession(code);
-    throwFriendly(exchanged.error);
+    await exchangeAuthCodeOnce(code);
   }, []);
 
   const sendPasswordReset = useCallback(async (email: string) => {
@@ -146,9 +170,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }, []);
 
   const exchangeCode = useCallback(async (code: string) => {
-    const client = requireSupabase();
-    const { error } = await client.auth.exchangeCodeForSession(code);
-    throwFriendly(error);
+    await exchangeAuthCodeOnce(code);
   }, []);
 
   const userId = session?.user.id;

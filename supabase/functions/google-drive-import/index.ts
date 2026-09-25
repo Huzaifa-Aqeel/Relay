@@ -238,7 +238,12 @@ function googleAuthorizationUrl(config: Config, state: string) {
     response_type: 'code',
     scope: DRIVE_FILE_SCOPE,
     access_type: 'online',
-    prompt: 'consent',
+    // One Picker permits only drive.file. Do not merge profile/email grants
+    // previously issued to this OAuth client by Google sign-in.
+    include_granted_scopes: 'false',
+    // Consent is mandatory for One Picker. Account selection also avoids
+    // silently reusing a stale or unintended Google account on mobile.
+    prompt: 'select_account consent',
     trigger_onepick: 'true',
     allow_multiple: 'true',
     mimetypes: pickerMimeTypes.join(','),
