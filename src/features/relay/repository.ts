@@ -22,9 +22,17 @@ import type {
   KnowledgeItemUpdateInput,
   KnowledgeProvenance,
   Organization,
+  OrganizationContentFile,
+  OrganizationContentInput,
+  OrganizationFile,
   OrganizationInput,
+  MembershipRequestStatus,
+  MembershipSearchResult,
+  PendingMembershipRequest,
+  RelayAccess,
   OrganizationPlan,
   OrganizationRole,
+  AssignedRole,
   PreflightEvidence,
   PreflightFinding,
   PreflightResolutionInput,
@@ -45,6 +53,7 @@ import type {
 } from '@/features/relay/types';
 
 type OrganizationRow = Database['public']['Tables']['organizations']['Row'];
+type OrganizationFileRow = Database['public']['Tables']['organization_files']['Row'];
 type RoleRow = Database['public']['Tables']['roles']['Row'];
 type HandoffRow = Database['public']['Tables']['handoffs']['Row'];
 type SourceRow = Database['public']['Tables']['sources']['Row'];
@@ -59,8 +68,10 @@ type RoleMemoryComparisonRow = Database['public']['Tables']['role_memory_compari
 type RoleMemoryChangeRow = Database['public']['Tables']['role_memory_changes']['Row'];
 
 const LOGO_BUCKET = 'organization-logos';
+const ORGANIZATION_CONTENT_BUCKET = 'organization-content';
 const SOURCE_BUCKET = 'handoff-sources';
 const MAX_LOGO_BYTES = 5 * 1024 * 1024;
+const MAX_ORGANIZATION_FILE_BYTES = 25 * 1024 * 1024;
 const MAX_SOURCE_BYTES = 25 * 1024 * 1024;
 
 export type RelayPlanLimit = 'organization' | 'role' | 'role_access' | 'handoff';
@@ -102,7 +113,10 @@ function throwDataError(error: { code?: string; message: string } | null): asser
   throw new Error(messageFor(error));
 }
 
-function mapOrganization(row: OrganizationRow, logoUrl: string | null = null): Organization {
+function mapOrganization(
+  row: OrganizationRow,
+  urls: { logo?: string | null; files?: OrganizationFile[] } = {},
+): Organization {
   return {
     id: row.id,
     createdBy: row.created_by,
@@ -110,7 +124,24 @@ function mapOrganization(row: OrganizationRow, logoUrl: string | null = null): O
     institution: row.institution,
     description: row.description,
     logoPath: row.logo_path,
-    logoUrl,
+    logoUrl: urls.logo ?? null,
+    youtubeVideoUrl: row.youtube_video_url,
+    files: urls.files ?? [],
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapOrganizationFile(row: OrganizationFileRow, url: string | null): OrganizationFile {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    title: row.title,
+    fileName: row.file_name,
+    storagePath: row.storage_path,
+    url,
+    mimeType: row.mime_type,
+    sizeBytes: row.size_bytes,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -333,6 +364,34 @@ const organizationPlanSchema = z.object({
   isPurchaser: z.boolean(),
 }).strict();
 
+const relayAccessSchema = z.object({
+  hasMembership: z.boolean(),
+  hasFullAccess: z.boolean(),
+}).strict();
+
+const membershipSearchResultSchema = z.object({
+  organizationId: z.string().uuid(),
+  name: z.string().min(1).max(100),
+  institution: z.string().max(160),
+  requestStatus: z.enum(['pending', 'accepted', 'rejected']).nullable(),
+}).strict();
+
+const membershipRequestStatusSchema = z.object({
+  requestId: z.string().uuid(),
+  organizationId: z.string().uuid(),
+  name: z.string().min(1).max(100),
+  institution: z.string().max(160),
+  status: z.enum(['pending', 'accepted', 'rejected']),
+  requestedAt: z.string(),
+}).strict();
+
+const pendingMembershipRequestSchema = z.object({
+  requestId: z.string().uuid(),
+  userId: z.string().uuid(),
+  name: z.string().max(100),
+  requestedAt: z.string(),
+}).strict();
+
 const voiceTranscriptPreviewSchema = z.object({
   transcript: z.string().trim().min(1).max(50_000),
   providerReference: z.string().max(500).nullable(),
@@ -342,6 +401,31 @@ async function signedLogo(path: string | null) {
   if (!path) return null;
   const { data, error } = await requireSupabase().storage.from(LOGO_BUCKET).createSignedUrl(path, 3600);
   return error ? null : data.signedUrl;
+}
+
+async function signedOrganizationFile(path: string | null) {
+  if (!path) return null;
+  const { data, error } = await requireSupabase().storage
+    .from(ORGANIZATION_CONTENT_BUCKET)
+    .createSignedUrl(path, 3600);
+  return error ? null : data.signedUrl;
+}
+
+async function uploadOrganizationPdf(organizationId: string, file: OrganizationContentFile) {
+  if (file.size && file.size > MAX_ORGANIZATION_FILE_BYTES) {
+    throw new Error('Choose a PDF smaller than 25 MB.');
+  }
+  if (file.mimeType && file.mimeType !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+    throw new Error('Choose a PDF document.');
+  }
+  const body = await readFileBody(file.uri);
+  if (body.byteLength > MAX_ORGANIZATION_FILE_BYTES) throw new Error('Choose a PDF smaller than 25 MB.');
+  const path = `${organizationId}/${Crypto.randomUUID()}.pdf`;
+  const uploaded = await requireSupabase().storage.from(ORGANIZATION_CONTENT_BUCKET).upload(path, body, {
+    contentType: 'application/pdf', upsert: false,
+  });
+  throwDataError(uploaded.error);
+  return { path, sizeBytes: body.byteLength };
 }
 
 async function uploadLogo(organizationId: string, logo: NonNullable<OrganizationInput['logo']>) {
@@ -449,13 +533,108 @@ export async function listOrganizations() {
     .select('*')
     .order('name', { ascending: true });
   throwDataError(error);
-  return Promise.all(data.map(async (row) => mapOrganization(row, await signedLogo(row.logo_path))));
+  return Promise.all(data.map(async (row) => mapOrganization(row, { logo: await signedLogo(row.logo_path) })));
 }
 
 export async function getOrganization(id: string) {
-  const { data, error } = await requireSupabase().from('organizations').select('*').eq('id', id).single();
+  const client = requireSupabase();
+  const [{ data, error }, { data: fileRows, error: filesError }] = await Promise.all([
+    client.from('organizations').select('*').eq('id', id).single(),
+    client.from('organization_files').select('*').eq('organization_id', id).order('created_at', { ascending: true }),
+  ]);
   throwDataError(error);
-  return mapOrganization(data, await signedLogo(data.logo_path));
+  throwDataError(filesError);
+  const [logo, files] = await Promise.all([
+    signedLogo(data.logo_path),
+    Promise.all(fileRows.map(async (file) => mapOrganizationFile(file, await signedOrganizationFile(file.storage_path)))),
+  ]);
+  return mapOrganization(data, { logo, files });
+}
+
+export async function getRelayAccess(): Promise<RelayAccess> {
+  const { data, error } = await requireSupabase().rpc('get_my_relay_access');
+  throwDataError(error);
+  return relayAccessSchema.parse(data);
+}
+
+export async function searchOrganizationsForMembership(query: string): Promise<MembershipSearchResult[]> {
+  const { data, error } = await requireSupabase().rpc('search_organizations_for_membership', {
+    requested_query: query.trim(),
+  });
+  throwDataError(error);
+  return z.array(membershipSearchResultSchema).parse(data);
+}
+
+export async function listMyMembershipRequests(): Promise<MembershipRequestStatus[]> {
+  const { data, error } = await requireSupabase().rpc('list_my_membership_requests');
+  throwDataError(error);
+  return z.array(membershipRequestStatusSchema).parse(data);
+}
+
+export async function requestOrganizationMembership(organizationId: string) {
+  const { data, error } = await requireSupabase().rpc('request_organization_membership', {
+    requested_organization_id: organizationId,
+  });
+  throwDataError(error);
+  return z.string().uuid().parse(data);
+}
+
+export async function listPendingMembershipRequests(organizationId: string): Promise<PendingMembershipRequest[]> {
+  const { data, error } = await requireSupabase().rpc('list_pending_membership_requests', {
+    requested_organization_id: organizationId,
+  });
+  throwDataError(error);
+  return z.array(pendingMembershipRequestSchema).parse(data);
+}
+
+export async function decideOrganizationMembershipRequest(
+  requestId: string,
+  decision: 'accepted' | 'rejected',
+) {
+  const { data, error } = await requireSupabase().rpc('decide_organization_membership_request', {
+    requested_request_id: requestId,
+    requested_decision: decision,
+  });
+  throwDataError(error);
+  return z.string().uuid().parse(data);
+}
+
+export async function updateOrganizationContent(input: OrganizationContentInput) {
+  const client = requireSupabase();
+  const uploadedPaths: string[] = [];
+  try {
+    const addedFiles = [];
+    for (const addition of input.addedFiles) {
+      const title = addition.title.trim();
+      const fileName = addition.file.name.trim();
+      if (!title || title.length > 120) throw new Error('Enter a file title under 120 characters.');
+      if (!fileName || fileName.length > 255) throw new Error('Choose a PDF with a shorter file name.');
+      const uploaded = await uploadOrganizationPdf(input.organizationId, addition.file);
+      uploadedPaths.push(uploaded.path);
+      addedFiles.push({
+        title,
+        fileName,
+        storagePath: uploaded.path,
+        sizeBytes: uploaded.sizeBytes,
+      });
+    }
+
+    const { data, error } = await client.rpc('save_organization_home_content', {
+      requested_organization_id: input.organizationId,
+      requested_description: input.description.trim(),
+      requested_youtube_video_url: input.youtubeVideoUrl?.trim() || null,
+      requested_added_files: addedFiles,
+      requested_removed_file_ids: input.removedFileIds,
+    });
+    throwDataError(error);
+    const result = z.object({ removedPaths: z.array(z.string()) }).parse(data);
+    if (result.removedPaths.length) {
+      await client.storage.from(ORGANIZATION_CONTENT_BUCKET).remove(result.removedPaths);
+    }
+  } catch (error) {
+    if (uploadedPaths.length) await client.storage.from(ORGANIZATION_CONTENT_BUCKET).remove(uploadedPaths);
+    throw error;
+  }
 }
 
 export async function getOrganizationPlan(organizationId: string): Promise<OrganizationPlan> {
@@ -496,6 +675,50 @@ export async function listRoles(organizationId: string) {
     .order('title', { ascending: true });
   throwDataError(error);
   return data.map(mapRole);
+}
+
+export async function listMyAssignedRoles(): Promise<AssignedRole[]> {
+  const client = requireSupabase();
+  const { data: authData, error: authError } = await client.auth.getUser();
+  if (authError) throw new Error('Relay could not verify your Role access. Please try again.');
+  if (!authData.user) return [];
+
+  const { data: assignments, error: assignmentsError } = await client
+    .from('role_assignments')
+    .select('role_id, organization_id, service_period, accepted_at')
+    .eq('user_id', authData.user.id)
+    .eq('status', 'active')
+    .order('accepted_at', { ascending: false });
+  throwDataError(assignmentsError);
+  if (!assignments.length) return [];
+
+  const roleIds = [...new Set(assignments.map((assignment) => assignment.role_id))];
+  const organizationIds = [...new Set(assignments.map((assignment) => assignment.organization_id))];
+  const [{ data: roles, error: rolesError }, { data: organizations, error: organizationsError }] = await Promise.all([
+    client.from('roles').select('id, organization_id, title, description').in('id', roleIds).is('archived_at', null),
+    client.from('organizations').select('id, name').in('id', organizationIds),
+  ]);
+  throwDataError(rolesError);
+  throwDataError(organizationsError);
+
+  const rolesById = new Map(roles.map((role) => [role.id, role]));
+  const organizationsById = new Map(organizations.map((organization) => [organization.id, organization]));
+  const seen = new Set<string>();
+  return assignments.flatMap((assignment) => {
+    if (seen.has(assignment.role_id)) return [];
+    const role = rolesById.get(assignment.role_id);
+    const organization = organizationsById.get(assignment.organization_id);
+    if (!role || !organization) return [];
+    seen.add(assignment.role_id);
+    return [{
+      roleId: role.id,
+      organizationId: role.organization_id,
+      organizationName: organization.name,
+      title: role.title,
+      description: role.description,
+      servicePeriod: assignment.service_period,
+    }];
+  });
 }
 
 export async function getRole(id: string) {

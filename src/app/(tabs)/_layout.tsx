@@ -5,6 +5,7 @@ import type { ColorValue } from 'react-native';
 import { StyleSheet } from 'react-native';
 
 import { colors, radii, shadow, type } from '@/theme/tokens';
+import { useRelayAccess } from '@/features/relay/queries';
 
 type TabIconProps = {
   color: ColorValue;
@@ -17,6 +18,8 @@ function TabIcon({ color, focused, name }: TabIconProps) {
 }
 
 export default function TabsLayout() {
+  const access = useRelayAccess();
+  const hasFullAccess = access.data?.hasFullAccess === true;
   return (
     <Tabs
       screenOptions={{
@@ -31,15 +34,26 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Organizations',
+          title: hasFullAccess ? 'Organizations' : 'Organization',
           tabBarIcon: ({ color, focused }) => (
             <TabIcon color={color} focused={focused} name="office-building-outline" />
           ),
         }}
       />
       <Tabs.Screen
+        name="action"
+        options={{
+          href: hasFullAccess ? undefined : null,
+          title: 'Handoff',
+          tabBarIcon: ({ color, focused }) => (
+            <TabIcon color={color} focused={focused} name="source-branch" />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="memory"
         options={{
+          href: hasFullAccess ? undefined : null,
           title: 'Memory',
           tabBarIcon: ({ color, focused }) => (
             <TabIcon color={color} focused={focused} name="book-open-page-variant-outline" />
@@ -49,6 +63,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="settings"
         options={{
+          href: hasFullAccess ? undefined : null,
           title: 'Settings',
           tabBarIcon: ({ color, focused }) => (
             <TabIcon color={color} focused={focused} name="tune-variant" />

@@ -215,7 +215,7 @@ function PersonCard({
 function TransferImpact({ name = 'The new Owner' }: { name?: string }) {
   return (
     <View style={styles.impact}>
-      <AppText>{name} will be able to manage roles, succession, and the organization’s Relay plan.</AppText>
+      <AppText>{name} will be able to manage organization’s Relay plan.</AppText>
       <AppText>Your previous contributions and history will stay intact. Your role assignments will not automatically change.</AppText>
       <AppText>If you purchased Relay Pro, your store billing account remains yours; the organization keeps Pro while that subscription remains active.</AppText>
     </View>

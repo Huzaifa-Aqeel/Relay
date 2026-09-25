@@ -113,7 +113,6 @@ export default function SettingsScreen() {
       <Screen safeTop>
         <View style={styles.headingBlock}>
           <AppText variant="display">Settings</AppText>
-          <AppText color={colors.inkMuted}>Your account, plan, and privacy.</AppText>
         </View>
 
         <Pressable onPress={() => router.push('/paywall')} style={({ pressed }) => [styles.planCard, pressed && styles.pressed]}>

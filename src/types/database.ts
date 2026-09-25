@@ -38,16 +38,45 @@ export type Database = {
         Timestamped & {
           id: string; created_by: string; name: string; institution: string;
           description: string; logo_path: string | null; free_role_id: string | null;
+          youtube_video_url: string | null;
         },
         {
           id?: string; created_by: string; name: string; institution?: string;
           description?: string; logo_path?: string | null; free_role_id?: string | null;
+          youtube_video_url?: string | null;
+          created_at?: string; updated_at?: string;
+        }
+      >;
+      organization_files: Table<
+        Timestamped & {
+          id: string; organization_id: string; title: string; file_name: string;
+          storage_path: string; mime_type: string; size_bytes: number; created_by: string;
+        },
+        {
+          id?: string; organization_id: string; title: string; file_name: string;
+          storage_path: string; mime_type?: string; size_bytes: number; created_by: string;
           created_at?: string; updated_at?: string;
         }
       >;
       organization_members: Table<
-        { organization_id: string; user_id: string; member_role: string; created_at: string },
-        { organization_id: string; user_id: string; member_role?: string; created_at?: string }
+        {
+          organization_id: string; user_id: string; member_role: string; status: string;
+          created_at: string; joined_at: string; ended_at: string | null;
+        },
+        {
+          organization_id: string; user_id: string; member_role?: string; status?: string;
+          created_at?: string; joined_at?: string; ended_at?: string | null;
+        }
+      >;
+      organization_membership_requests: Table<
+        {
+          id: string; organization_id: string; user_id: string; status: string;
+          requested_at: string; decided_by: string | null; decided_at: string | null;
+        },
+        {
+          id?: string; organization_id: string; user_id: string; status?: string;
+          requested_at?: string; decided_by?: string | null; decided_at?: string | null;
+        }
       >;
       roles: Table<
         Timestamped & {
@@ -323,6 +352,25 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      get_my_relay_access: { Args: Record<string, never>; Returns: Json };
+      search_organizations_for_membership: { Args: { requested_query: string }; Returns: Json };
+      list_my_membership_requests: { Args: Record<string, never>; Returns: Json };
+      request_organization_membership: { Args: { requested_organization_id: string }; Returns: string };
+      list_pending_membership_requests: { Args: { requested_organization_id: string }; Returns: Json };
+      decide_organization_membership_request: {
+        Args: { requested_request_id: string; requested_decision: 'accepted' | 'rejected' };
+        Returns: string;
+      };
+      save_organization_home_content: {
+        Args: {
+          requested_organization_id: string;
+          requested_description: string;
+          requested_youtube_video_url: string | null;
+          requested_added_files: Json;
+          requested_removed_file_ids: string[];
+        };
+        Returns: Json;
+      };
       get_organization_continuity: { Args: { requested_organization_id: string }; Returns: Json };
       is_role_holder_for_handoff: { Args: { requested_handoff_id: string }; Returns: boolean };
       can_view_role_history: { Args: { requested_role_id: string }; Returns: boolean };

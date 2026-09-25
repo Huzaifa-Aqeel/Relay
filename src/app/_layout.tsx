@@ -13,6 +13,7 @@ import { AuthProvider, useAuth } from '@/features/auth/auth-provider';
 import { BillingProvider } from '@/features/billing/billing-provider';
 import { useNotificationNavigation } from '@/features/notifications/notification-service';
 import { isPublicRootSegment } from '@/features/relay/shell-model';
+import { useRelayAccess } from '@/features/relay/queries';
 import { colors, spacing, type } from '@/theme/tokens';
 
 const queryClient = new QueryClient({
@@ -24,6 +25,7 @@ const queryClient = new QueryClient({
 
 function AuthGate({ children }: PropsWithChildren) {
   const { status, session } = useAuth();
+  const relayAccess = useRelayAccess();
   const priorUser = useRef<string | null | undefined>(undefined);
   useEffect(() => {
     if (status === 'loading' || status === 'demo') return;
@@ -57,7 +59,19 @@ function AuthGate({ children }: PropsWithChildren) {
     ) {
       router.replace('/');
     }
-  }, [segments, status]);
+    if (status === 'authenticated' && !relayAccess.isPending && !relayAccess.data?.hasFullAccess) {
+      const memberOnlyTabBlocked = rootSegment === '(tabs)'
+        && ['action', 'memory', 'settings'].includes(authScreen ?? '');
+      const roleWorkspaceBlocked = [
+        'role', 'role-new', 'role-assignment', 'handoff', 'handoff-new',
+        'handoff-review', 'handoff-preflight', 'handoff-preview',
+        'approved-knowledge', 'source', 'knowledge', 'preflight-resolve',
+        'organization-memory', 'memory-reason', 'published-history',
+        'ownership-transfer', 'paywall',
+      ].includes(rootSegment ?? '');
+      if (memberOnlyTabBlocked || roleWorkspaceBlocked) router.replace('/');
+    }
+  }, [relayAccess.data?.hasFullAccess, relayAccess.isPending, segments, status]);
 
   return (
     <View style={styles.root}>
@@ -93,6 +107,7 @@ export default function RootLayout() {
               }}>
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
               <Stack.Screen name="organization/[id]" options={{ title: 'Organization' }} />
+              <Stack.Screen name="organization-manage" options={{ title: 'Manage organization' }} />
               <Stack.Screen name="organization-new" options={{ title: 'New organization' }} />
               <Stack.Screen name="role/[id]" options={{ title: 'Role' }} />
               <Stack.Screen name="role-new" options={{ title: 'New role' }} />

@@ -18,6 +18,7 @@ import {
   decideKnowledgeProposal,
   decidePreflightFinding,
   getHandoff,
+  getRelayAccess,
   getHandoffPublication,
   getHandoffSource,
   findExactDocumentDuplicate,
@@ -36,10 +37,13 @@ import {
   listKnowledgeItems,
   listKnowledgeProvenance,
   listMemoryRoles,
+  listMyAssignedRoles,
   listPreflightEvidence,
   listPreflightFindings,
   listOrganizationHandoffs,
   listOrganizations,
+  listMyMembershipRequests,
+  listPendingMembershipRequests,
   listRoleHandoffs,
   listRolePublications,
   listRoleMemoryChanges,
@@ -58,6 +62,10 @@ import {
   rollbackCaptureAttachment,
   transcribeVoiceRecording,
   updateKnowledgeItem,
+  updateOrganizationContent,
+  searchOrganizationsForMembership,
+  requestOrganizationMembership,
+  decideOrganizationMembershipRequest,
 } from '@/features/relay/repository';
 import type {
   HandoffInput,
@@ -66,13 +74,18 @@ import type {
   DocumentDuplicateCheckInput,
   KnowledgeItemUpdateInput,
   OrganizationInput,
+  OrganizationContentInput,
   PreflightResolutionInput,
   RoleInput,
   VoiceRecordingInput,
 } from '@/features/relay/types';
 
 export const relayKeys = {
+  access: ['relay', 'access'] as const,
+  assignedRoles: ['relay', 'assigned-roles'] as const,
   organizations: ['relay', 'organizations'] as const,
+  membershipRequests: ['relay', 'membership-requests'] as const,
+  pendingMembershipRequests: (organizationId: string) => ['relay', 'pending-membership-requests', organizationId] as const,
   organization: (id: string) => ['relay', 'organization', id] as const,
   organizationPlan: (id: string) => ['relay', 'organization-plan', id] as const,
   roles: (organizationId: string) => ['relay', 'roles', organizationId] as const,
@@ -109,6 +122,72 @@ function useCloudQueryEnabled(extra = true) {
 
 export function useOrganizations() {
   return useQuery({ queryKey: relayKeys.organizations, queryFn: listOrganizations, enabled: useCloudQueryEnabled() });
+}
+
+export function useRelayAccess() {
+  return useQuery({ queryKey: relayKeys.access, queryFn: getRelayAccess, enabled: useCloudQueryEnabled() });
+}
+
+export function useMyAssignedRoles() {
+  return useQuery({
+    queryKey: relayKeys.assignedRoles,
+    queryFn: listMyAssignedRoles,
+    enabled: useCloudQueryEnabled(),
+  });
+}
+
+export function useMyMembershipRequests() {
+  return useQuery({
+    queryKey: relayKeys.membershipRequests,
+    queryFn: listMyMembershipRequests,
+    enabled: useCloudQueryEnabled(),
+  });
+}
+
+export function useSearchOrganizationsForMembership() {
+  return useMutation({ mutationFn: searchOrganizationsForMembership });
+}
+
+export function useRequestOrganizationMembership() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: requestOrganizationMembership,
+    onSuccess: () => Promise.all([
+      queryClient.invalidateQueries({ queryKey: relayKeys.membershipRequests }),
+      queryClient.invalidateQueries({ queryKey: relayKeys.access }),
+    ]),
+  });
+}
+
+export function usePendingMembershipRequests(organizationId: string | undefined, enabled = true) {
+  return useQuery({
+    queryKey: relayKeys.pendingMembershipRequests(organizationId ?? ''),
+    queryFn: () => listPendingMembershipRequests(organizationId!),
+    enabled: useCloudQueryEnabled(Boolean(organizationId) && enabled),
+  });
+}
+
+export function useDecideOrganizationMembershipRequest() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ requestId, decision }: { requestId: string; decision: 'accepted' | 'rejected'; organizationId: string }) =>
+      decideOrganizationMembershipRequest(requestId, decision),
+    onSuccess: (_, variables) => Promise.all([
+      queryClient.invalidateQueries({ queryKey: relayKeys.pendingMembershipRequests(variables.organizationId) }),
+      queryClient.invalidateQueries({ queryKey: ['relay', 'continuity', variables.organizationId] }),
+    ]),
+  });
+}
+
+export function useUpdateOrganizationContent() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: OrganizationContentInput) => updateOrganizationContent(input),
+    onSuccess: (_, input) => Promise.all([
+      queryClient.invalidateQueries({ queryKey: relayKeys.organization(input.organizationId) }),
+      queryClient.invalidateQueries({ queryKey: relayKeys.organizations }),
+    ]),
+  });
 }
 
 export function useOrganization(id: string | undefined) {
@@ -438,7 +517,10 @@ export function useCreateOrganization() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: OrganizationInput) => createOrganization(input),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: relayKeys.organizations }),
+    onSuccess: () => Promise.all([
+      queryClient.invalidateQueries({ queryKey: relayKeys.organizations }),
+      queryClient.invalidateQueries({ queryKey: relayKeys.access }),
+    ]),
   });
 }
 

@@ -46,9 +46,7 @@ export default function AssignmentInviteScreen() {
   const action = useContinuityAction(async (intent: 'authenticate' | 'accept') => {
     setNotice('');
     if (intent === 'accept') {
-      const handoffId = await acceptAssignment(token);
-      router.replace(`/handoff/${handoffId}` as Href);
-      return;
+      return acceptAssignment(token);
     }
     if (mode === 'create-account') {
       const result = await auth.signUp(name, email, password, `/assignment/${token}`);
@@ -58,7 +56,17 @@ export default function AssignmentInviteScreen() {
       return;
     }
     await auth.signIn(email, password);
+    return null;
   });
+
+  async function acceptInvite() {
+    try {
+      const handoffId = await action.mutateAsync('accept');
+      if (typeof handoffId === 'string') router.replace(`/handoff/${handoffId}` as Href);
+    } catch {
+      // The mutation exposes its safe error in the invitation card.
+    }
+  }
 
   function chooseMode(nextMode: AuthMode) {
     setMode(nextMode);
@@ -229,7 +237,7 @@ export default function AssignmentInviteScreen() {
                 disabled={action.isPending}
                 icon="arrow-right"
                 label={action.isPending ? 'Opening handoff…' : 'Accept and open handoff'}
-                onPress={() => action.mutate('accept')}
+                onPress={() => void acceptInvite()}
               />
             </>
           )}

@@ -6,8 +6,71 @@ export type Organization = {
   description: string;
   logoPath: string | null;
   logoUrl: string | null;
+  youtubeVideoUrl: string | null;
+  files: OrganizationFile[];
   createdAt: string;
   updatedAt: string;
+};
+
+export type RelayAccess = {
+  hasMembership: boolean;
+  hasFullAccess: boolean;
+};
+
+export type MembershipSearchResult = {
+  organizationId: string;
+  name: string;
+  institution: string;
+  requestStatus: 'pending' | 'accepted' | 'rejected' | null;
+};
+
+export type MembershipRequestStatus = {
+  requestId: string;
+  organizationId: string;
+  name: string;
+  institution: string;
+  status: 'pending' | 'accepted' | 'rejected';
+  requestedAt: string;
+};
+
+export type PendingMembershipRequest = {
+  requestId: string;
+  userId: string;
+  name: string;
+  requestedAt: string;
+};
+
+export type OrganizationContentFile = {
+  uri: string;
+  name: string;
+  mimeType?: string | null;
+  size?: number | null;
+};
+
+export type OrganizationFile = {
+  id: string;
+  organizationId: string;
+  title: string;
+  fileName: string;
+  storagePath: string;
+  url: string | null;
+  mimeType: string;
+  sizeBytes: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type OrganizationContentFileAddition = {
+  title: string;
+  file: OrganizationContentFile;
+};
+
+export type OrganizationContentInput = {
+  organizationId: string;
+  description: string;
+  youtubeVideoUrl: string | null;
+  addedFiles: OrganizationContentFileAddition[];
+  removedFileIds: string[];
 };
 
 export type OrganizationPlan = {
@@ -28,6 +91,15 @@ export type OrganizationRole = {
   archivedAt: string | null;
   createdAt: string;
   updatedAt: string;
+};
+
+export type AssignedRole = {
+  roleId: string;
+  organizationId: string;
+  organizationName: string;
+  title: string;
+  description: string;
+  servicePeriod: string;
 };
 
 export type HandoffStage = 'capture' | 'review' | 'preflight' | 'preview' | 'published';

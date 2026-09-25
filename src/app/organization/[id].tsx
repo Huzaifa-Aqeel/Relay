@@ -1,29 +1,28 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import type { Href } from 'expo-router';
 import { router, useLocalSearchParams } from 'expo-router';
-import { Pressable, RefreshControl, StyleSheet, View } from 'react-native';
+import { useState } from 'react';
+import { Linking, Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/ui/app-text';
 import { LoadingState, MessageState } from '@/components/ui/async-state';
 import { Button } from '@/components/ui/button';
-import { InfoCard, InfoRow } from '@/components/ui/info-card';
 import { Screen } from '@/components/ui/screen';
-import { useAuth } from '@/features/auth/auth-provider';
 import { OrganizationMark } from '@/features/relay/organization-mark';
+import { YouTubeEmbed } from '@/features/relay/youtube-embed';
 import { useContinuity } from '@/features/relay/continuity';
-import { useOrganization, useOrganizationHandoffs, useRoles } from '@/features/relay/queries';
-import type { Handoff } from '@/features/relay/types';
+import { useOrganization } from '@/features/relay/queries';
 import { colors, radii, shadow, spacing } from '@/theme/tokens';
 
 export default function OrganizationScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const auth = useAuth();
   const organizationQuery = useOrganization(id);
   const continuity = useContinuity(id);
-  const rolesQuery = useRoles(id);
-  const handoffsQuery = useOrganizationHandoffs(id);
-  const pending = organizationQuery.isPending || rolesQuery.isPending || handoffsQuery.isPending || continuity.isPending;
-  const error = organizationQuery.error ?? rolesQuery.error ?? handoffsQuery.error ?? continuity.error;
+  const [aboutOpen, setAboutOpen] = useState(false);
+  const [filesOpen, setFilesOpen] = useState(false);
+  const [committeeOpen, setCommitteeOpen] = useState(false);
+  const pending = organizationQuery.isPending || continuity.isPending;
+  const error = organizationQuery.error ?? continuity.error;
 
   if (pending) return <Screen><LoadingState label="Opening organization…" /></Screen>;
   if (error || !organizationQuery.data || !continuity.data) {
@@ -41,18 +40,8 @@ export default function OrganizationScreen() {
   }
 
   const organization = organizationQuery.data;
-  const roles = rolesQuery.data ?? [];
-  const handoffs = handoffsQuery.data ?? [];
-  const latestByRole = new Map<string, Handoff>();
-  for (const handoff of handoffs) if (!latestByRole.has(handoff.roleId)) latestByRole.set(handoff.roleId, handoff);
-  const drafts = handoffs.filter((handoff) => handoff.status === 'draft').length;
-  const published = handoffs.filter((handoff) => handoff.status === 'published').length;
-  const hasLockedRoles = continuity.data.roles.some((role) => !role.planAvailable);
-  const refreshing = organizationQuery.isRefetching || rolesQuery.isRefetching
-    || handoffsQuery.isRefetching || continuity.isRefetching;
-  const refresh = () => void Promise.all([
-    organizationQuery.refetch(), rolesQuery.refetch(), handoffsQuery.refetch(), continuity.refetch(),
-  ]);
+  const refreshing = organizationQuery.isRefetching || continuity.isRefetching;
+  const refresh = () => void Promise.all([organizationQuery.refetch(), continuity.refetch()]);
 
   return (
     <Screen scrollProps={{ refreshControl: <RefreshControl refreshing={refreshing} tintColor={colors.moss} onRefresh={refresh} /> }}>
@@ -63,120 +52,151 @@ export default function OrganizationScreen() {
           <AppText color={colors.inkMuted}>{organization.institution || 'Independent organization'}</AppText>
         </View>
       </View>
-      {organization.description ? <AppText color={colors.inkMuted} style={styles.description}>{organization.description}</AppText> : null}
 
-      <InfoCard eyebrow="At a glance" title="Leadership continuity">
-        <InfoRow label="Roles" value={String(roles.length)} />
-        <InfoRow label="Current drafts" value={String(drafts)} />
-        <InfoRow label="Published" value={String(published)} />
-      </InfoCard>
+      {continuity.data.isOwner ? (
+        <Button
+          icon="pencil-outline"
+          label="Manage organization page"
+          tone="secondary"
+          onPress={() => router.push(`/organization-manage?organizationId=${organization.id}` as Href)}
+        />
+      ) : null}
 
-      <View style={styles.sectionHeadingRow}>
-        <View style={styles.sectionHeadingCopy}>
-          <AppText variant="heading">Roles</AppText>
-          <AppText color={colors.inkMuted}>Each role keeps its handoff history across service periods.</AppText>
-        </View>
-        {roles.length && continuity.data?.isOwner ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Add role"
-            onPress={() => router.push((`/role-new?organizationId=${organization.id}`) as Href)}
-            style={({ pressed }) => [styles.addButton, pressed && styles.pressed]}>
-            <MaterialCommunityIcons color={colors.moss} name="plus" size={23} />
-          </Pressable>
+      <View style={styles.sectionBlock}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ expanded: aboutOpen }}
+          onPress={() => setAboutOpen((current) => !current)}
+          style={({ pressed }) => [styles.collapseHeader, pressed && styles.pressed]}>
+          <View style={styles.sectionHeadingInline}>
+            <MaterialCommunityIcons color={colors.moss} name="information-outline" size={24} />
+            <View style={styles.flex}>
+              <AppText variant="heading">About {organization.name}</AppText>
+              <AppText variant="caption" color={colors.inkMuted}>About and video</AppText>
+            </View>
+            <MaterialCommunityIcons color={colors.inkMuted} name={aboutOpen ? 'chevron-up' : 'chevron-down'} size={24} />
+          </View>
+        </Pressable>
+        {aboutOpen ? (
+          <View style={styles.expandedContent}>
+            <AppText color={organization.description ? colors.ink : colors.inkMuted}>
+              {organization.description || 'No organization description has been added yet.'}
+            </AppText>
+            {organization.youtubeVideoUrl ? (
+              <YouTubeEmbed title={`${organization.name} video`} url={organization.youtubeVideoUrl} />
+            ) : null}
+          </View>
         ) : null}
       </View>
 
-      {roles.length ? (
-        <View style={styles.roleList}>
-          {roles.map((role) => {
-            const latest = latestByRole.get(role.id);
-            const overview = continuity.data?.roles.find(r => r.roleId === role.id);
-            const holder = overview?.assignments[0];
-            const roleAvailableOnPlan = overview?.planAvailable === true;
-            const roleAuthorized = Boolean(
-              continuity.data?.isOwner
-              || overview?.assignments.some(assignment => assignment.userId === auth.session?.user.id),
-            );
-            const canOpenRole = roleAvailableOnPlan && roleAuthorized;
-            return (
-              <Pressable
-                accessibilityRole={canOpenRole ? 'button' : undefined}
-                disabled={!canOpenRole}
-                key={role.id}
-                onPress={canOpenRole ? () => router.push((`/role/${role.id}`) as Href) : undefined}
-                style={({ pressed }) => [
-                  styles.roleCard,
-                  !roleAvailableOnPlan && styles.roleCardLocked,
-                  canOpenRole && pressed && styles.pressed,
-                ]}>
-                <View style={[styles.roleIcon, !roleAvailableOnPlan && styles.roleIconLocked]}>
-                  <MaterialCommunityIcons
-                    color={roleAvailableOnPlan ? colors.moss : colors.inkMuted}
-                    name={roleAvailableOnPlan ? 'account-tie-outline' : 'lock-outline'}
-                    size={25}
-                  />
+      <View style={styles.sectionBlock}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ expanded: filesOpen }}
+          onPress={() => setFilesOpen((current) => !current)}
+          style={({ pressed }) => [styles.collapseHeader, pressed && styles.pressed]}>
+          <View style={styles.sectionHeadingInline}>
+            <MaterialCommunityIcons color={colors.moss} name="file-document-outline" size={24} />
+            <View style={styles.flex}>
+              <AppText variant="heading">Organization files</AppText>
+              <AppText variant="caption" color={colors.inkMuted}>
+                {organization.files.length} {organization.files.length === 1 ? 'file' : 'files'}
+              </AppText>
+            </View>
+            <MaterialCommunityIcons color={colors.inkMuted} name={filesOpen ? 'chevron-up' : 'chevron-down'} size={24} />
+          </View>
+        </Pressable>
+        {filesOpen ? (
+          organization.files.length ? (
+            <View style={styles.fileList}>
+              {organization.files.map((file) => (
+                <View key={file.id} style={styles.fileRow}>
+                  <MaterialCommunityIcons color={colors.emergency} name="file-pdf-box" size={25} />
+                  <View style={styles.fileTextRow}>
+                    <AppText variant="label">{file.title}</AppText>
+                    <AppText variant="caption" color={colors.inkMuted}>—</AppText>
+                    <Pressable disabled={!file.url} onPress={file.url ? () => void Linking.openURL(file.url!) : undefined}>
+                      <AppText variant="caption" color={colors.moss} style={styles.fileLink}>{file.fileName}</AppText>
+                    </Pressable>
+                  </View>
                 </View>
-                <View style={styles.roleCopy}>
-                  <AppText variant="heading">{role.title}</AppText>
-                  <AppText variant="caption" color={colors.inkMuted}>{latest?.servicePeriod ?? 'No handoff yet'}</AppText>
-                  <AppText variant="caption">{holder?.name || 'No assigned holder'}</AppText>
-                  {!roleAvailableOnPlan ? (
-                    <AppText variant="caption" color={colors.inkMuted}>
-                      {continuity.data?.isOwner ? 'Relay Pro required to unlock this Role.' : 'Relay Pro required · Ask the Owner to upgrade.'}
-                    </AppText>
-                  ) : null}
-                </View>
-              </Pressable>
-            );
-          })}
-          {hasLockedRoles && continuity.data?.isOwner ? (
-            <Button
-              label="Upgrade to unlock all Roles"
-              tone="secondary"
-              onPress={() => router.push(`/paywall?reason=role&organizationId=${organization.id}` as Href)}
-            />
-          ) : null}
-        </View>
-      ) : (
-        <View style={styles.emptyCard}>
-          <View style={styles.emptyIcon}><MaterialCommunityIcons color={colors.moss} name="account-tie-outline" size={34} /></View>
-          <AppText variant="heading">Add the first role</AppText>
-          <AppText color={colors.inkMuted} style={styles.center}>Start with a position whose knowledge should survive its current leader.</AppText>
-          {continuity.data?.isOwner ? <Button icon="plus" label="Add role" onPress={() => router.push((`/role-new?organizationId=${organization.id}`) as Href)} /> : null}
-        </View>
-      )}
-      {continuity.data?.isOwner || continuity.data?.pendingTransfer ? <Button tone="secondary" label="Organization ownership" onPress={() => router.push(`/ownership-transfer?organizationId=${id}` as Href)} /> : null}
-      {continuity.error ? <AppText>{continuity.error.message}</AppText> : null}
+              ))}
+            </View>
+          ) : <AppText color={colors.inkMuted}>No organization files have been added yet.</AppText>
+        ) : null}
+      </View>
+
+      <View style={styles.sectionBlock}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ expanded: committeeOpen }}
+          onPress={() => setCommitteeOpen((current) => !current)}
+          style={({ pressed }) => [styles.collapseHeader, pressed && styles.pressed]}>
+          <View style={styles.sectionHeadingInline}>
+            <MaterialCommunityIcons color={colors.moss} name="account-group-outline" size={24} />
+            <View style={styles.flex}>
+              <AppText variant="heading">Current committee</AppText>
+              <AppText variant="caption" color={colors.inkMuted}>
+                {continuity.data.roles.length} {continuity.data.roles.length === 1 ? 'role' : 'roles'}
+              </AppText>
+            </View>
+            <MaterialCommunityIcons color={colors.inkMuted} name={committeeOpen ? 'chevron-up' : 'chevron-down'} size={24} />
+          </View>
+        </Pressable>
+        {committeeOpen ? (
+          continuity.data.roles.length ? (
+            <View style={styles.committeeList}>
+              {continuity.data.roles.map((role) => {
+                const holder = role.assignments[0];
+                return (
+                  <View key={role.roleId} style={styles.committeeRow}>
+                    <View style={styles.committeeIcon}>
+                      <MaterialCommunityIcons color={colors.moss} name="account-tie-outline" size={21} />
+                    </View>
+                    <View style={styles.flex}>
+                      <AppText variant="label">{role.title}</AppText>
+                      <AppText variant="caption" color={colors.inkMuted}>
+                        {holder ? `${holder.name || 'Assigned member'} · ${holder.servicePeriod}` : 'No current holder'}
+                      </AppText>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          ) : <AppText color={colors.inkMuted}>No committee roles have been added yet.</AppText>
+        ) : null}
+      </View>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  headingRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  headingRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.sm },
   headingCopy: { flex: 1, gap: spacing.xxs },
-  description: { marginTop: spacing.sm, marginBottom: spacing.lg },
-  sectionHeadingRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.xl, marginBottom: spacing.sm },
-  sectionHeadingCopy: { flex: 1, gap: spacing.xxs },
-  addButton: {
-    width: 46, height: 46, alignItems: 'center', justifyContent: 'center',
-    borderRadius: radii.md, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface,
+  sectionBlock: {
+    gap: spacing.md, marginTop: spacing.lg, padding: spacing.lg,
+    borderRadius: radii.lg, borderWidth: 1, borderColor: colors.line,
+    backgroundColor: colors.surface, ...shadow,
   },
-  roleList: { gap: spacing.sm },
-  roleCard: {
-    flexDirection: 'row', alignItems: 'center', gap: spacing.md,
-    padding: spacing.md, borderRadius: radii.lg, borderWidth: 1,
-    borderColor: colors.line, backgroundColor: colors.surface, ...shadow,
+  sectionHeadingInline: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  collapseHeader: { margin: -spacing.xs, padding: spacing.xs },
+  expandedContent: { gap: spacing.md },
+  fileList: { gap: spacing.xs },
+  fileRow: {
+    minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    paddingVertical: spacing.xs, borderBottomWidth: 1, borderBottomColor: colors.line,
   },
-  roleCardLocked: { backgroundColor: colors.surfaceMuted, shadowOpacity: 0 },
-  roleIcon: { width: 48, height: 48, borderRadius: radii.md, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.mossSoft },
-  roleIconLocked: { backgroundColor: colors.canvas },
-  roleCopy: { flex: 1, gap: spacing.xxs },
-  emptyCard: {
-    alignItems: 'center', gap: spacing.sm, padding: spacing.xl,
-    borderRadius: radii.lg, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface,
+  fileTextRow: { flex: 1, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: spacing.xs },
+  fileLink: { textDecorationLine: 'underline' },
+  committeeList: { gap: spacing.xs },
+  committeeRow: {
+    minHeight: 60, flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    padding: spacing.sm, borderRadius: radii.md, backgroundColor: colors.canvas,
   },
-  emptyIcon: { width: 64, height: 64, borderRadius: radii.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.mossSoft },
-  center: { textAlign: 'center' },
-  pressed: { opacity: 0.78, transform: [{ scale: 0.99 }] },
+  committeeIcon: {
+    width: 40, height: 40, alignItems: 'center', justifyContent: 'center',
+    borderRadius: radii.pill, backgroundColor: colors.mossSoft,
+  },
+  flex: { flex: 1, gap: spacing.xxs },
+  pressed: { opacity: 0.76 },
 });

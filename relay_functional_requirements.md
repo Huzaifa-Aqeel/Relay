@@ -4,7 +4,7 @@
 **Product:** Relay  
 **Category:** Student leadership handoff / institutional memory  
 **Target:** RevenueCat Shipaton 2026 — Next Gen Award  
-**Platforms:** Expo / React Native Owner and Role Holder app + mobile-web no-login recipient experience
+**Platforms:** Expo / React Native Member, Owner, and Role Holder app + mobile-web no-login recipient experience
 
 **Priority:** P0 = must ship · P1 = valuable next · P2 = post-launch
 
@@ -62,6 +62,7 @@ A feature belongs in Relay only if it helps **capture, structure, verify, transf
 |---|---|
 | **Organization Owner** | One authenticated member who oversees continuity, creates Roles, manages Role assignments and subscription association, and may offer ownership to an active member. Ownership alone grants no Role editing or raw-source access. |
 | **Role Holder / Current or Outgoing Leader** | Authenticated active member with an active server-side assignment for a specific Organization, Role, and service period. Maintains that living Handoff, reviews knowledge, resolves its Handoff check, deliberately publishes or revokes its recipient snapshot, and can invite the next holder or their own mid-year replacement for that Role only. The Owner may separately hold a Role assignment. |
+| **Member** | Authenticated person whose membership request has been accepted. A Member can view the shared Organization home, its member documents, promotional video, and current committee, but has no Handoff, Capture, Review, Publish, Memory, Role-management, or organization-edit authority without a separate designated Role Assignment or ownership. |
 | **Incoming Recipient** | Reads a published Handoff and asks questions without an account or paid plan. Recipient access never grants membership or Role authority; becoming a successor Role Holder requires a separate authenticated assignment acceptance. |
 | **Purchaser** | Human whose RevenueCat/store account purchased the annual entitlement attached to one Organization. Only the current Owner may initiate/attach a purchase. Ownership transfer leaves the original purchaser and store billing account unchanged. |
 | **System** | Processes sources, runs AI, retrieval, and entitlement checks. |
@@ -70,7 +71,7 @@ A feature belongs in Relay only if it helps **capture, structure, verify, transf
 
 | ID | Requirement | Priority |
 |---|---|---|
-| ACT-01 | Owners and Role Holders authenticate. Server-side active Role Assignment, rather than ownership, job title, recipient link, purchase, client state, or AI inference, authorizes Role maintenance. | P0 |
+| ACT-01 | Members, Owners, and Role Holders authenticate. Server-side active Role Assignment, rather than membership, ownership, job title, recipient link, purchase, client state, or AI inference, authorizes Role maintenance. | P0 |
 | ACT-02 | Incoming leaders can open and read a valid published handoff without installing Relay or creating an account. | P0 |
 | ACT-03 | A recipient can access only the handoff and knowledge explicitly published to that recipient link. | P0 |
 | ACT-04 | Purchaser identity, organization ownership, outgoing leadership, and incoming leadership remain separate concepts even when one person fills multiple roles in v1.3. | P0 |
@@ -79,7 +80,9 @@ A feature belongs in Relay only if it helps **capture, structure, verify, transf
 | ACT-07 | The Owner may create a time-limited, single-use assignment invite for any Role. The latest active Role Holder may create one only for a future service period of their own Role or to replace themselves in their current service period. Possession of a valid link may reveal only the Organization name, Role, service period, replacement status, and expiry needed to understand the invitation before authentication; it grants no membership, private access, or edit authority. The app-opening invite preserves that context while the invitee authenticates and explicitly accepts; ending the outgoing assignment, activating membership/the successor assignment, and opening the correct workspace are atomic. The outgoing account and attribution remain, but its prior Role assignment no longer grants private/edit access. | P0 |
 | ACT-08 | A mid-year replacement requires deliberate confirmation and an existing holder for that Role/service period. The Owner may replace any current Role Holder; a Role Holder may replace only themselves. Acceptance ends the former assignment, removes its private working/edit access, and preserves the same workspace, contributor attribution, and published recipient access. | P0 |
 | ACT-08A | Relay has no standalone manual End assignment action. An outgoing active assignment ends only when the invited replacement or successor explicitly accepts and the atomic assignment/workspace transfer succeeds. | P0 |
-| ACT-09 | The Organization overview keeps Role cards intentionally compact, showing the Role, current service period, and assigned holder without approved/unresolved counters, Handoff-check or publication labels, or draft-stage pills. Detailed continuity and published history remain available through the Role view. Owners may inspect approved knowledge and published Organization Memory, but raw Captures/Sources, transcripts, draft files, and unresolved suggestions require the exact active Role Assignment. | P0 |
+| ACT-09 | The shared Organization home shows the current committee as a compact collapsible list of existing Roles, current holders, and service periods without exposing Handoff status, approved/unresolved counters, private work, or publication state. Owners may inspect approved knowledge and published Organization Memory, but raw Captures/Sources, transcripts, draft files, and unresolved suggestions require the exact active Role Assignment. | P0 |
+| ACT-10 | A signed-in non-member can search for an Organization and submit a membership request. Only the current Organization Owner can accept or reject it. Acceptance creates an active ordinary Member and no Role Assignment. | P0 |
+| ACT-11 | An ordinary Member sees only Organization navigation and shared Organization information. Accepting a designated Role invitation activates the existing Role Assignment and unlocks the existing authorized Role Holder navigation; it does not create a second permission model. | P0 |
 
 ---
 
@@ -127,6 +130,11 @@ The category is assigned only after related facts have been consolidated into on
 | DOM-03 | An active Role Assignment authorizes its holder to create/open the corresponding Organization + Role + service-period workspace; changing the human holder does not change workspace identity. | P0 |
 | DOM-04 | A role can retain and open multiple immutable published handoffs across service periods. | P0 |
 | DOM-05 | Historical comparison and knowledge lineage are always scoped to the same Organization and same Role. | P0 |
+| DOM-06 | Every accepted Member can view the Organization's owner-maintained name, institution, collapsible about/video section, titled Organization PDF files, and current committee. No society-specific content or document template is hardcoded by Relay. | P0 |
+| DOM-07 | Only the Organization Owner can edit the shared about text or video, add/remove titled Organization PDFs, and add committee Roles through the existing Role model. The management-page committee list is informational rather than a Role-workspace entry point. | P0 |
+| DOM-08 | Organization membership and designated Role Assignment remain separate server-side records. Membership alone never permits Handoff metadata, private workspaces, Sources, Institutional Memory, Capture, Organize, Review, or Publish access. | P0 |
+| DOM-09 | Membership-request search reveals only the limited Organization identity needed to choose a society. Requesters can see their own request state; the Owner can see and decide pending requests. | P0 |
+| DOM-10 | Titled Organization PDFs are stored privately and displayed in one compact collapsible file list. They are readable only by active Organization members; only the current Owner may upload or remove them. | P0 |
 
 v1.3 has exactly one Organization Owner and one active maintainer per Role/service period. For example, Alex may be Owner + President Role Holder while Jordan maintains Treasurer and Priya maintains Events Lead. All authorized holders benefit from their Organization's plan. Assignment acceptance supports academic-year periods such as `2026–2027`, with short forms normalized to prevent duplicate period identities. Co-maintainers, multiple admins, custom permissions, and Billing Manager are out of scope.
 
@@ -617,6 +625,9 @@ Relay should feel like a calm transition tool, not an AI dashboard.
 | UI-06 | Organization Memory emphasizes material changes, human decisions, and inspectable published provenance rather than scores, activity noise, or AI confidence theater. | P0 |
 | UI-07 | Publish is framed as a leadership-transition action. Routine year-round edits save to the working Handoff without publication pressure; reopening a published workspace retains the existing snapshot until deliberate Review/Handoff check and republication. | P0 |
 | UI-08 | The Handoff page uses a compact Capture launcher and a focused unified composer. It presents Captures rather than internal Sources as the primary history and shows approved Knowledge Items under **What the next leader should know**. | P0 |
+| UI-09 | Ordinary Members see only the Organization tab. Owners and active designated Role Holders retain Organizations, Handoff, Institutional Memory, Settings, and the rest of their existing authorized experience. Hidden tabs do not grant route or data access. | P0 |
+| UI-10 | The Handoff tab lists only Roles with an active Role Assignment for the signed-in user. Selecting an assigned Role opens the existing Role page and its Start/Continue Handoff flow; unrelated Organization Roles are not shown there. | P0 |
+| UI-11 | Manage Plan presents a compact Free/Plus selector and one focused plan card using Relay's existing visual system. It shows the real current Organization plan, truthful plan capabilities, and the live price/currency returned by the native RevenueCat annual offering without duplicating price configuration in Relay or introducing a monthly plan or second entitlement. | P0 |
 
 No special “AI aesthetic” is required.
 
