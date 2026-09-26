@@ -302,18 +302,20 @@ Deno.serve(async (request) => {
 
   const { data: handoffs, error: handoffError } = await client
     .from('handoffs')
-    .select('id, service_period, published_at')
-    .eq('role_id', role.id)
-    .order('service_period', { ascending: true });
+    .select('id')
+    .eq('role_id', role.id);
   if (handoffError) return json({ error: 'Relay could not load handoff history.' }, 500);
   if (!handoffs || handoffs.length < 2) {
     return json({ error: 'Publish at least two service periods for this role before comparing them.' }, 409);
   }
   const { data: publications, error: publicationError } = await client
     .from('handoff_publications')
-    .select('id, handoff_id, service_period')
+    .select('id, handoff_id, service_period, period_start_year, period_end_year, published_at')
     .in('handoff_id', handoffs.map((handoff) => handoff.id))
-    .order('service_period', { ascending: false }).limit(2);
+    .order('period_start_year', { ascending: false, nullsFirst: false })
+    .order('period_end_year', { ascending: false, nullsFirst: false })
+    .order('published_at', { ascending: false })
+    .limit(2);
   if (publicationError || !publications || publications.length !== 2) {
     return json({ error: 'Relay could not resolve both immutable publications.' }, 409);
   }
@@ -418,14 +420,6 @@ Deno.serve(async (request) => {
     const changes = validateChanges(decoded, evidenceByRef);
 
     for (const change of changes) {
-      if (change.matchBasis === 'strong_semantic' && change.before && change.after) {
-        await admin.from('knowledge_items')
-          .update({ lineage_id: change.before.knowledge_lineage_id })
-          .eq('id', change.after.source_knowledge_item_id);
-        await admin.from('handoff_publication_items')
-          .update({ knowledge_lineage_id: change.before.knowledge_lineage_id })
-          .eq('id', change.after.id);
-      }
       const provenance = [
         ...citations(change.before?.citation_sources),
         ...citations(change.after?.citation_sources),

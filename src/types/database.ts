@@ -68,6 +68,18 @@ export type Database = {
           created_at?: string; joined_at?: string; ended_at?: string | null;
         }
       >;
+      role_assignments: Table<
+        {
+          id: string; organization_id: string; role_id: string; user_id: string;
+          service_period: string; status: string; assigned_by: string;
+          accepted_at: string; ended_at: string | null;
+        },
+        {
+          id?: string; organization_id: string; role_id: string; user_id: string;
+          service_period: string; status?: string; assigned_by: string;
+          accepted_at?: string; ended_at?: string | null;
+        }
+      >;
       organization_membership_requests: Table<
         {
           id: string; organization_id: string; user_id: string; status: string;
@@ -91,11 +103,13 @@ export type Database = {
       handoffs: Table<
         Timestamped & {
           id: string; organization_id: string; role_id: string; created_by: string;
-          service_period: string; status: string; stage: string; published_at: string | null;
+          service_period: string; period_start_year: number | null; period_end_year: number | null;
+          status: string; stage: string; published_at: string | null;
         },
         {
           id?: string; organization_id: string; role_id: string; created_by: string;
-          service_period: string; status?: string; stage?: string; published_at?: string | null;
+          service_period: string; period_start_year?: number | null; period_end_year?: number | null;
+          status?: string; stage?: string; published_at?: string | null;
           created_at?: string; updated_at?: string;
         }
       >;
@@ -249,6 +263,7 @@ export type Database = {
           id: string; organization_id: string; handoff_id: string; access_token: string;
           status: string; organization_name: string; organization_institution: string;
           role_title: string; role_description: string; service_period: string;
+          period_start_year: number | null; period_end_year: number | null;
           published_by: string; published_at: string; revoked_by: string | null;
           revoked_at: string | null;
         },
@@ -256,6 +271,7 @@ export type Database = {
           id?: string; organization_id: string; handoff_id: string; access_token: string;
           status?: string; organization_name: string; organization_institution?: string;
           role_title: string; role_description?: string; service_period: string;
+          period_start_year?: number | null; period_end_year?: number | null;
           published_by: string; published_at?: string; revoked_by?: string | null;
           revoked_at?: string | null; created_at?: string; updated_at?: string;
         }

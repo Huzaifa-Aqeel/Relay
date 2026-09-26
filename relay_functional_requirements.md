@@ -515,7 +515,7 @@ Chronology is not causality. A 2026 projector failure followed by a 2027 equipme
 | ID | Requirement | Priority |
 |---|---|---|
 | MEM-01 | Organization Memory compares only published Handoffs for the same Organization and same Role. | P0 |
-| MEM-02 | The default comparison uses the latest adjacent published service periods and allows the owner to open preserved historical Handoffs. | P0 |
+| MEM-02 | The default comparison uses the latest adjacent published service periods, ordered by structural academic-period start/end years rather than display-label text, and allows the owner to open preserved historical Handoffs. | P0 |
 | MEM-03 | Relay matches equivalent knowledge across years using existing lineage or conservative same-type/topic/entity evidence. It never forces an uncertain match. | P0 |
 | MEM-04 | Low-confidence matches are omitted or require human confirmation rather than being presented as facts. | P0 |
 | MEM-05 | The What Changed view normally shows only material Added, Changed, and Retired items and suppresses unchanged/noisy differences. | P0 |
@@ -527,6 +527,7 @@ Chronology is not causality. A 2026 projector failure followed by a 2027 equipme
 | MEM-11 | Contact/resource change requires directly changed Contact or Access / Resource knowledge. Legacy Resource rows remain compatible. | P0 |
 | MEM-12 | An evidence-backed or human-confirmed `Warning / Lesson → Process` relationship is stored explicitly as lineage metadata; AI speculation never creates the link, and legacy relationship values remain readable. | P0 |
 | MEM-13 | Organization Memory does not rank leaders/years, claim improvement without supplied factual metrics, or expose health, quality, completeness, or performance scores. | P0 |
+| MEM-14 | Semantic cross-period matches remain comparison metadata only. They never rewrite canonical Knowledge Item lineage or immutable publication snapshots; inherited lineage remains the source of genuine `same_lineage` matches. | P0 |
 
 Organization Memory is a focused learning view, not a generic analytics dashboard.
 

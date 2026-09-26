@@ -479,10 +479,8 @@ export type RoleMemoryChange = {
   changeType: 'added' | 'changed' | 'retired';
   title: string;
   summary: string;
-  matchBasis: 'same_lineage' | 'strong_semantic' | 'not_applicable';
   reasonCategory: MemoryReasonCategory;
   reasonExplanation: string;
-  reasonEvidence: string[];
   beforeSnapshot: MemorySnapshot | null;
   afterSnapshot: MemorySnapshot | null;
   supportingProvenance: { label: string; locator: string | null }[];

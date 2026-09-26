@@ -756,7 +756,9 @@ export async function listRoleHandoffs(roleId: string) {
     .from('handoffs')
     .select('*')
     .eq('role_id', roleId)
-    .order('service_period', { ascending: false });
+    .order('period_start_year', { ascending: false, nullsFirst: false })
+    .order('period_end_year', { ascending: false, nullsFirst: false })
+    .order('created_at', { ascending: false });
   throwDataError(error);
   return data.map(mapHandoff);
 }
@@ -1313,7 +1315,10 @@ export async function listRolePublications(roleId: string) {
   const handoffs = await listRoleHandoffs(roleId);
   if (!handoffs.length) return [];
   const { data, error } = await requireSupabase().from('handoff_publications').select('*')
-    .in('handoff_id', handoffs.map(h => h.id)).order('service_period', { ascending: false });
+    .in('handoff_id', handoffs.map(h => h.id))
+    .order('period_start_year', { ascending: false, nullsFirst: false })
+    .order('period_end_year', { ascending: false, nullsFirst: false })
+    .order('published_at', { ascending: false });
   throwDataError(error); return data.map(mapHandoffPublication);
 }
 
@@ -1415,12 +1420,8 @@ function mapMemoryChange(row: RoleMemoryChangeRow): RoleMemoryChange {
     changeType: row.change_type as RoleMemoryChange['changeType'],
     title: row.title,
     summary: row.summary,
-    matchBasis: row.match_basis as RoleMemoryChange['matchBasis'],
     reasonCategory: row.reason_category as RoleMemoryChange['reasonCategory'],
     reasonExplanation: row.reason_explanation,
-    reasonEvidence: Array.isArray(row.reason_evidence)
-      ? row.reason_evidence.filter((item): item is string => typeof item === 'string')
-      : [],
     beforeSnapshot: parseMemorySnapshot(row.before_snapshot),
     afterSnapshot: parseMemorySnapshot(row.after_snapshot),
     supportingProvenance: parseCitationSources(row.supporting_provenance),
@@ -1435,9 +1436,11 @@ export async function listMemoryRoles(): Promise<MemoryRole[]> {
   if (!publications.length) return [];
   const { data: handoffs, error: handoffError } = await client
     .from('handoffs')
-    .select('id, organization_id, role_id, service_period, published_at')
+    .select('id, organization_id, role_id, service_period, period_start_year, period_end_year, published_at')
     .in('id', publications.map(p => p.handoff_id))
-    .order('service_period', { ascending: false });
+    .order('period_start_year', { ascending: false, nullsFirst: false })
+    .order('period_end_year', { ascending: false, nullsFirst: false })
+    .order('published_at', { ascending: false });
   throwDataError(handoffError);
   if (!handoffs.length) return [];
 
