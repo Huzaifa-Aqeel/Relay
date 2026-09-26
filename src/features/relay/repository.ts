@@ -86,6 +86,7 @@ export class RelayPlanLimitError extends Error {
 }
 
 function messageFor(error: { code?: string; message: string }) {
+  const normalizedMessage = error.message.toLowerCase();
   if (error.code === '23505' && error.message.includes('roles_active_title_idx')) {
     return 'That organization already has an active role with this title.';
   }
@@ -100,7 +101,10 @@ function messageFor(error: { code?: string; message: string }) {
   if (error.message.includes('Review every proposal')) return 'Review every proposed item before publishing.';
   if (error.message.includes('every capture to finish')) return 'Wait for every capture to finish, then open Review.';
   if (error.message.includes('Active published link unavailable')) return 'This published link is already inactive.';
-  if (error.message.toLowerCase().includes('network') || error.message.toLowerCase().includes('fetch')) {
+  if (normalizedMessage.includes('mime type') && normalizedMessage.includes('not supported')) {
+    return 'This file type is not available for Capture yet.';
+  }
+  if (normalizedMessage.includes('network') || normalizedMessage.includes('fetch')) {
     return 'Check your connection and try again.';
   }
   return 'Relay could not complete that request. Please try again.';

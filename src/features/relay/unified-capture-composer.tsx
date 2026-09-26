@@ -117,6 +117,7 @@ export function UnifiedCaptureComposer({
   const [selectedPrompt, setSelectedPrompt] = useState<CapturePrompt | undefined>(() => (
     editingCapture ? CAPTURE_PROMPTS.find((prompt) => prompt.id === editingCapture.promptId) : undefined
   ));
+  const [captureTitle, setCaptureTitle] = useState(editingCapture?.title ?? '');
   const [composerText, setComposerText] = useState(editingCapture?.textContent ?? '');
   const [voicePreview, setVoicePreview] = useState<VoiceTranscriptPreview | null>(null);
   const [recordingUri, setRecordingUri] = useState<string | null>(null);
@@ -292,6 +293,7 @@ export function UnifiedCaptureComposer({
   }
 
   function displayTitle() {
+    if (captureTitle.trim()) return captureTitle.trim();
     return deriveCaptureDisplayTitle({
       promptTitle: selectedPrompt?.title,
       textContent: composerText,
@@ -422,6 +424,7 @@ export function UnifiedCaptureComposer({
       setDraftCaptureId(null);
       setDriveImportedSourceIds([]);
       setSelectedPrompt(undefined);
+      setCaptureTitle('');
       duplicateMutation.reset();
       transcribeMutation.reset();
       setComposerOpen(false);
@@ -441,6 +444,7 @@ export function UnifiedCaptureComposer({
   function openComposer(prompt?: CapturePrompt) {
     onEditComplete?.();
     setSelectedPrompt(prompt);
+    setCaptureTitle(prompt?.title ?? '');
     setComposerText('');
     setAttachments([]);
     setDraftCaptureId(null);
@@ -542,6 +546,15 @@ export function UnifiedCaptureComposer({
               ) : null}
 
               <View style={styles.composer}>
+                <FormInput
+                  editable={!busy}
+                  label="Capture title"
+                  maxLength={160}
+                  placeholder="Give this capture a title"
+                  value={captureTitle}
+                  onChangeText={setCaptureTitle}
+                />
+
                 {recorderState.isRecording ? (
                   <View style={styles.recordingState}>
                     <VoiceWaveButton disabled={stopping.current} isRecording onPress={() => void stopRecording()} />

@@ -58,16 +58,7 @@ export default function OrganizationsScreen() {
       {organizations.length ? (
         <>
           <View style={styles.titleRow}>
-            <View style={styles.titleCopy}>
-              <AppText variant="display">Your organizations</AppText>
-            </View>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Create organization"
-              onPress={() => router.push('/organization-new' as Href)}
-              style={({ pressed }) => [styles.addButton, pressed && styles.pressed]}>
-              <MaterialCommunityIcons color={colors.white} name="plus" size={24} />
-            </Pressable>
+            <AppText variant="display">Your organizations</AppText>
           </View>
           <View style={styles.organizationList}>
             {organizations.map((organization) => (
@@ -210,10 +201,8 @@ function BrandHeading() {
 const styles = StyleSheet.create({
   brandRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   brandMark: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: radii.pill, backgroundColor: colors.mossSoft },
-  titleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.xl, marginBottom: spacing.xl },
-  titleCopy: { flex: 1, gap: spacing.xs },
+  titleRow: { marginTop: spacing.xl, marginBottom: spacing.xl },
   welcome: { gap: spacing.xs, marginTop: spacing.xl, marginBottom: spacing.lg },
-  addButton: { width: 52, height: 52, alignItems: 'center', justifyContent: 'center', borderRadius: radii.md, backgroundColor: colors.moss },
   organizationList: { gap: spacing.sm },
   organizationCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.lg, borderRadius: radii.lg, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface, ...shadow },
   organizationCopy: { flex: 1, gap: spacing.xxs },

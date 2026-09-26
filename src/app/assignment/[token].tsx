@@ -62,7 +62,7 @@ export default function AssignmentInviteScreen() {
   async function acceptInvite() {
     try {
       const handoffId = await action.mutateAsync('accept');
-      if (typeof handoffId === 'string') router.replace(`/handoff/${handoffId}` as Href);
+      if (typeof handoffId === 'string') router.replace('/(tabs)/action' as Href);
     } catch {
       // The mutation exposes its safe error in the invitation card.
     }
@@ -236,7 +236,7 @@ export default function AssignmentInviteScreen() {
               <Button
                 disabled={action.isPending}
                 icon="arrow-right"
-                label={action.isPending ? 'Opening handoff…' : 'Accept and open handoff'}
+                label={action.isPending ? 'Opening Relay…' : 'Accept and open workspace'}
                 onPress={() => void acceptInvite()}
               />
             </>
