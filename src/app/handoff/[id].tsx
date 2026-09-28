@@ -44,6 +44,8 @@ function CaptureCard({
   const [expanded, setExpanded] = useState(false);
   const processing = capture.attachments.some((source) => source.processingStatus === 'processing');
   const failed = capture.attachments.some((source) => source.processingStatus === 'failed');
+  const organizing = structuring || capture.structuringStatus === 'processing';
+  const busy = organizing || processing;
   const reviewSummary = captureReviewSummary({
     structuredProposalCount: capture.structuredProposalCount,
     pendingProposalCount,
@@ -79,11 +81,11 @@ function CaptureCard({
       </Pressable>
       {editable ? (
         <View style={styles.captureActions}>
-          <Button disabled={structuring || processing} icon="pencil-outline" label="Edit" tone="ghost" onPress={onEdit} />
+          <Button disabled={busy} icon="pencil-outline" label="Edit" tone="ghost" onPress={onEdit} />
           <Button
-            disabled={structuring}
+            disabled={busy}
             icon="creation-outline"
-            label={structuring ? 'Organizing…' : processing ? 'Check progress' : capture.structuringStatus === 'ready' ? 'Organize again' : 'Organize'}
+            label={organizing ? 'Organizing…' : processing ? 'Preparing…' : capture.structuringStatus === 'ready' ? 'Organize again' : 'Organize'}
             tone="secondary"
             onPress={onStructure}
           />
@@ -126,7 +128,7 @@ function CaptureCard({
             <AppText variant="caption" color={colors.emergency} style={styles.captureStatus}>
               A file could not be prepared. Choose Organize to try again, or edit this capture.
             </AppText>
-          ) : structuring || capture.structuringStatus === 'processing' ? (
+          ) : organizing ? (
             <View style={styles.structureResult}>
               <MaterialCommunityIcons color={colors.moss} name="creation-outline" size={19} />
               <AppText variant="caption" color={colors.inkMuted} style={styles.cardCopy}>Organizing this capture…</AppText>

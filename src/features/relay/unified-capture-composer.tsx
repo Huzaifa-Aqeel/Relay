@@ -41,10 +41,12 @@ const SUPPORTED_TYPES = [
   'text/plain',
   'text/markdown',
   'text/csv',
+  'text/calendar',
   'image/bmp',
   'image/heic',
   'image/jpeg',
   'image/png',
+  'image/tiff',
 ];
 
 const EXTENSION_MIME: Record<string, string> = {
@@ -55,11 +57,14 @@ const EXTENSION_MIME: Record<string, string> = {
   txt: 'text/plain',
   md: 'text/markdown',
   csv: 'text/csv',
+  ics: 'text/calendar',
   bmp: 'image/bmp',
   heic: 'image/heic',
   jpg: 'image/jpeg',
   jpeg: 'image/jpeg',
   png: 'image/png',
+  tif: 'image/tiff',
+  tiff: 'image/tiff',
 };
 
 type Attachment = {

@@ -216,14 +216,23 @@ function ManageOrganizationForm({ organizationId }: { organizationId: string }) 
           {continuity.data.roles.map((role) => {
             const holder = role.assignments[0];
             return (
-              <View key={role.roleId} style={styles.row}>
+              <Pressable
+                accessibilityHint="Edits this Role and manages its holder assignment"
+                accessibilityRole="button"
+                key={role.roleId}
+                onPress={() => router.push(`/role-manage?roleId=${role.roleId}` as Href)}
+                style={({ pressed }) => [styles.row, pressed && styles.pressed]}>
                 <View style={styles.rowCopy}>
                   <AppText variant="label">{role.title}</AppText>
                   <AppText variant="caption" color={colors.inkMuted}>
                     {holder ? `${holder.name || 'Assigned member'} · ${holder.servicePeriod}` : 'No current holder'}
                   </AppText>
+                  {!role.planAvailable ? (
+                    <AppText variant="caption" color={colors.saffron}>Workspace locked · assignment manageable</AppText>
+                  ) : null}
                 </View>
-              </View>
+                <MaterialCommunityIcons color={colors.inkMuted} name="chevron-right" size={22} />
+              </Pressable>
             );
           })}
         </View>
@@ -328,6 +337,7 @@ const styles = StyleSheet.create({
     padding: spacing.md, borderRadius: radii.md, backgroundColor: colors.canvas,
   },
   rowCopy: { flex: 1, gap: spacing.xxs },
+  pressed: { opacity: 0.76 },
   fileRow: {
     minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
     paddingVertical: spacing.xs, borderBottomWidth: 1, borderBottomColor: colors.line,

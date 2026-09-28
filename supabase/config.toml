@@ -1,5 +1,10 @@
 project_id = "relay-leadership-handoff"
 
+[edge_runtime]
+# Background Organize jobs must remain attached to the worker that claimed the
+# Capture while developing locally, matching hosted Edge Runtime behavior.
+policy = "per_worker"
+
 [api]
 enabled = true
 port = 55321

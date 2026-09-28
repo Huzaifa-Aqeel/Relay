@@ -131,6 +131,10 @@ export type RoleInput = {
   description: string;
 };
 
+export type RoleUpdateInput = RoleInput & {
+  roleId: string;
+};
+
 export type HandoffInput = {
   organizationId: string;
   roleId: string;

@@ -177,12 +177,12 @@ The Handoff page shows one compact capture entry point. Opening it presents the 
 |---|---|---|
 | CAP-01 | Voice capture uses a round waveform control. On Stop, temporary device-local audio is transcribed through the authenticated function without being persisted. Relay shows Transcribing, then a full editable transcript. The confirmed transcript becomes Capture text exactly like typed text; Relay never stores the audio or creates a separate voice Capture/Source. | P0 |
 | CAP-02 | A custom or guided Capture may contain an editable title, optional free-form text, and zero or more document attachments. One composer submission creates exactly one Capture. A guided Capture pre-fills the title from its chip label and a custom Capture starts with a blank title; the user may edit either. If left blank, Relay derives a concise fallback title from the prompt, submitted text, or attachment names. | P0 |
-| CAP-03 | A Capture can attach multiple supported documents such as PDF, DOCX, PPTX, XLSX, text/Markdown/CSV, and common images from the device. Each current attachment remains an individually addressable internal Source for processing, indexing, and citations. | P0 |
+| CAP-03 | A Capture can attach multiple supported documents such as PDF, DOCX, PPTX, XLSX, text/Markdown/CSV, ICS calendar exports, and common images including TIFF. Each current attachment remains an individually addressable internal Source for processing, indexing, and citations. | P0 |
 | CAP-04 | Every suggestion and approved Knowledge Item retains exact provenance to either an excerpt from Capture text or a specific attachment plus its excerpt/locator. The prompt question is never evidence. | P0 |
 | CAP-05 | A failed voice transcription creates no Capture, Source, Storage object, failed-processing row, or retry queue. Relay shows only **Record again** and **Write instead**; both remain in the same composer. Temporary audio is never persisted. | P0 |
 | CAP-06 | Capture history shows Saved, Organizing, Ready, or Failed state. Attachment details expose whether each current file is pending, processing, ready, or failed. A failed attachment is retried by the next explicit Organize action. Processing abandoned for ten minutes becomes a visible retryable failure during normal Capture loading rather than remaining stuck indefinitely. | P0 |
 | CAP-07 | Guided prompt chips cover responsibilities, registration/training, finances, recurring events, advisor/vendor contacts, account/tool access, calendars/deadlines, policies, and lessons/common mistakes. Selecting one opens the same composer and keeps its fixed guiding question visible. `prompt_id` is lightweight context only: it is not evidence and cannot determine Source meaning, Knowledge Item type, or proposal classification. | P0 |
-| CAP-08 | A Capture is an editable working draft. **Save** persists only its latest text, prompt metadata, and current attachment set. Save never parses documents, calls Groq, indexes/reindexes Astra, or runs Organize. | P0 |
+| CAP-08 | A Capture is an editable working draft. **Save** persists only its latest text, prompt metadata, and current attachment set. Save never parses documents, calls the text model, indexes/reindexes Astra, or runs Organize. | P0 |
 | CAP-09 | **Organize** is the only user action that starts document preparation/indexing and AI structuring. It records explicit intent for that Capture, processes only current pending/failed attachments, reuses already-ready unchanged attachments, removes stale indexed material for removed attachments, then organizes the current Capture into reviewable suggestions. Completing a Source shared with another Capture never organizes that other Capture without its own explicit intent. Failure preserves the Capture and exposes Organize as the retry; atomic Source and Capture claims block duplicate processing, indexing, and AI runs. | P0 |
 | CAP-10 | Capture history presents one card per contribution, summarizes note/file count and the live Review state, and may expand to attachment detail. Pending counts decrease as suggestions are decided and disappear when none remain; the card does not keep presenting the historical Organize count as pending work. It does not present internal Capture-text evidence or every attachment as separate primary captures. | P0 |
 | CAP-11 | Attachment identity is byte-exact: Relay uses deterministic SHA-256 hashing, rejects identical bytes already present in the same Handoff or open composer before upload, and treats different bytes as a different current attachment. Relay does not infer file lineage, fuzzy versions, or deltas. | P0 |
@@ -226,7 +226,7 @@ Relay uses managed infrastructure rather than custom document/vector plumbing.
 
 | ID | Requirement | Priority |
 |---|---|---|
-| RAG-01 | Uploaded binary or visual documents are processed server-side through Unstructured and indexed in Astra DB. Plain-text, Markdown, and CSV uploads may be decoded directly before Astra indexing because they require no OCR or layout parsing. | P0 |
+| RAG-01 | Uploaded binary or visual documents are processed server-side through Unstructured and indexed in Astra DB. Plain-text, Markdown, CSV, and ICS uploads may be decoded directly before Astra indexing because they require no OCR or layout parsing. XLSX is decoded with SheetJS and retains worksheet names with the extracted table text. | P0 |
 | RAG-02 | Document-derived retrieval content retains source document and page/section metadata when available. | P0 |
 | RAG-03 | Retrieval records are scoped with enough metadata to enforce organization/handoff access before generation. | P0 |
 | RAG-04 | Relay does not build a custom parser, OCR stack, semantic chunker, embedding store, or vector index when the managed stack already satisfies the requirement. It may apply bounded text segmentation required by the selected embedding model. | P0 |
@@ -249,7 +249,7 @@ Working files intentionally use a simple current-state model. A leader edits the
 | SRC-05 | On Organize, current pending/failed files are processed and indexed; current ready files are reused without reprocessing or reindexing. | P0 |
 | SRC-06 | Removing/replacing an attachment marks it for cleanup. The next Organize removes its stale Astra chunks and private Storage/Source data when no active Capture still references it. | P0 |
 | SRC-07 | No Capture revision history, document-version history, supersedes relation, fuzzy version detection, version delta, or historical binary-retention subsystem is maintained. The Handoff may still list the current saved Captures. | P0 |
-| SRC-08 | Editing/removing working evidence never automatically mutates or retires approved Knowledge Items. Any canonical change still requires grounded Organize output and human Review. | P0 |
+| SRC-08 | Editing/removing working evidence never automatically mutates or retires approved Knowledge Items. Organize proposes new knowledge only; corrections to approved knowledge remain deliberate human edits. | P0 |
 | SRC-09 | Organization Memory never consumes working Captures, Source hashes, attachment changes, or Astra chunks. It compares only immutable published approved Knowledge Item snapshots for adjacent periods of the same Role. | P0 |
 
 Implementation details such as chunk size, Unstructured processing/pipeline configuration, embedding model, and Astra collection configuration belong in `technical_spec.md`, not this file.
@@ -297,18 +297,19 @@ Content: Sarah from Facilities handles Engineering Hall. Contact her early; the 
 
 | ID | Requirement | Priority |
 |---|---|---|
-| AI-01 | When the Role Holder explicitly chooses Organize, Relay organizes the complete current Capture into zero or more reviewable create, update, or retire suggestions using the five broad knowledge categories. | P0 |
-| AI-02 | Model output is validated against an allow-listed structured schema before it can become product data. | P0 |
+| AI-01 | When the Role Holder explicitly chooses Organize, Relay organizes the complete current Capture into zero or more reviewable new Knowledge Item suggestions using the five broad knowledge categories. | P0 |
+| AI-02 | Relay tolerantly decodes common model response shapes and field aliases into a bounded internal suggestion record. Missing optional metadata, harmless JSON formatting, or citation formatting must not discard an otherwise useful suggestion. | P0 |
 | AI-03 | Relay must not invent names, dates, contact details, policies, or procedures absent from evidence. | P0 |
 | AI-04 | Uncertain information is surfaced for human review instead of being silently guessed. | P0 |
 | AI-05 | User can correct approved knowledge manually. New approved items enter through reviewed evidence suggestions rather than a standalone AI-controlled approval path. | P0 |
-| AI-06 | Organize receives the Role, complete Capture text, extracted content from all current attachments in that Capture, and relevant approved Knowledge Items so it can distinguish new knowledge from a supported correction, replacement, or retirement. If approved knowledge exceeds the prompt ceiling, Relay selects evidence-overlapping items deterministically rather than taking an arbitrary first page. | P0 |
-| AI-07 | Model-selected update targets and Capture-text/attachment span citations are independently validated before suggestions are stored. Relay resolves cited spans to the exact Source substring server-side; unsupported targets, non-contiguous/unknown spans, cross-Source citations, and ungrounded material claims are rejected or omitted. | P0 |
+| AI-06 | Organize receives the actual Role title and description, service period, Capture title, complete Capture text, and extracted content and media type from every current attachment in one Capture-level model request. Role/Capture/file metadata focuses relevance but is not evidence. Approved Knowledge Items are not included, and Organize does not decide updates or retirements. | P0 |
+| AI-07 | Each suggestion may cite one or more current Capture Sources and internal span IDs. Relay resolves valid spans to literal private excerpts. Missing or malformed span hints never reject a suggestion: a valid Source reference remains as source-level provenance, while an unresolved citation simply leaves that suggestion without pinpointed provenance for human Review. | P0 |
 | AI-08 | Actual Capture text and attachment content determine classification. Capture display labels and optional prompt guidance are context only, are not evidence, and may not force the Knowledge Item type. | P0 |
-| AI-09 | Suggestions produced by one Organize run retain their Capture relationship for grouped Review while preserving exact individual Source provenance. | P0 |
-| AI-10 | A Knowledge Item is the smallest independently useful piece of operational knowledge, not the smallest extractable fact. Organize extracts grounded facts, groups them by operational unit, incorporates dependent steps, task-specific contacts, thresholds, warnings, reasons, examples, and historical context, and only then assigns one primary broad category. Separate items must remain useful if retrieved alone; the same fact is not duplicated across categories; unrelated workflows are not merged into broad summaries; and consolidation must not omit useful grounded guidance. Every included fact remains grounded by its selected exact Source excerpt, and causality is never inferred from chronology or proximity. | P0 |
-| AI-11 | Organize uses a provider completion budget compatible with the configured model tier, disables unnecessary hidden reasoning for extraction-capable models, retries only bounded transient provider/schema failures, and never automatically retries a provider rate limit. | P0 |
-| AI-12 | One invalid suggestion does not discard other grounded suggestions from the same response. Relay records how many suggestions were omitted; an all-invalid response fails closed, and an over-limit response is rejected explicitly rather than silently truncated. | P0 |
+| AI-09 | Suggestions produced by one Organize run retain their Capture relationship for grouped Review and may retain provenance from multiple supporting Sources. | P0 |
+| AI-10 | A Knowledge Item is one independently useful piece of operational knowledge. Coherent workflows keep their useful steps, requirements, contacts, warnings, and exceptions together; independently retrievable subjects remain separate; each item receives one primary broad category; and causality is never inferred from chronology or proximity. | P0 |
+| AI-11 | Organize uses the shared provider-neutral text-model client. The active Qwen configuration disables thinking and has no Relay output-token cap. One explicit Organize action makes one Capture-level model request, with no citation-repair request or automatic client retry. | P0 |
+| AI-12 | Model response formatting is normalized tolerantly. Citation precision may degrade to Source-level or unavailable provenance, but a citation or span formatting problem never rejects an otherwise useful suggestion. Every retained suggestion remains Proposed until human Review. | P0 |
+| AI-13 | Organize interprets source material by content rather than a rigid document-type taxonomy. It prioritizes durable or currently actionable successor knowledge and avoids incidental background, completed work, historical dates, or old results unless the evidence explicitly makes them applicable. | P0 |
 
 ---
 
@@ -416,7 +417,7 @@ Unsupported question:
 |---|---|---|
 | ASK-01 | Recipient can ask natural-language questions from the published handoff. | P0 |
 | ASK-02 | Retrieval is permission-filtered before evidence is provided to the LLM. | P0 |
-| ASK-03 | Ask Relay searches only the immutable published Knowledge Item snapshot. It combines field-aware BM25F title/content ranking with Astra semantic ranking of embeddings derived from each published entry's title plus content, using deterministic reciprocal-rank fusion. Category and Source type are metadata rather than ranking boosts. Corpus IDF, term-frequency saturation, and field-length normalization preserve exact-term quality, while semantic retrieval supports meaning-equivalent wording. Supabase publication rows remain the answer evidence sent to Groq; raw/private Capture or document chunks never enter the Ask prompt. | P0 |
+| ASK-03 | Ask Relay searches only the immutable published Knowledge Item snapshot. It combines field-aware BM25F title/content ranking with Astra semantic ranking of embeddings derived from each published entry's title plus content, using deterministic reciprocal-rank fusion. Category and Source type are metadata rather than ranking boosts. Corpus IDF, term-frequency saturation, and field-length normalization preserve exact-term quality, while semantic retrieval supports meaning-equivalent wording. Supabase publication rows remain the answer evidence sent to the configured text model; raw/private Capture or document chunks never enter the Ask prompt. | P0 |
 | ASK-04 | Every factual organization-specific answer includes source references. | P0 |
 | ASK-05 | If evidence is insufficient, Relay explicitly says the handoff does not contain a reliable answer. | P0 |
 | ASK-06 | Relay must not fabricate organization-specific answers from general model knowledge. | P0 |
@@ -536,7 +537,7 @@ Do not build a complex credit/currency system unless actual usage costs later ju
 | SEC-02 | Authorization is enforced server-side and retrieval is scoped before data reaches the LLM. | P0 |
 | SEC-03 | Unstructured, Astra, transcription, and LLM secrets remain server-side and are never exposed in the Expo client. | P0 |
 | SEC-04 | Raw source content and generated answers are not logged by default. | P0 |
-| SEC-05 | Relay warns users not to store passwords, recovery codes, or private keys as handoff knowledge. | P0 |
+| SEC-05 | Relay warns users not to store passwords, recovery codes, or private keys as handoff knowledge and rejects high-confidence credential values from generated suggestions. Safe account purpose, ownership, reset, and access-transfer procedures may remain. | P0 |
 | SEC-06 | AI-generated information remains proposed until accepted; AI never silently modifies/retires approved knowledge, resolves contradictions, links unrelated Sources, or changes a published snapshot. | P0 |
 | SEC-07 | Relay prefers “I don't know” over unsupported organization-specific answers. | P0 |
 | SEC-08 | Working Sources, canonical revision history, and internal Knowledge Item lineage remain private; recipient access exposes only the safe immutable publication payload. | P0 |
@@ -592,8 +593,8 @@ No special “AI aesthetic” is required.
 - Supabase Capture attachment state and SHA-256 hashes control which indexed evidence is active and whether processing is needed
 
 ## AI
-- Groq server-side reasoning with strict structured output
-- Groq server-side speech-to-text
+- provider-neutral OpenAI-compatible server-side text reasoning with prompted JSON contracts, tolerant decoding, and grounded local validation
+- Groq server-side speech-to-text only
 - independently validated proposal, Ask Relay, and Organization Memory outputs
 
 ## Monetization
@@ -657,7 +658,7 @@ The demo should tell one complete story.
 - Review and exact Preview keep human-approved truth in control without an AI readiness ceremony.
 - Human approval controls truth.
 - A Draft Handoff remains useful throughout the term.
-- Voice/text context can update existing approved knowledge without automatic mutation.
+- Voice and text can produce new review suggestions without automatically changing approved knowledge.
 - Ask Relay cites evidence.
 - Ask Relay refuses unsupported answers.
 - Document ingestion is real.
@@ -694,7 +695,7 @@ The Shipaton build is not complete unless these work:
 18. secure server-side provider credentials
 19. editable current Captures plus approved-knowledge correction
 20. living Draft Handoff that can be resumed throughout the term
-21. voice/text proposals that update or retire existing approved knowledge through review
+21. voice/text Capture evidence producing new suggestions through Review
 22. SHA-256 exact duplicate protection with no fuzzy document versioning/deltas
 23. Save-only Capture editing and changed-attachment processing only on Organize
 24. active-attachment working retrieval without removed-file evidence

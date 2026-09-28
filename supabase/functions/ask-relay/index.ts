@@ -12,6 +12,12 @@ import {
   searchPublicationKnowledge,
   type AstraPublicationConfig,
 } from '../_shared/publication-vectors.ts';
+import {
+  readTextLlmConfig,
+  requestTextLlmJson,
+  TextLlmError,
+  type TextLlmConfig,
+} from '../_shared/text-llm.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -24,9 +30,7 @@ const MAX_QUESTION_CHARS = 500;
 type ServerConfig = AstraPublicationConfig & {
   supabaseUrl: string;
   serviceRoleKey: string;
-  groqApiUrl: string;
-  groqApiKey: string;
-  reasoningModel: string;
+  textLlm: TextLlmConfig;
   freeDailyLimit: number;
   proDailyLimit: number;
 };
@@ -62,9 +66,7 @@ function readConfig(): ServerConfig {
   return {
     supabaseUrl: requiredEnv('SUPABASE_URL').replace(/\/$/, ''),
     serviceRoleKey: requiredEnv('SUPABASE_SERVICE_ROLE_KEY'),
-    groqApiUrl: requiredEnv('GROQ_API_URL').replace(/\/$/, ''),
-    groqApiKey: requiredEnv('GROQ_API_KEY'),
-    reasoningModel: requiredEnv('GROQ_REASONING_MODEL'),
+    textLlm: readTextLlmConfig((name) => Deno.env.get(name)),
     astraEndpoint: requiredEnv('ASTRA_DB_API_ENDPOINT').replace(/\/$/, ''),
     astraToken: requiredEnv('ASTRA_DB_APPLICATION_TOKEN'),
     astraKeyspace: requiredEnv('ASTRA_DB_KEYSPACE'),
@@ -94,21 +96,18 @@ function validateAnswer(value: unknown, validRefs: Set<string>) {
   }
 }
 
-async function answerWithGroq(config: ServerConfig, question: string, evidence: Evidence[]) {
+async function answerWithTextLlm(config: ServerConfig, question: string, evidence: Evidence[]) {
   const context = evidence.map((item) => [
     `[${item.ref}]`,
     `Type: ${item.knowledge_type}`,
     `Title: ${item.title}`,
     `Content: ${item.content}`,
   ].join('\n')).join('\n\n');
-  const response = await fetch(`${config.groqApiUrl}/chat/completions`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${config.groqApiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: config.reasoningModel,
-      reasoning_effort: 'low',
-      temperature: 0,
-      max_completion_tokens: 1_200,
+  let decoded: unknown;
+  try {
+    decoded = await requestTextLlmJson({
+      config: config.textLlm,
+      schema: answerSchema,
       messages: [
         {
           role: 'system',
@@ -131,22 +130,15 @@ async function answerWithGroq(config: ServerConfig, question: string, evidence: 
           content: `QUESTION\n${question}\n\nPUBLISHED HANDOFF EVIDENCE\n${context}`,
         },
       ],
-      response_format: {
-        type: 'json_schema',
-        json_schema: { name: 'relay_grounded_answer', strict: true, schema: answerSchema },
-      },
-    }),
-  });
-  const body = await response.json().catch(() => ({}));
-  if (response.status === 429) throw new AskError('Ask Relay is busy right now. Please wait a moment and try again.', 429);
-  if (!response.ok) throw new AskError('Ask Relay is temporarily unavailable. The published handoff is still available above.', 503);
-  const content = body?.choices?.[0]?.message?.content;
-  if (typeof content !== 'string') throw new AskError('Ask Relay could not verify its answer. Please try again.', 502);
-  let decoded: unknown;
-  try {
-    decoded = JSON.parse(content);
-  } catch {
-    throw new AskError('Ask Relay could not verify its answer. Please try again.', 502);
+    });
+  } catch (error) {
+    if (error instanceof TextLlmError && error.status === 429) {
+      throw new AskError('Ask Relay is busy right now. Please wait a moment and try again.', 429);
+    }
+    if (error instanceof TextLlmError && error.kind === 'output') {
+      throw new AskError('Ask Relay could not verify its answer. Please try again.', 502);
+    }
+    throw new AskError('Ask Relay is temporarily unavailable. The published handoff is still available above.', 503);
   }
   return validateAnswer(decoded, new Set(evidence.map((item) => item.ref)));
 }
@@ -232,7 +224,7 @@ Deno.serve(async (request) => {
     }
     const evidence = selectEvidence(question, items, vectorRankedItemIds);
     if (!evidence.length) return json({ status: 'unsupported', answer: UNSUPPORTED_ANSWER, citations: [], remaining: claim.remaining });
-    const result = await answerWithGroq(config, question, evidence);
+    const result = await answerWithTextLlm(config, question, evidence);
     const evidenceByRef = new Map(evidence.map((item) => [item.ref, item]));
     const citations = result.citationRefs.map((ref) => {
       const item = evidenceByRef.get(ref)!;

@@ -30,7 +30,7 @@ See [progress.md](./progress.md) for verified status and the remaining deploymen
 
 Copy `.env.example` to `.env.local` and provide only client-safe values: Supabase URL/publishable key, deployed Relay web origin, EAS project ID, and RevenueCat platform public SDK keys. Never place the service-role key or provider secrets in an Expo environment variable.
 
-Copy `supabase/.env.example` to the ignored `supabase/.env.local` for local Edge Functions. Ask Relay uses the existing Astra/Groq configuration. Purchase verification additionally requires the RevenueCat secret API key, entitlement identifier, and a private webhook authorization value.
+Copy `supabase/.env.example` to the ignored `supabase/.env.local` for local Edge Functions. Organize, Ask Relay, and Organization Memory use the provider-neutral OpenAI-compatible `LLM_*` configuration (the example targets DashScope/Qwen); Groq remains voice-transcription-only. Ask Relay additionally uses Astra. Purchase verification requires the RevenueCat secret API key, entitlement identifier, and a private webhook authorization value.
 
 Start the local Supabase stack, apply migrations, then run Expo:
 

@@ -92,19 +92,13 @@ export default function RoleAssignmentScreen() {
 
   const roleTitle = role.data.title;
   const roleAvailableOnPlan = roleOverview.planAvailable;
-  if (!roleAvailableOnPlan) {
+  if (!roleAvailableOnPlan && !overview.data.isOwner) {
     return (
       <Screen>
         <MessageState
           icon="lock-outline"
           title="Relay Pro required"
-          body={overview.data.isOwner
-            ? `Upgrade this Organization to manage succession for ${roleTitle}.`
-            : `Ask the Organization Owner to upgrade before changing the ${roleTitle} assignment.`}
-          actionLabel={overview.data.isOwner ? 'View Relay Pro' : undefined}
-          onAction={overview.data.isOwner
-            ? () => router.push(`/paywall?reason=role&organizationId=${role.data!.organizationId}` as Href)
-            : undefined}
+          body={`This Role's workspace is locked. The Organization Owner can still manage the ${roleTitle} assignment.`}
         />
       </Screen>
     );
@@ -118,6 +112,18 @@ export default function RoleAssignmentScreen() {
         <AppText variant="display">{roleTitle}</AppText>
         <AppText color={colors.inkMuted}>Invite the next person when this Role is ready to change hands.</AppText>
       </View>
+
+      {!roleAvailableOnPlan ? (
+        <View style={styles.lockedNotice}>
+          <MaterialCommunityIcons color={colors.saffron} name="lock-outline" size={24} />
+          <View style={styles.flex}>
+            <AppText variant="label">Assignment remains available</AppText>
+            <AppText variant="caption" color={colors.inkMuted}>
+              You can assign or replace this Role after Relay Pro expires. Its preserved private workspace remains locked until plan access returns.
+            </AppText>
+          </View>
+        </View>
+      ) : null}
 
       {currentAssignment ? (
         <InfoCard eyebrow="Current holder" title={currentAssignment.name || 'Role Holder'}>
@@ -262,4 +268,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.mossSoft,
   },
   inviteCopy: { gap: spacing.xxs },
+  lockedNotice: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm,
+    marginBottom: spacing.lg, padding: spacing.md,
+    borderWidth: 1, borderColor: colors.line, borderRadius: radii.md, backgroundColor: colors.saffronSoft,
+  },
+  flex: { flex: 1 },
 });

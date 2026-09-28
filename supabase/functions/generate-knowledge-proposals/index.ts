@@ -3,37 +3,38 @@ import type { Database } from '../../../src/types/database.ts';
 import {
   buildCaptureProposalMessages,
   captureProposalSchema,
-  NonRetryableStructuringError,
-  selectRelevantApprovedKnowledge,
+  normalizeCaptureProposalOutput,
   StructuringError,
-  validateCaptureProposalOutput,
-  type ApprovedKnowledge,
   type CaptureEvidence,
 } from '../_shared/organize-proposals.ts';
+import {
+  readTextLlmConfig,
+  requestTextLlmJson,
+  TextLlmError,
+  type TextLlmConfig,
+} from '../_shared/text-llm.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 const MAX_CAPTURE_EVIDENCE_CHARS = 120_000;
-// The configured on-demand reasoning tier enforces a 1,000 output-token/minute
-// ceiling. Asking for 16,000 made every otherwise-valid Organize call fail as
-// "request too large" before the model ran. Keep one Capture inside the actual
-// provider contract; unusually dense Captures already fail closed and can be
-// split by the user.
-const MAX_ORGANIZE_COMPLETION_TOKENS = 1_000;
-const MAX_PROVIDER_ATTEMPTS = 2;
 
 type ServerConfig = {
   supabaseUrl: string;
   anonKey: string;
   serviceRoleKey: string;
-  groqApiUrl: string;
-  groqApiKey: string;
-  reasoningModel: string;
+  textLlm: TextLlmConfig;
 };
 
 type RelaySupabaseClient = SupabaseClient<Database>;
+
+type OrganizePromptContext = {
+  roleTitle: string;
+  roleDescription: string | null;
+  servicePeriod: string;
+  captureTitle: string;
+};
 
 class ProviderError extends Error {
   constructor(
@@ -61,33 +62,30 @@ function readConfig(): ServerConfig {
     supabaseUrl: requiredEnv('SUPABASE_URL').replace(/\/$/, ''),
     anonKey: requiredEnv('SUPABASE_ANON_KEY'),
     serviceRoleKey: requiredEnv('SUPABASE_SERVICE_ROLE_KEY'),
-    groqApiUrl: requiredEnv('GROQ_API_URL').replace(/\/$/, ''),
-    groqApiKey: requiredEnv('GROQ_API_KEY'),
-    reasoningModel: requiredEnv('GROQ_REASONING_MODEL'),
+    textLlm: readTextLlmConfig((name) => Deno.env.get(name)),
   };
 }
 
-function groqErrorCode(body: unknown): string {
-  if (!body || typeof body !== 'object') return '';
-  const providerError = (body as Record<string, unknown>).error;
-  if (!providerError || typeof providerError !== 'object') return '';
-  const code = (providerError as Record<string, unknown>).code;
-  return typeof code === 'string' ? code : '';
-}
-
-function groqError(status: number, body: unknown) {
-  if (status === 401 || status === 403) {
+function providerError(error: TextLlmError) {
+  if (error.status === 401 || error.status === 403) {
     return new ProviderError("Relay's organizing service needs attention.", 503, false);
   }
-  if (status === 413) {
+  if (error.status === 413) {
     return new ProviderError('This capture is too large to organize at once. Split it into smaller captures.', 422, false);
+  }
+  if (error.providerCode === 'request_timeout') {
+    return new ProviderError('Organizing took too long. Your capture is safe; choose Organize to try again.', 504, false);
   }
   // Rate limits are never auto-retried: firing the same request again immediately
   // just spends more of the same per-minute token budget and fails again.
-  if (status === 429 || groqErrorCode(body) === 'rate_limit_exceeded') {
+  if (error.status === 429 || error.providerCode === 'rate_limit_exceeded') {
     return new ProviderError('Relay is busy organizing other captures right now. Wait a few minutes, then choose Organize again.', 429, false);
   }
-  return new ProviderError('Relay could not organize this capture. Your capture is safe; retry in a moment.', 503, true);
+  return new ProviderError(
+    'Relay could not organize this capture. Your capture is safe; retry in a moment.',
+    error.kind === 'output' ? 502 : 503,
+    error.retryable,
+  );
 }
 
 async function markCaptureFailed(admin: RelaySupabaseClient, captureId: string, error: unknown) {
@@ -121,82 +119,93 @@ async function failWaitingCapture(
 
 async function requestCaptureProposals(
   config: ServerConfig,
-  roleTitle: string,
+  context: OrganizePromptContext,
   evidence: CaptureEvidence[],
-  approvedKnowledge: ApprovedKnowledge[],
 ) {
-  for (let attempt = 0; attempt < MAX_PROVIDER_ATTEMPTS; attempt += 1) {
-    const response = await fetch(`${config.groqApiUrl}/chat/completions`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${config.groqApiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: config.reasoningModel,
-        temperature: 0,
-        max_completion_tokens: MAX_ORGANIZE_COMPLETION_TOKENS,
-        // Qwen can otherwise spend this tier's entire output allowance on hidden
-        // reasoning and return an empty schema-compliant proposal list. Organize
-        // is extraction/classification, so instruct mode is the appropriate path.
-        reasoning_effort: config.reasoningModel.startsWith('qwen/') ? 'none' : 'low',
-        messages: buildCaptureProposalMessages({ roleTitle, evidence, approvedKnowledge }),
-        response_format: {
-          type: 'json_schema',
-          json_schema: { name: 'relay_capture_proposals', strict: true, schema: captureProposalSchema },
-        },
-      }),
+  const prompt = buildCaptureProposalMessages({
+    roleTitle: context.roleTitle,
+    roleDescription: context.roleDescription,
+    servicePeriod: context.servicePeriod,
+    captureTitle: context.captureTitle,
+    evidence,
+  });
+  try {
+    const output = await requestTextLlmJson({
+      config: config.textLlm,
+      messages: prompt.messages,
+      schema: captureProposalSchema,
     });
-    const body = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      const providerError = groqError(response.status, body);
-      if (providerError.retryable && attempt + 1 < MAX_PROVIDER_ATTEMPTS) {
-        console.warn('Retrying transient Organize provider response', JSON.stringify({
-          status: response.status,
-          code: groqErrorCode(body),
-          attempt: attempt + 1,
-        }));
-        await new Promise((resolve) => setTimeout(resolve, 400));
-        continue;
-      }
-      throw providerError;
-    }
-    const content = body?.choices?.[0]?.message?.content;
-    if (typeof content !== 'string') {
-      if (attempt + 1 < MAX_PROVIDER_ATTEMPTS) continue;
-      throw new StructuringError('Relay did not receive structured suggestions. Retry in a moment.');
-    }
-    try {
-      return validateCaptureProposalOutput(
-        JSON.parse(content),
-        evidence,
-        new Set(approvedKnowledge.map((item) => item.id)),
-      );
-    } catch (error) {
-      if (error instanceof SyntaxError && attempt + 1 < MAX_PROVIDER_ATTEMPTS) continue;
-      if (error instanceof SyntaxError) {
-        throw new StructuringError('Relay received an unreadable structured response. Retry in a moment.');
-      }
-      throw error;
-    }
+    return normalizeCaptureProposalOutput(output, prompt.index);
+  } catch (error) {
+    if (error instanceof TextLlmError) throw providerError(error);
+    throw error;
   }
-  throw new StructuringError('Relay did not receive structured suggestions. Retry in a moment.');
 }
 
-/**
- * Only a structurally broken model response fails the whole capture. An
- * individually invalid suggestion (bad span citation, duplicate, etc.) is
- * dropped so the rest of a good batch still reaches Review.
- */
-function requireSomeValidProposals(captureId: string, result: { valid: unknown[]; rejected: Array<{ index: number; reason: string }> }) {
-  if (result.rejected.length) {
-    console.warn('Capture organize dropped invalid suggestions', JSON.stringify({
-      captureId,
-      dropped: result.rejected.length,
-      kept: result.valid.length,
-      reasons: result.rejected.map((item) => item.reason),
-    }));
+type OrganizeCompletion =
+  | { ok: true; proposalCount: number }
+  | { ok: false; message: string; status: number; retryable: boolean };
+
+async function completeClaimedCapture(
+  config: ServerConfig,
+  client: RelaySupabaseClient,
+  admin: RelaySupabaseClient,
+  capture: { id: string; handoff_id: string; title: string },
+  evidence: CaptureEvidence[],
+): Promise<OrganizeCompletion> {
+  try {
+    const { data: handoff, error: handoffError } = await client.from('handoffs')
+      .select('role_id, service_period').eq('id', capture.handoff_id).single();
+    if (handoffError) throw handoffError;
+    const { data: role, error: roleError } = await client.from('roles')
+      .select('title, description').eq('id', handoff.role_id).single();
+    if (roleError) throw roleError;
+    const promptContext: OrganizePromptContext = {
+      roleTitle: role.title,
+      roleDescription: role.description,
+      servicePeriod: handoff.service_period,
+      captureTitle: capture.title,
+    };
+
+    // Organize is one Capture-level model call. Qwen sees the note and all
+    // readable attachments together, and returns create-only suggestions.
+    const proposals = await requestCaptureProposals(config, promptContext, evidence);
+    const { data: count, error: storeError } = await client.rpc('replace_capture_knowledge_proposals', {
+      requested_capture_id: capture.id,
+      requested_proposals: proposals,
+      requested_dropped_count: 0,
+    });
+    if (storeError) throw storeError;
+    return { ok: true, proposalCount: typeof count === 'number' ? count : proposals.length };
+  } catch (error) {
+    const diagnostic = error instanceof Error
+      ? error.message
+      : error && typeof error === 'object' && 'message' in error && typeof error.message === 'string'
+        ? error.message
+        : 'unknown error';
+    console.error('Capture organizing failed', diagnostic);
+    await markCaptureFailed(admin, capture.id, error);
+    const message = error instanceof StructuringError || error instanceof ProviderError
+      ? error.publicMessage
+      : 'Relay could not organize this capture. Your capture is safe; retry in a moment.';
+    return {
+      ok: false,
+      message,
+      status: error instanceof ProviderError ? error.status : 422,
+      retryable: error instanceof ProviderError ? error.retryable : false,
+    };
   }
-  if (!result.valid.length && result.rejected.length) {
-    throw new StructuringError('Relay could not verify some proposed knowledge against the original source. Retry in a moment.');
-  }
+}
+
+function scheduleBackground(task: Promise<OrganizeCompletion>) {
+  const runtime = (globalThis as typeof globalThis & {
+    EdgeRuntime?: { waitUntil(promise: Promise<unknown>): void };
+  }).EdgeRuntime;
+  if (!runtime?.waitUntil) return false;
+  runtime.waitUntil(task.catch((error) => {
+    console.error('Unhandled background Organize failure', error instanceof Error ? error.message : 'unknown error');
+  }));
+  return true;
 }
 
 async function organizeCapture(
@@ -207,7 +216,7 @@ async function organizeCapture(
 ) {
   const { data: capture, error: captureError } = await client
     .from('captures')
-    .select('id, organization_id, handoff_id, submitted_at, structuring_status, organize_requested_at')
+    .select('id, organization_id, handoff_id, title, submitted_at, structuring_status, organize_requested_at')
     .eq('id', captureId)
     .maybeSingle();
   if (captureError || !capture) return json({ error: 'This capture is unavailable.' }, 404);
@@ -242,7 +251,7 @@ async function organizeCapture(
   const sourceIds = (relations ?? []).map((relation) => relation.source_id);
   const { data: sources, error: sourceError } = sourceIds.length
     ? await client.from('sources')
-      .select('id, kind, title, text_content, processing_status, failure_reason')
+      .select('id, kind, title, mime_type, text_content, processing_status, failure_reason')
       .in('id', sourceIds)
     : { data: [], error: null };
   if (sourceError) return json({ error: 'Relay could not read this capture evidence.' }, 500);
@@ -275,6 +284,7 @@ async function organizeCapture(
       sourceId: source.id,
       label: relation.relationship === 'text' ? 'Capture note' : source.title,
       kind: relation.relationship === 'text' ? 'capture_text' : 'attachment',
+      mediaType: relation.relationship === 'text' ? 'text/plain' : source.mime_type,
       text: source.text_content,
     });
   }
@@ -304,50 +314,16 @@ async function organizeCapture(
   if (claimError) return json({ error: 'Relay could not start organizing this capture.' }, 500);
   if (!claimed) return json({ waiting: true, alreadyOrganizing: true, captureId }, 202);
 
-  try {
-    const { data: handoff, error: handoffError } = await client.from('handoffs')
-      .select('role_id').eq('id', capture.handoff_id).single();
-    if (handoffError) throw handoffError;
-    const { data: role, error: roleError } = await client.from('roles')
-      .select('title').eq('id', handoff.role_id).single();
-    if (roleError) throw roleError;
-    const { data: approved, error: approvedError } = await client.from('knowledge_items')
-      .select('id, knowledge_type, title, content')
-      .eq('handoff_id', capture.handoff_id)
-      .eq('status', 'approved')
-      .order('sort_order', { ascending: true });
-    if (approvedError) throw approvedError;
-
-    const approvedContext = selectRelevantApprovedKnowledge(approved ?? [], evidence);
-    const result = await requestCaptureProposals(config, role.title, evidence, approvedContext);
-    requireSomeValidProposals(captureId, result);
-    const proposals = result.valid;
-    const { data: count, error: storeError } = await client.rpc('replace_capture_knowledge_proposals', {
-      requested_capture_id: captureId,
-      requested_proposals: proposals,
-      requested_dropped_count: result.rejected.length,
-    });
-    if (storeError) throw storeError;
-    return json({ ready: true, captureId, proposalCount: typeof count === 'number' ? count : proposals.length });
-  } catch (error) {
-    const diagnostic = error instanceof Error
-      ? error.message
-      : error && typeof error === 'object' && 'message' in error && typeof error.message === 'string'
-        ? error.message
-        : 'unknown error';
-    console.error('Capture organizing failed', diagnostic);
-    await markCaptureFailed(admin, captureId, error);
-    const message = error instanceof StructuringError || error instanceof ProviderError
-      ? error.publicMessage
-      : 'Relay could not organize this capture. Your capture is safe; retry in a moment.';
-    const status = error instanceof ProviderError ? error.status : 422;
-    // Authoritative for the client's auto-retry decision — a rate limit or an
-    // oversized-capture failure must never be silently fired again.
-    const retryable = error instanceof ProviderError
-      ? error.retryable
-      : !(error instanceof NonRetryableStructuringError);
-    return json({ error: message, captureId, retryable }, status);
+  const task = completeClaimedCapture(config, client, admin, capture, evidence);
+  if (scheduleBackground(task)) {
+    return json({ accepted: true, captureId, status: 'processing' }, 202);
   }
+  // Non-Supabase runtimes used by tooling may not expose EdgeRuntime. Preserve
+  // correct behavior by completing synchronously there.
+  const completion = await task;
+  return completion.ok
+    ? json({ ready: true, captureId, proposalCount: completion.proposalCount })
+    : json({ error: completion.message, captureId, retryable: completion.retryable }, completion.status);
 }
 
 Deno.serve(async (request) => {

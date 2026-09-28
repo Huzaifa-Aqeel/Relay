@@ -10,6 +10,12 @@ import {
   type MemoryEvidenceItem,
   type PublicationMemoryItem,
 } from '../_shared/organization-memory.ts';
+import {
+  readTextLlmConfig,
+  requestTextLlmJson,
+  TextLlmError,
+  type TextLlmConfig,
+} from '../_shared/text-llm.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -22,9 +28,7 @@ type ServerConfig = {
   supabaseUrl: string;
   anonKey: string;
   serviceRoleKey: string;
-  groqApiUrl: string;
-  groqApiKey: string;
-  reasoningModel: string;
+  textLlm: TextLlmConfig;
 };
 
 class MemoryError extends Error {
@@ -48,9 +52,7 @@ function readConfig(): ServerConfig {
     supabaseUrl: requiredEnv('SUPABASE_URL').replace(/\/$/, ''),
     anonKey: requiredEnv('SUPABASE_ANON_KEY'),
     serviceRoleKey: requiredEnv('SUPABASE_SERVICE_ROLE_KEY'),
-    groqApiUrl: requiredEnv('GROQ_API_URL').replace(/\/$/, ''),
-    groqApiKey: requiredEnv('GROQ_API_KEY'),
-    reasoningModel: requiredEnv('GROQ_REASONING_MODEL'),
+    textLlm: readTextLlmConfig((name) => Deno.env.get(name)),
   };
 }
 
@@ -194,14 +196,11 @@ Deno.serve(async (request) => {
       `Content: ${item.content}`,
     ].join('\n')).join('\n\n');
 
-    const response = await fetch(`${config.groqApiUrl}/chat/completions`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${config.groqApiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: config.reasoningModel,
-        reasoning_effort: 'medium',
-        temperature: 0,
-        max_completion_tokens: 12_000,
+    let decoded: unknown;
+    try {
+      decoded = await requestTextLlmJson({
+        config: config.textLlm,
+        schema: organizationMemorySchema,
         messages: [
           {
             role: 'system',
@@ -229,23 +228,15 @@ Deno.serve(async (request) => {
             ].join('\n\n'),
           },
         ],
-        response_format: {
-          type: 'json_schema',
-          json_schema: { name: 'relay_organization_memory', strict: true, schema: organizationMemorySchema },
-        },
-      }),
-    });
-    const body = await response.json().catch(() => ({}));
-    if (!response.ok) throw new MemoryError(response.status === 429
-      ? 'Organization Memory is busy right now. Wait a moment and retry.'
-      : 'Relay could not compare these handoffs safely.');
-    const content = body?.choices?.[0]?.message?.content;
-    if (typeof content !== 'string') throw new MemoryError('Relay did not receive a valid handoff comparison.');
-    let decoded: unknown;
-    try {
-      decoded = JSON.parse(content);
-    } catch {
-      throw new MemoryError('Relay received an unreadable handoff comparison.');
+      });
+    } catch (error) {
+      if (error instanceof TextLlmError && error.status === 429) {
+        throw new MemoryError('Organization Memory is busy right now. Wait a moment and retry.', 429);
+      }
+      if (error instanceof TextLlmError && error.kind === 'output') {
+        throw new MemoryError('Relay received an unreadable handoff comparison.', 502);
+      }
+      throw new MemoryError('Relay could not compare these handoffs safely.', 503);
     }
     let changes;
     try {

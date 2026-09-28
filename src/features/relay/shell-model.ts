@@ -14,12 +14,12 @@ export function captureReviewSummary({
   droppedCount?: number | null;
 }) {
   const droppedNote = droppedCount
-    ? ` — ${droppedCount} ${droppedCount === 1 ? 'suggestion' : 'suggestions'} couldn't be verified against the source; Organize again to recheck.`
+    ? ` — ${droppedCount} additional ${droppedCount === 1 ? 'suggestion was' : 'suggestions were'} skipped because ${droppedCount === 1 ? 'it was' : 'they were'} not safely supported.`
     : '';
   if (pendingProposalCount > 0) {
     return `${pendingProposalCount} ${pendingProposalCount === 1 ? 'thing' : 'things'} to review${droppedNote}`;
   }
-  if (structuredProposalCount === 0) return `Checked · nothing new found${droppedNote}`;
+  if (structuredProposalCount === 0) return `Checked · no new or changed handoff knowledge found${droppedNote}`;
   return droppedNote ? droppedNote.replace(/^ — /, '') : null;
 }
 

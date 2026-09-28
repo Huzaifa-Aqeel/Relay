@@ -24,10 +24,10 @@ const MAX_POLL_MS = 110_000;
 // stale-processing reaper, so the two never race.
 const MAX_SOURCE_ATTEMPTS = 3;
 
-const DIRECT_TEXT_EXTENSIONS = new Set(['txt', 'md', 'csv']);
+const DIRECT_TEXT_EXTENSIONS = new Set(['txt', 'md', 'csv', 'ics']);
 // xlsx is not included — Unstructured's API (at the current tier) does not
 // support it. XLSX files are parsed locally via SheetJS instead.
-const UNSTRUCTURED_EXTENSIONS = new Set(['bmp', 'docx', 'heic', 'jpeg', 'jpg', 'pdf', 'png', 'pptx', 'tiff']);
+const UNSTRUCTURED_EXTENSIONS = new Set(['bmp', 'docx', 'heic', 'jpeg', 'jpg', 'pdf', 'png', 'pptx', 'tif', 'tiff']);
 const XLSX_EXTENSIONS = new Set(['xlsx']);
 
 // Cloud pickers (Google Drive, OneDrive, etc.) sometimes strip the file
@@ -42,11 +42,13 @@ const MIME_TO_EXTENSION: Record<string, string> = {
   'text/plain': 'txt',
   'text/markdown': 'md',
   'text/csv': 'csv',
+  'text/calendar': 'ics',
   'image/bmp': 'bmp',
   'image/heic': 'heic',
   'image/jpeg': 'jpeg',
   'image/jpg': 'jpg',
   'image/png': 'png',
+  'image/tiff': 'tiff',
 };
 
 type SourceRow = {
@@ -157,7 +159,11 @@ function parseXlsxToElements(buffer: ArrayBuffer): TransformElement[] {
       elements.push({
         element_id: `sheet-${sheetName}`,
         type: 'Table',
-        text: csv.trim(),
+        // Sheet names carry essential table context (for example, which year,
+        // event, account, or contact group a row belongs to). Keep the label
+        // in canonical extracted text and Astra chunks instead of flattening
+        // every worksheet into an indistinguishable CSV block.
+        text: `Sheet: ${sheetName}\n${csv.trim()}`,
         metadata: { page_number: null },
       });
     }
@@ -246,7 +252,7 @@ function transformError(status: number, body: unknown) {
     return new ProcessingError('This document is too large to process. Choose a file smaller than 25 MB.');
   }
   if (status === 415 || code === 'unsupported_file_type') {
-    return new ProcessingError('This document format is not supported. Use PDF, DOCX, PPTX, XLSX, TXT, Markdown, CSV, JPEG, PNG, BMP, or HEIC.');
+    return new ProcessingError('This document format is not supported. Use PDF, DOCX, PPTX, XLSX, TXT, Markdown, CSV, ICS, JPEG, PNG, BMP, HEIC, or TIFF.');
   }
   if (status === 422 || code === 'could_not_parse') {
     return new ProcessingError('Relay could not read this document. Check that the file opens correctly, then try again.');
@@ -631,7 +637,7 @@ async function processDocument(
   try {
     const extension = extensionFor(source.storage_path!) || mimeExtension(source.mime_type);
     if (!DIRECT_TEXT_EXTENSIONS.has(extension) && !UNSTRUCTURED_EXTENSIONS.has(extension) && !XLSX_EXTENSIONS.has(extension)) {
-      throw new ProcessingError('This document format is not supported. Use PDF, DOCX, PPTX, XLSX, TXT, Markdown, CSV, JPEG, PNG, BMP, or HEIC.');
+      throw new ProcessingError('This document format is not supported. Use PDF, DOCX, PPTX, XLSX, TXT, Markdown, CSV, ICS, JPEG, PNG, BMP, HEIC, or TIFF.');
     }
 
     const { data: file, error: downloadError } = await admin.storage

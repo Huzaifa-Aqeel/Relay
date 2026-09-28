@@ -34,6 +34,7 @@ import type {
   OrganizationRole,
   AssignedRole,
   RoleInput,
+  RoleUpdateInput,
   SharedHandoff,
   MemoryRole,
   MemorySnapshot,
@@ -680,6 +681,22 @@ export async function createRole(input: RoleInput) {
   return data;
 }
 
+export async function updateRole(input: RoleUpdateInput) {
+  const { data, error } = await requireSupabase()
+    .from('roles')
+    .update({
+      title: input.title.trim(),
+      description: input.description.trim(),
+    })
+    .eq('id', input.roleId)
+    .eq('organization_id', input.organizationId)
+    .is('archived_at', null)
+    .select('*')
+    .single();
+  throwDataError(error);
+  return mapRole(data);
+}
+
 export async function listOrganizationHandoffs(organizationId: string) {
   const { data, error } = await requireSupabase()
     .from('handoffs')
@@ -986,19 +1003,6 @@ export async function submitCapture(input: CaptureInput, userId: string): Promis
   }
 }
 
-/**
- * `retryable` is authoritative when the server sends it (currently: any 429
- * is always `false`, regardless of body correctness, as a hard client-side
- * guarantee against re-firing a rate-limited Organize call). It stays
- * `undefined` for error paths that predate this field — callers fall back to
- * their own heuristic in that case.
- */
-export class OrganizeError extends Error {
-  constructor(message: string, public readonly retryable?: boolean) {
-    super(message);
-  }
-}
-
 export async function generateCaptureProposals(captureId: string) {
   const client = requireSupabase();
   const { data: relations, error: relationError } = await client.from('capture_sources')
@@ -1030,20 +1034,15 @@ export async function generateCaptureProposals(captureId: string) {
   });
   if (result.error) {
     let message = "We couldn't organize this capture. Try again.";
-    let retryable: boolean | undefined;
     if (result.error instanceof FunctionsHttpError) {
       try {
         const body = await result.error.context.clone().json();
         if (typeof body?.error === 'string' && body.error.trim()) message = body.error.trim();
-        if (typeof body?.retryable === 'boolean') retryable = body.retryable;
       } catch {
         // Retain the safe fallback when the function response has no readable JSON body.
       }
-      // Hard override, independent of the body: never auto-retry a rate limit,
-      // even if a future change to the server forgets to set `retryable`.
-      if (result.error.context.status === 429) retryable = false;
     }
-    throw new OrganizeError(message, retryable);
+    throw new Error(message);
   }
   return Number(result.data?.proposalCount ?? 0);
 }

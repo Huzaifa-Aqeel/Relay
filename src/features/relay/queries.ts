@@ -12,6 +12,7 @@ import {
   createCaptureDraft,
   createOrganization,
   createRole,
+  updateRole,
   compareRoleHandoffs,
   deleteKnowledgeItem,
   decideKnowledgeProposal,
@@ -49,7 +50,6 @@ import {
   returnHandoffToCapture,
   submitCapture,
   discardCaptureDraft,
-  OrganizeError,
   transcribeVoiceRecording,
   updateKnowledgeItem,
   updateOrganizationContent,
@@ -66,6 +66,7 @@ import type {
   OrganizationInput,
   OrganizationContentInput,
   RoleInput,
+  RoleUpdateInput,
   VoiceRecordingInput,
 } from '@/features/relay/types';
 
@@ -293,11 +294,34 @@ export function useHandoffCaptures(handoffId: string | undefined) {
       .subscribe((status) => { if (status === 'SUBSCRIBED') refresh(); });
     return () => { void client.removeChannel(channel); };
   }, [enabled, handoffId, queryClient]);
-  return useQuery({
+  const query = useQuery({
     queryKey: relayKeys.handoffCaptures(handoffId ?? ''),
     queryFn: () => listHandoffCaptures(handoffId!),
     enabled,
   });
+  useEffect(() => {
+    if (!enabled || !handoffId || !query.data) return;
+    const leaseExpirations = query.data.flatMap((capture) => [
+      ...(capture.structuringStatus === 'processing'
+        ? [Date.parse(capture.updatedAt) + (3 * 60_000)]
+        : []),
+      ...capture.attachments
+        .filter((source) => source.processingStatus === 'processing')
+        .map((source) => Date.parse(source.updatedAt) + (10 * 60_000)),
+    ]).filter(Number.isFinite);
+    if (!leaseExpirations.length) return;
+
+    // Re-read once just after the applicable model/document lease expires.
+    // The normal query invokes the authorized stale-work sweep, so a worker
+    // that disappeared without emitting Realtime cannot leave an open UI
+    // spinning forever. This is lease expiry, not continuous polling.
+    const nextLeaseExpiry = Math.min(...leaseExpirations) + 2_000;
+    const timer = setTimeout(() => {
+      void queryClient.invalidateQueries({ queryKey: relayKeys.handoffCaptures(handoffId) });
+    }, Math.max(1_000, nextLeaseExpiry - Date.now()));
+    return () => clearTimeout(timer);
+  }, [enabled, handoffId, query.data, queryClient]);
+  return query;
 }
 
 export function useHandoffSource(id: string | undefined) {
@@ -439,6 +463,18 @@ export function useCreateRole() {
   });
 }
 
+export function useUpdateRole() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: RoleUpdateInput) => updateRole(input),
+    onSuccess: (_, input) => Promise.all([
+      queryClient.invalidateQueries({ queryKey: relayKeys.role(input.roleId) }),
+      queryClient.invalidateQueries({ queryKey: relayKeys.roles(input.organizationId) }),
+      queryClient.invalidateQueries({ queryKey: ['relay', 'continuity', input.organizationId] }),
+    ]),
+  });
+}
+
 export function useCreateHandoff() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -487,47 +523,15 @@ export function useTranscribeVoiceRecording() {
   });
 }
 
-// Organize hits rate-limited third-party document/model providers, so calls are
-// serialized (never run concurrently) instead of firing once per capture the
-// user has open. A transient failure gets a couple of automatic backoff
-// retries before it's surfaced as a real failure — except a rate limit
-// (OrganizeError#retryable === false), which is never auto-fired again: the
-// same request would just spend more of the same per-minute budget and fail
-// the same way. The server marks this explicitly; a bare Error without that
-// signal falls back to sniffing the message for "retry", for any error path
-// that predates the structured flag.
-const ORGANIZE_MAX_AUTO_RETRIES = 2;
-const ORGANIZE_RETRY_BACKOFF_MS = [3_000, 7_000];
-
-function isRetryableOrganizeError(error: unknown) {
-  if (error instanceof OrganizeError && typeof error.retryable === 'boolean') return error.retryable;
-  const message = error instanceof Error ? error.message : '';
-  return /retry/i.test(message);
-}
-
-function wait(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
+// Serialize explicit Organize requests on this client. The server owns its one
+// evidence-repair attempt and durable job state; the client never multiplies
+// model calls with a second retry loop.
 let organizeQueue: Promise<unknown> = Promise.resolve();
-
-async function runOrganizeWithRetry(captureId: string) {
-  let attempt = 0;
-  for (;;) {
-    try {
-      return await generateCaptureProposals(captureId);
-    } catch (error) {
-      if (attempt >= ORGANIZE_MAX_AUTO_RETRIES || !isRetryableOrganizeError(error)) throw error;
-      await wait(ORGANIZE_RETRY_BACKOFF_MS[attempt] ?? ORGANIZE_RETRY_BACKOFF_MS[ORGANIZE_RETRY_BACKOFF_MS.length - 1]);
-      attempt += 1;
-    }
-  }
-}
 
 function enqueueOrganize(captureId: string) {
   const run = organizeQueue.then(
-    () => runOrganizeWithRetry(captureId),
-    () => runOrganizeWithRetry(captureId),
+    () => generateCaptureProposals(captureId),
+    () => generateCaptureProposals(captureId),
   );
   // Keep the queue alive for the next caller regardless of whether this run succeeded.
   organizeQueue = run.then(() => undefined, () => undefined);

@@ -67,7 +67,6 @@ export default function RoleScreen() {
   const current = handoffs[0];
   const canPlanSuccession = Boolean(continuity.data?.isOwner || overview?.assignments[0]?.userId === auth.session?.user.id);
   const canMaintain = (handoffId: string) => overview?.handoffs.some(h => h.id === handoffId && h.canMaintain);
-  const publishedCount = overview?.handoffs.filter(h => h.publicationStatus).length ?? 0;
   const refreshing = roleQuery.isRefetching || organizationQuery.isRefetching
     || handoffsQuery.isRefetching || continuity.isRefetching;
   const refresh = () => void Promise.all([
@@ -124,14 +123,6 @@ export default function RoleScreen() {
               </Pressable>
             ))}
           </View>
-          {publishedCount ? (
-            <Button
-              icon="book-open-page-variant-outline"
-              label={publishedCount > 1 ? 'Open What Changed' : 'Open Organization Memory'}
-              tone="ghost"
-              onPress={() => router.push((`/organization-memory?roleId=${role.id}`) as Href)}
-            />
-          ) : null}
         </>
       ) : null}
       {canPlanSuccession ? (

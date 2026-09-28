@@ -111,6 +111,7 @@ export default function RootLayout() {
               <Stack.Screen name="organization-new" options={{ title: 'New organization' }} />
               <Stack.Screen name="role/[id]" options={{ title: 'Role' }} />
               <Stack.Screen name="role-new" options={{ title: 'New role' }} />
+              <Stack.Screen name="role-manage" options={{ title: 'Manage Role' }} />
               <Stack.Screen name="handoff/[id]" options={{ title: 'Handoff' }} />
               <Stack.Screen name="handoff-new" options={{ title: 'New handoff' }} />
               <Stack.Screen name="handoff-review" options={{ title: 'Review' }} />

@@ -29,7 +29,7 @@ This document records implementation-level decisions that should not be duplicat
 ### Document processing contract
 
 - PDF, DOCX, PPTX, JPEG, PNG, BMP, HEIC, and TIFF documents use the Unstructured Transform API with elements output so Relay retains element type and page metadata.
-- TXT, Markdown, and CSV uploads are decoded directly. XLSX is parsed directly with SheetJS because the configured Transform endpoint does not accept it.
+- TXT, Markdown, CSV, and ICS calendar exports are decoded directly. XLSX is parsed directly with SheetJS because the configured Transform endpoint does not accept it; worksheet names are retained with their table text so dates, contacts, accounts, and event rows do not lose their scope.
 - Unstructured embeddings are disabled. Parsed element text is sent to Astra `$vectorize` in bounded segments.
 - Processing is asynchronous. An atomic `pending`/`failed` → `processing` claim prevents two ordinary requests from processing and indexing one Source concurrently. The source remains private and records `processing`, `ready`, or a plain-language `failed` state while the original upload is retained.
 - Unstructured job IDs are stored only as resumable provider references after a parse job is created; they are not credentials or required configuration. A slow job may resume for at most three bounded processing attempts rather than restarting the provider job.
@@ -49,33 +49,42 @@ Provider secrets are stored only in Supabase Edge Function secrets or an ignored
 
 Google Drive attachment import was removed (2026-09-27) as unnecessary complexity relative to the core handoff problem — direct file upload, voice, and typed text remain the supported Capture evidence paths. See `progress.md` for the removal record.
 
-## Groq transcription and reasoning
+## Speech transcription and text reasoning
 
 | Concern | Selected configuration |
 |---|---|
-| API base URL | `https://api.groq.com/openai/v1` |
+| Speech provider/base URL | Groq / `https://api.groq.com/openai/v1` |
 | Voice transcription model | `whisper-large-v3-turbo` |
-| Structured-reasoning model | `openai/gpt-oss-120b` |
-| Proposal response mode | Strict JSON Schema |
+| Text provider/base URL | Alibaba Model Studio / workspace OpenAI-compatible endpoint |
+| Text reasoning model | `qwen3.8-flash` |
+| Thinking mode | Disabled for the active Qwen configuration; no Relay output-token cap |
+| Structured response mode | Prompted JSON contract, tolerant decoding, then grounded local validation |
 
-- The same server-only `GROQ_API_KEY` is used by separate Supabase Edge Functions for transcription and reasoning.
+- Groq is used only by `transcribe-source`. Its key and model are not read by Organize, Ask Relay, or Organization Memory.
+- Organize, Ask Relay, and Organization Memory share one provider-neutral OpenAI-compatible client configured with `LLM_API_URL`, `LLM_API_KEY`, and `LLM_MODEL`. Changing those values does not change workflow code. `DASHSCOPE_BASE_URL`, `DASHSCOPE_API_KEY`, and `DASHSCOPE_MODEL` are accepted compatibility aliases.
+- The active Alibaba configuration uses `LLM_ENABLE_THINKING=false`. It sends neither `thinking_budget` nor `reasoning_effort`; Relay asks Qwen for the grounded final JSON directly.
+- DashScope JSON response mode is not combined with thinking. Each workflow asks for a JSON contract and parses only the final answer. The shared decoder accepts plain JSON, fenced JSON, or one JSON value surrounded by brief prose. Organize normalizes common wrappers, field aliases, missing optional metadata, and imperfect citation hints without rejecting a useful suggestion.
+- `LLM_MAX_OUTPUT_TOKENS` is empty by default, so Relay no longer truncates model output at an application-defined ceiling. It remains an optional deployment safeguard for another provider/model.
 - Stopped voice audio remains temporary on the device and is sent as the authenticated Edge Function request body directly to Groq; it is never written to Supabase Storage or `sources`.
 - On successful transcription, the client shows the full editable transcript. Only explicit **Continue** confirmation places the reviewed transcript into Capture text; no audio object is uploaded or retained.
 - On transcription failure, Relay offers **Record again** and the existing typed-note capture through **Write instead**. It creates no failed voice Source, persistent audio object, retry queue, or saved-source reprocessing state.
 - AI structuring accepts only the five broad categories `process`, `contact`, `rule_deadline`, `access_resource`, and `warning_lesson` for new suggestions. Existing legacy category values remain readable so immutable published history is preserved. Each proposal must include an exact source excerpt, pass server-side validation, and enter Relay as `proposed` rather than approved.
-- Organize extracts grounded facts, groups them into independently useful operational units, incorporates dependent steps, task-specific contacts, rules, warnings, rationale, examples, and historical context, and only then assigns one primary category. A final boundary-and-coverage audit removes cross-category duplication without dropping useful grounded guidance. Independently useful or separately evidenced workflows remain separate for retrieval and provenance integrity.
+- Organize asks Qwen for a small set of complete, independently useful operational Knowledge Items and one primary category for each. It does not summarize attachments or reconcile suggestions against approved knowledge.
+- Each Organize request is focused using the actual Role title and description, service period, Capture title, and attachment media type. Those values route relevance only and cannot support a claim. Relay never assumes conventional duties from words such as finance, secretary, president, or events; evidence must still state the organization-specific fact.
+- The source-material policy distinguishes transition reports, event/project plans, calendars, financial records, contact lists, meeting minutes, policies, access lists, evaluations, and general reference material by their content rather than a stored document taxonomy. It extracts durable current/recurring/future operational knowledge, preserves supported uncertainty, and omits ordinary ledger rows, bare rosters, discussion, failed motions, old dates/balances, blank templates, and unrelated boilerplate.
+- High-confidence passwords, passcodes, recovery codes, private keys, API keys, access tokens, and client secrets are rejected before a proposal can be stored. Safe account-purpose, ownership, reset, and administrator-transfer instructions remain eligible.
 - Provider output never writes directly to published or approved knowledge.
 
 ### Organize execution contract
 
-- Save never calls document processing or Groq. `request_capture_organize` records a short-lived intent only when the Role Holder explicitly chooses **Organize**.
+- Save never calls document processing or the text model. `request_capture_organize` records a short-lived intent only when the Role Holder explicitly chooses **Organize**.
 - A document shared by several Captures may continue Organize only for linked Captures with that explicit pending intent. Completing the Source never organizes every linked Capture.
 - The Source and Capture model-call claims are atomic. Starting generation clears the pending intent, so duplicate clicks or concurrent Source completions cannot queue a second model call behind the first.
-- Capture evidence is split into stable numbered spans. The model cites one ordered contiguous span run from one Source; Relay resolves the exact Source substring server-side and never asks the model to reproduce provenance text.
-- The active model uses non-reasoning/instruct mode for extraction and a 1,000-token completion ceiling, matching the configured provider tier. Retryable provider/schema failures receive one bounded server retry; rate limits are never automatically retried.
-- At most 100 approved items enter the prompt. When a Handoff has more, deterministic evidence-token overlap selects the most relevant items with stable ordering rather than blindly taking the first 100.
-- Individual unsupported suggestions are omitted and counted while valid suggestions from the same response may proceed to Review. A response containing only unverifiable suggestions fails closed. More than 30 returned suggestions fails explicitly rather than being silently truncated.
-- A ten-minute stale sweep runs during normal Capture loading and before generation. It turns abandoned Source/Capture processing into a retryable failed state and clears obsolete Organize intent without polling.
+- One explicit Organize action sends the complete Capture—its note plus extracted text from every ready attachment—to Qwen in one model request. Role and Capture metadata focus relevance but are not evidence. The prompt contains no approved Knowledge Items and Qwen only proposes new review suggestions.
+- The active Qwen model runs with thinking disabled and no Relay output-token ceiling. There is no citation-repair request and the client never adds an automatic model retry.
+- Numbered span IDs are internal provenance hints. Valid hints become exact private excerpts; an invalid or missing span falls back to the valid Capture Source when supplied, and otherwise leaves the suggestion without pinpointed provenance. Citation imperfections never discard a suggestion or trigger another model request. The Role Holder decides every suggestion in Review.
+- After the atomic Capture claim, proposal generation runs as an Edge Runtime background task and writes either `ready` or `failed` to the database. The invocation returns `202` immediately, and Realtime delivers the terminal state.
+- A three-minute stale-job lease covers the two-minute Qwen proposal window; document preparation retains a separate ten-minute lease because its bounded Unstructured workflow may take about five and a half minutes. A mounted screen schedules one read at the relevant lease expiry so even a worker killed without a Realtime event becomes visibly retryable; Relay does not continuously poll.
 
 ## Processing-state delivery
 
@@ -83,7 +92,7 @@ Google Drive attachment import was removed (2026-09-27) as unnecessary complexit
 - While a Handoff or source screen is mounted, it subscribes only to matching `captures` and `sources` updates through Supabase Realtime Postgres Changes and invalidates the relevant local query cache when an event arrives.
 - Relay does not use fixed-interval Postgres/PostgREST polling for processing or structuring state.
 - The document Edge Function may poll the external Unstructured job endpoint within a bounded processing attempt because that provider operation is asynchronous; this does not poll Supabase.
-- Groq transcription returns the candidate transcript within its originating Edge Function request without mutating a Source. Proposal generation still updates only an already-confirmed Source.
+- Groq transcription returns the candidate transcript within its originating Edge Function request without mutating a Source. Proposal generation runs only from an explicitly saved Capture and updates its durable structuring state.
 
 ## Review-to-Preview contract
 
@@ -101,7 +110,7 @@ Google Drive attachment import was removed (2026-09-27) as unnecessary complexit
 - Publishing is a database transaction that locks the draft and rechecks Preview stage, proposal decisions, and the presence of approved knowledge.
 - The transaction copies only Approved Knowledge Items into publication snapshot rows and then marks the Handoff Published. Sources, transcripts, uploads, private provenance, proposals, and authorization IDs are excluded from the public JSON contract.
 - Material changes already return a draft to Review, so the server rejects publication when the owner's displayed Preview is stale. After publication, RLS freezes the original Handoff, Knowledge Items, source records, provenance, and source-file mutations.
-- The recipient renderer reads snapshot data and has no dependency on Groq, Unstructured, Astra, or another AI provider.
+- The recipient renderer reads snapshot data and has no dependency on the text model, Groq, Unstructured, Astra, or another AI provider.
 
 ### Access links
 
@@ -127,10 +136,16 @@ Google Drive attachment import was removed (2026-09-27) as unnecessary complexit
 
 ### Server-only configuration
 
+- `LLM_API_URL`
+- `LLM_API_KEY`
+- `LLM_MODEL`
+- `LLM_ENABLE_THINKING`
+- `LLM_THINKING_BUDGET`
+- `LLM_MAX_OUTPUT_TOKENS` (optional)
+- `LLM_REQUEST_TIMEOUT_MS` (optional; defaults to 120000)
 - `GROQ_API_KEY`
 - `GROQ_API_URL`
 - `GROQ_TRANSCRIPTION_MODEL`
-- `GROQ_REASONING_MODEL`
 
 ## Ask Relay
 
@@ -145,7 +160,7 @@ Google Drive attachment import was removed (2026-09-27) as unnecessary complexit
 
 ### Answer contract
 
-- Groq receives only the recipient question and a bounded set of published snapshot items. The question and evidence are both treated as untrusted data.
+- The configured text model receives only the recipient question and a bounded set of published snapshot items. The question and evidence are both treated as untrusted data.
 - The model must return strict JSON with `answered`, `unsupported`, or `conflict`, a bounded answer, and up to five valid evidence references. The Edge Function validates exact keys, reference membership, uniqueness, citation presence, and the requirement that a conflict cite at least two relevant items before returning a factual answer.
 - An unsupported response is normalized server-side to: `This handoff does not contain a reliable answer to that question.` It has no citations.
 - Ask is read-only. It has no database path that writes approved knowledge, source material, or publication content.
@@ -157,7 +172,7 @@ Google Drive attachment import was removed (2026-09-27) as unnecessary complexit
 - `ASK_RELAY_FREE_DAILY_LIMIT`
 - `ASK_RELAY_PRO_DAILY_LIMIT`
 
-Ask also uses the existing Astra and Groq server configuration listed above.
+Ask also uses the existing Astra retrieval and provider-neutral text-model configuration listed above. It does not use Groq speech settings.
 
 ## Organization Memory
 
@@ -170,7 +185,7 @@ Ask also uses the existing Astra and Groq server configuration listed above.
 ### Matching and materiality
 
 - Preserved carry-forward `knowledge_lineage_id` is the normal matching path. One prior and one current item with the same lineage form a Changed candidate; a current lineage with no predecessor is an Added candidate; and a prior lineage absent from current truth is a Retired candidate.
-- A deterministic normalization pass hides punctuation, formatting, word-order, and common grammatical-only rewrites before model review. Groq receives only the remaining server-approved candidates and may omit broader meaning-equivalent rewrites or non-material differences.
+- A deterministic normalization pass hides punctuation, formatting, word-order, and common grammatical-only rewrites before model review. The configured text model receives only the remaining server-approved candidates and may omit broader meaning-equivalent rewrites or non-material differences.
 - `strong_semantic` remains an internal legacy storage value only. The fallback can form a pair only when both immutable publication rows lack lineage, their broad knowledge types agree, and they are an unambiguous mutual-best match. Ambiguous legacy candidates are omitted rather than labeled Added/Retired or forced into a relationship.
 - Provider output cannot choose its own match basis or pair arbitrary references. Server validation maps output back to the precomputed candidate plan. Comparison writes only `role_memory_comparisons` and `role_memory_changes`; it never repairs or mutates canonical or published lineage.
 

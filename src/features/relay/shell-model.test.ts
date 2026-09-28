@@ -32,16 +32,16 @@ describe('Relay shell boundaries', () => {
     expect(captureReviewSummary({ structuredProposalCount: 6, pendingProposalCount: 0 }))
       .toBeNull();
     expect(captureReviewSummary({ structuredProposalCount: 0, pendingProposalCount: 0 }))
-      .toBe('Checked · nothing new found');
+      .toBe('Checked · no new or changed handoff knowledge found');
   });
 
-  it('surfaces a suggestion Organize could not verify instead of silently discarding it', () => {
+  it('surfaces a skipped suggestion without telling the user to repeat an already-repaired run', () => {
     expect(captureReviewSummary({ structuredProposalCount: 4, pendingProposalCount: 4, droppedCount: 1 }))
-      .toBe("4 things to review — 1 suggestion couldn't be verified against the source; Organize again to recheck.");
+      .toBe('4 things to review — 1 additional suggestion was skipped because it was not safely supported.');
     expect(captureReviewSummary({ structuredProposalCount: 0, pendingProposalCount: 0, droppedCount: 2 }))
-      .toBe("Checked · nothing new found — 2 suggestions couldn't be verified against the source; Organize again to recheck.");
+      .toBe('Checked · no new or changed handoff knowledge found — 2 additional suggestions were skipped because they were not safely supported.');
     expect(captureReviewSummary({ structuredProposalCount: 6, pendingProposalCount: 0, droppedCount: 1 }))
-      .toBe("1 suggestion couldn't be verified against the source; Organize again to recheck.");
+      .toBe('1 additional suggestion was skipped because it was not safely supported.');
     expect(captureReviewSummary({ structuredProposalCount: 6, pendingProposalCount: 0, droppedCount: 0 }))
       .toBeNull();
     expect(captureReviewSummary({ structuredProposalCount: 6, pendingProposalCount: 0, droppedCount: null }))
