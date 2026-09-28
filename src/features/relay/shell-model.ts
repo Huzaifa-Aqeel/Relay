@@ -1,39 +1,28 @@
-export const HANDOFF_STAGES = ['Capture', 'Review', 'Handoff check', 'Preview', 'Published'] as const;
+export const HANDOFF_STAGES = ['Capture', 'Review', 'Preview', 'Published'] as const;
 
 export function handoffStageIndex(stage: string) {
-  const normalized = stage === 'preflight' ? 'handoff check' : stage;
-  return Math.max(0, HANDOFF_STAGES.findIndex((label) => label.toLowerCase() === normalized));
-}
-
-export function shouldRunHandoffCheck({
-  stage,
-  proposalCount,
-  approvedCount,
-  hasRun,
-  attempted,
-}: {
-  stage: string;
-  proposalCount: number;
-  approvedCount: number;
-  hasRun: boolean;
-  attempted: boolean;
-}) {
-  return stage === 'review' && proposalCount === 0 && approvedCount > 0 && !hasRun && !attempted;
+  return Math.max(0, HANDOFF_STAGES.findIndex((label) => label.toLowerCase() === stage));
 }
 
 export function captureReviewSummary({
   structuredProposalCount,
   pendingProposalCount,
+  droppedCount,
 }: {
   structuredProposalCount: number | null;
   pendingProposalCount: number;
+  droppedCount?: number | null;
 }) {
+  const droppedNote = droppedCount
+    ? ` — ${droppedCount} ${droppedCount === 1 ? 'suggestion' : 'suggestions'} couldn't be verified against the source; Organize again to recheck.`
+    : '';
   if (pendingProposalCount > 0) {
-    return `${pendingProposalCount} ${pendingProposalCount === 1 ? 'thing' : 'things'} to review`;
+    return `${pendingProposalCount} ${pendingProposalCount === 1 ? 'thing' : 'things'} to review${droppedNote}`;
   }
-  return structuredProposalCount === 0 ? 'Checked · nothing new found' : null;
+  if (structuredProposalCount === 0) return `Checked · nothing new found${droppedNote}`;
+  return droppedNote ? droppedNote.replace(/^ — /, '') : null;
 }
 
 export function isPublicRootSegment(segment: string | undefined) {
-  return segment === 'shared' || segment === 'legal' || segment === 'assignment' || segment === 'drive-import';
+  return segment === 'shared' || segment === 'legal' || segment === 'assignment';
 }

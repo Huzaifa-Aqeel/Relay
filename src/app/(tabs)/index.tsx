@@ -98,7 +98,7 @@ export default function OrganizationsScreen() {
   );
 }
 
-function JoinOrganization({ requests }: { requests: Array<{ requestId: string; organizationId: string; name: string; institution: string; status: 'pending' | 'accepted' | 'rejected'; requestedAt: string }> }) {
+function JoinOrganization({ requests }: { requests: { requestId: string; organizationId: string; name: string; institution: string; status: 'pending' | 'accepted' | 'rejected'; requestedAt: string }[] }) {
   const [search, setSearch] = useState('');
   const [validationError, setValidationError] = useState<string | null>(null);
   const searchMutation = useSearchOrganizationsForMembership();

@@ -1,7 +1,7 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import type { Href } from 'expo-router';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/ui/app-text';
@@ -9,17 +9,15 @@ import { LoadingState, MessageState } from '@/components/ui/async-state';
 import { Button } from '@/components/ui/button';
 import { Screen } from '@/components/ui/screen';
 import { KNOWLEDGE_META } from '@/features/relay/knowledge-meta';
-import { shouldRunHandoffCheck } from '@/features/relay/shell-model';
 import {
+  useAdvanceHandoffToPreview,
   useDecideKnowledgeProposal,
   useHandoff,
   useHandoffCaptures,
   useKnowledgeItems,
   useKnowledgeProvenance,
-  usePreflightRun,
   useReturnHandoffToCapture,
   useRole,
-  useRunPreflight,
 } from '@/features/relay/queries';
 import type { KnowledgeItem, KnowledgeProvenance } from '@/features/relay/types';
 import { colors, radii, spacing } from '@/theme/tokens';
@@ -133,32 +131,17 @@ export default function HandoffReviewScreen() {
   const knowledgeQuery = useKnowledgeItems(handoffId);
   const capturesQuery = useHandoffCaptures(handoffId);
   const provenanceQuery = useKnowledgeProvenance(handoffId);
-  const preflightQuery = usePreflightRun(handoffId);
   const decisionMutation = useDecideKnowledgeProposal();
   const captureMutation = useReturnHandoffToCapture();
-  const checkMutation = useRunPreflight();
-  const runHandoffCheck = checkMutation.mutate;
-  const checkAttempted = useRef(false);
+  const previewMutation = useAdvanceHandoffToPreview();
   const [decisionNotice, setDecisionNotice] = useState<string | null>(null);
   const [reviewDecisions, setReviewDecisions] = useState<Record<string, 'approved' | 'rejected'>>({});
   const pending = handoffQuery.isPending || knowledgeQuery.isPending || capturesQuery.isPending
-    || provenanceQuery.isPending || preflightQuery.isPending || (handoffQuery.data && roleQuery.isPending);
+    || provenanceQuery.isPending || (handoffQuery.data && roleQuery.isPending);
   const error = handoffQuery.error ?? roleQuery.error ?? knowledgeQuery.error
-    ?? capturesQuery.error ?? provenanceQuery.error ?? preflightQuery.error;
+    ?? capturesQuery.error ?? provenanceQuery.error;
   const proposals = knowledgeQuery.data?.filter((item) => item.status === 'proposed') ?? [];
   const approved = knowledgeQuery.data?.filter((item) => item.status === 'approved') ?? [];
-
-  useEffect(() => {
-    if (!shouldRunHandoffCheck({
-      stage: handoffQuery.data?.stage ?? '',
-      proposalCount: proposals.length,
-      approvedCount: approved.length,
-      hasRun: Boolean(preflightQuery.data),
-      attempted: checkAttempted.current,
-    })) return;
-    checkAttempted.current = true;
-    runHandoffCheck({ handoffId });
-  }, [approved.length, handoffId, handoffQuery.data?.stage, preflightQuery.data, proposals.length, runHandoffCheck]);
 
   if (pending) return <Screen><LoadingState label="Preparing review…" /></Screen>;
   if (error || !handoffQuery.data || !roleQuery.data || !knowledgeQuery.data || !capturesQuery.data || !provenanceQuery.data) {
@@ -205,6 +188,10 @@ export default function HandoffReviewScreen() {
   async function returnToCapture() {
     await captureMutation.mutateAsync({ handoffId });
     router.replace((`/handoff/${handoffId}`) as Href);
+  }
+  async function openPreview() {
+    await previewMutation.mutateAsync({ handoffId });
+    router.replace((`/handoff-preview?handoffId=${handoffId}`) as Href);
   }
 
   return (
@@ -266,7 +253,7 @@ export default function HandoffReviewScreen() {
         </View>
       ) : null}
 
-      {!proposals.length ? (
+      {!proposals.length && !approved.length ? (
         <View style={styles.reviewEmpty}>
           <View style={styles.sectionHeading}>
             <AppText variant="heading">
@@ -288,33 +275,31 @@ export default function HandoffReviewScreen() {
       ) : null}
 
       {!proposals.length && approved.length ? (
-        <View style={styles.preflightCard}>
+        <View style={styles.previewCard}>
           <View style={styles.sectionHeading}>
             <AppText variant="caption" color={colors.moss} style={styles.eyebrow}>REVIEW COMPLETE</AppText>
-            <AppText variant="heading">
-              {checkMutation.isPending
-                ? 'Checking your handoff…'
-                : preflightQuery.data?.status === 'ready' && !preflightQuery.data.findingCount
-                  ? 'Your handoff looks ready.'
-                  : preflightQuery.data?.status === 'ready'
-                    ? `${preflightQuery.data.findingCount} ${preflightQuery.data.findingCount === 1 ? 'detail needs' : 'details need'} attention`
-                    : checkMutation.error || preflightQuery.data?.status === 'failed'
-                      ? "We couldn't check your handoff."
-                      : 'Checking your handoff…'}
-            </AppText>
-            <AppText color={colors.inkMuted}>Relay checks for meaningful missing detail, ambiguity, incomplete instructions, and contradictions.</AppText>
+            <AppText variant="heading">Ready for exact Preview</AppText>
+            <AppText color={colors.inkMuted}>Review exactly what the next leader will receive before creating the published snapshot.</AppText>
           </View>
-          {checkMutation.error || preflightQuery.data?.status === 'failed' ? (
-            <Button icon="refresh" label="Try check again" onPress={() => checkMutation.mutate({ handoffId })} />
-          ) : preflightQuery.data?.status === 'ready' ? (
-            <Button icon="shield-check-outline" label="View handoff check" onPress={() => router.push((`/handoff-preflight?handoffId=${handoffId}`) as Href)} />
-          ) : null}
+          <Button
+            disabled={previewMutation.isPending}
+            icon="eye-check-outline"
+            label={previewMutation.isPending ? 'Opening Preview…' : 'Continue to Preview'}
+            onPress={() => void openPreview()}
+          />
+          <Button
+            disabled={captureMutation.isPending || previewMutation.isPending}
+            icon="arrow-left"
+            label={captureMutation.isPending ? 'Returning…' : 'Return to Capture'}
+            tone="secondary"
+            onPress={() => void returnToCapture()}
+          />
         </View>
       ) : null}
 
-      {decisionMutation.error || captureMutation.error ? (
+      {decisionMutation.error || captureMutation.error || previewMutation.error ? (
         <AppText accessibilityLiveRegion="polite" variant="caption" color={colors.emergency}>
-          {(decisionMutation.error ?? captureMutation.error)?.message}
+          {(decisionMutation.error ?? captureMutation.error ?? previewMutation.error)?.message}
         </AppText>
       ) : null}
 
@@ -386,6 +371,6 @@ const styles = StyleSheet.create({
   },
   evidence: { gap: spacing.xs, padding: spacing.sm, borderRadius: radii.md, backgroundColor: colors.mossSoft },
   reviewEmpty: { gap: spacing.lg, marginTop: spacing.xl },
-  preflightCard: { gap: spacing.md, marginTop: spacing.xl, padding: spacing.lg, borderRadius: radii.lg, backgroundColor: colors.mossSoft },
+  previewCard: { gap: spacing.md, marginTop: spacing.xl, padding: spacing.lg, borderRadius: radii.lg, backgroundColor: colors.mossSoft },
   pressed: { opacity: 0.72 },
 });

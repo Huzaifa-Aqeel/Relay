@@ -16,77 +16,76 @@ import {
   useRoleMemoryChanges,
   useRoleMemoryComparison,
 } from '@/features/relay/queries';
-import type { MemoryReasonCategory, RoleMemoryChange } from '@/features/relay/types';
+import {
+  NO_MATERIAL_MEMORY_CHANGES,
+  organizationMemoryCardModel,
+} from '@/features/relay/organization-memory-display';
+import type { RoleMemoryChange } from '@/features/relay/types';
 import { colors, radii, spacing } from '@/theme/tokens';
 
-const REASON_LABELS: Record<MemoryReasonCategory, string> = {
-  policy_driven: 'Policy-driven',
-  lesson_driven: 'Lesson-driven',
-  leadership_preference: 'Leadership preference',
-  contact_resource: 'Contact/resource change',
-  unknown: 'Unknown / not established',
-};
-
-function ChangeCard({ change, roleId }: { change: RoleMemoryChange; roleId: string }) {
-  const icon = change.changeType === 'added'
+function ChangeCard({
+  change,
+  previousServicePeriod,
+  currentServicePeriod,
+}: {
+  change: RoleMemoryChange;
+  previousServicePeriod: string;
+  currentServicePeriod: string;
+}) {
+  const card = organizationMemoryCardModel(change, {
+    previous: previousServicePeriod,
+    current: currentServicePeriod,
+  });
+  const icon = card.changeType === 'added'
     ? 'plus-circle-outline'
-    : change.changeType === 'retired' ? 'archive-arrow-down-outline' : 'swap-horizontal';
+    : card.changeType === 'retired' ? 'archive-arrow-down-outline' : 'swap-horizontal';
+  const reasonDocumented = card.reasonText !== 'Reason not documented.';
   return (
     <View style={styles.changeCard}>
       <View style={styles.changeHeading}>
         <View style={styles.changeBadge}>
-          <MaterialCommunityIcons color={change.changeType === 'retired' ? colors.emergency : colors.moss} name={icon} size={18} />
-          <AppText variant="caption" color={change.changeType === 'retired' ? colors.emergency : colors.moss}>
-            {change.changeType.toUpperCase()}
+          <MaterialCommunityIcons color={card.changeType === 'retired' ? colors.emergency : colors.moss} name={icon} size={18} />
+          <AppText variant="caption" color={card.changeType === 'retired' ? colors.emergency : colors.moss}>
+            {card.changeType.toUpperCase()}
           </AppText>
         </View>
-        <AppText variant="heading" style={styles.copy}>{change.title}</AppText>
+        <AppText variant="heading" style={styles.copy}>{card.title}</AppText>
       </View>
-      <AppText color={colors.inkMuted}>{change.summary}</AppText>
 
-      {change.beforeSnapshot || change.afterSnapshot ? (
+      {card.before || card.after ? (
         <View style={styles.snapshotGrid}>
-          {change.beforeSnapshot ? (
+          {card.before ? (
             <View style={styles.snapshot}>
               <AppText variant="caption" color={colors.inkMuted}>BEFORE</AppText>
-              <AppText variant="label">{change.beforeSnapshot.title}</AppText>
-              <AppText variant="caption" color={colors.inkMuted}>{change.beforeSnapshot.content}</AppText>
+              <AppText variant="caption" color={colors.inkMuted}>{card.before.content}</AppText>
             </View>
           ) : null}
-          {change.afterSnapshot ? (
+          {card.after ? (
             <View style={styles.snapshot}>
               <AppText variant="caption" color={colors.moss}>AFTER</AppText>
-              <AppText variant="label">{change.afterSnapshot.title}</AppText>
-              <AppText variant="caption" color={colors.inkMuted}>{change.afterSnapshot.content}</AppText>
+              <AppText variant="caption" color={colors.inkMuted}>{card.after.content}</AppText>
             </View>
           ) : null}
         </View>
       ) : null}
 
-      <View style={[styles.reason, change.reasonCategory === 'unknown' && styles.unknownReason]}>
-        <MaterialCommunityIcons color={change.reasonCategory === 'unknown' ? colors.saffron : colors.moss} name="source-branch" size={19} />
+      <View style={[styles.reason, !reasonDocumented && styles.unknownReason]}>
+        <MaterialCommunityIcons color={reasonDocumented ? colors.moss : colors.saffron} name="source-branch" size={19} />
         <View style={styles.copy}>
-          <AppText variant="label">Reason: {REASON_LABELS[change.reasonCategory]}</AppText>
-          <AppText variant="caption" color={colors.inkMuted}>{change.reasonExplanation}</AppText>
+          <AppText variant="label">{card.reasonText}</AppText>
         </View>
       </View>
 
-      {change.supportingProvenance.length ? (
+      {card.sources.length ? (
         <View style={styles.provenance}>
-          <AppText variant="caption" color={colors.moss}>SUPPORTING APPROVED PROVENANCE</AppText>
-          {change.supportingProvenance.map((source, index) => (
+          <AppText variant="caption" color={colors.moss}>SOURCE</AppText>
+          {card.sources.map((source, index) => (
             <AppText key={`${source.label}:${source.locator ?? ''}:${index}`} variant="caption" color={colors.inkMuted}>
               {source.label}{source.locator ? ` · ${source.locator}` : ''}
             </AppText>
           ))}
         </View>
       ) : null}
-      <Button
-        icon={change.humanConfirmed ? 'check-decagram-outline' : 'account-check-outline'}
-        label={change.humanConfirmed ? 'Reason confirmed · edit' : 'Confirm or correct reason'}
-        tone="ghost"
-        onPress={() => router.push((`/memory-reason?changeId=${change.id}&comparisonId=${change.comparisonId}&roleId=${roleId}`) as Href)}
-      />
     </View>
   );
 }
@@ -119,8 +118,8 @@ export default function OrganizationMemoryScreen() {
     <Screen>
       <View style={styles.heading}>
         <AppText variant="caption" color={colors.moss} style={styles.eyebrow}>{organizationQuery.data.name.toUpperCase()}</AppText>
-        <AppText variant="display">{roleQuery.data.title} · What Changed</AppText>
-        <AppText color={colors.inkMuted}>Adjacent service periods only. Approved knowledge and immutable publication snapshots are the comparison truth.</AppText>
+        <AppText variant="display">What changed since the previous {roleQuery.data.title}?</AppText>
+        <AppText color={colors.inkMuted}>Compare the latest adjacent published handoffs for this same role.</AppText>
       </View>
 
       <View style={styles.historyCard}>
@@ -154,7 +153,7 @@ export default function OrganizationMemoryScreen() {
         <View style={styles.emptyComparison}>
           <MaterialCommunityIcons color={colors.moss} name="compare-horizontal" size={32} />
           <AppText variant="heading">Compare the latest adjacent periods</AppText>
-          <AppText color={colors.inkMuted}>Low-confidence matches and wording-only differences will be omitted.</AppText>
+          <AppText color={colors.inkMuted}>Relay shows material additions, changes, and retirements. Wording-only and uncertain differences stay hidden.</AppText>
           <Button disabled={compareMutation.isPending || plan.data?.plan !== 'pro'} icon="creation-outline" label={compareMutation.isPending ? 'Comparing…' : 'Find material changes'} onPress={() => compareMutation.mutate({ roleId })} />
         </View>
       ) : (
@@ -169,11 +168,19 @@ export default function OrganizationMemoryScreen() {
             </AppText>
           </View>
           {comparison.status === 'ready' && changes.length ? (
-            <View style={styles.changeList}>{changes.map((change) => <ChangeCard change={change} key={change.id} roleId={roleId} />)}</View>
+            <View style={styles.changeList}>
+              {changes.map((change) => (
+                <ChangeCard
+                  change={change}
+                  currentServicePeriod={comparison.currentServicePeriod}
+                  key={change.id}
+                  previousServicePeriod={comparison.previousServicePeriod}
+                />
+              ))}
+            </View>
           ) : comparison.status === 'ready' ? (
             <View style={styles.noChanges}>
-              <AppText variant="label">No confidently material changes found</AppText>
-              <AppText variant="caption" color={colors.inkMuted}>Relay suppressed unchanged, wording-only, and uncertain differences.</AppText>
+              <AppText variant="label">{NO_MATERIAL_MEMORY_CHANGES}</AppText>
             </View>
           ) : null}
           <Button disabled={compareMutation.isPending || plan.data?.plan !== 'pro'} icon="refresh" label={compareMutation.isPending ? 'Comparing…' : 'Re-run latest comparison'} tone="secondary" onPress={() => compareMutation.mutate({ roleId })} />

@@ -24,7 +24,7 @@ export default function AuthWelcomeScreen() {
       <View style={styles.promiseList}>
         {[
           ['microphone-outline', 'Capture voice, text, and documents'],
-          ['message-question-outline', 'Preflight finds what is still unclear'],
+          ['clipboard-check-outline', 'Review exactly what the next leader receives'],
           ['link-variant', 'A no-login handoff for the successor'],
         ].map(([icon, label]) => (
           <View key={label} style={styles.promiseRow}>

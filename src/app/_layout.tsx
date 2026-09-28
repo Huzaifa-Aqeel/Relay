@@ -64,9 +64,9 @@ function AuthGate({ children }: PropsWithChildren) {
         && ['action', 'memory', 'settings'].includes(authScreen ?? '');
       const roleWorkspaceBlocked = [
         'role', 'role-new', 'role-assignment', 'handoff', 'handoff-new',
-        'handoff-review', 'handoff-preflight', 'handoff-preview',
-        'approved-knowledge', 'source', 'knowledge', 'preflight-resolve',
-        'organization-memory', 'memory-reason', 'published-history',
+        'handoff-review', 'handoff-preview',
+        'approved-knowledge', 'source', 'knowledge',
+        'organization-memory', 'published-history',
         'ownership-transfer', 'paywall',
       ].includes(rootSegment ?? '');
       if (memberOnlyTabBlocked || roleWorkspaceBlocked) router.replace('/');
@@ -114,12 +114,9 @@ export default function RootLayout() {
               <Stack.Screen name="handoff/[id]" options={{ title: 'Handoff' }} />
               <Stack.Screen name="handoff-new" options={{ title: 'New handoff' }} />
               <Stack.Screen name="handoff-review" options={{ title: 'Review' }} />
-              <Stack.Screen name="handoff-preflight" options={{ title: 'Handoff check' }} />
               <Stack.Screen name="handoff-preview" options={{ title: 'Preview & share' }} />
               <Stack.Screen name="organization-memory" options={{ title: 'Organization Memory' }} />
               <Stack.Screen name="ownership-transfer" options={{ title: 'Organization ownership' }} />
-              <Stack.Screen name="memory-reason" options={{ title: 'Confirm reason' }} />
-              <Stack.Screen name="preflight-resolve" options={{ title: 'Resolve finding' }} />
               <Stack.Screen name="knowledge/[id]" options={{ title: 'Edit knowledge' }} />
               <Stack.Screen name="source/[id]" options={{ title: 'Source' }} />
               <Stack.Screen name="shared/[token]" options={{ headerShown: false }} />
@@ -130,7 +127,6 @@ export default function RootLayout() {
               <Stack.Screen name="auth/forgot-password" options={{ title: 'Reset password' }} />
               <Stack.Screen name="auth/new-password" options={{ title: 'New password' }} />
               <Stack.Screen name="auth/callback" options={{ headerShown: false }} />
-              <Stack.Screen name="drive-import" options={{ headerShown: false }} />
               <Stack.Screen name="legal/privacy" options={{ title: 'Privacy' }} />
               <Stack.Screen name="legal/terms" options={{ title: 'Terms' }} />
               <Stack.Screen

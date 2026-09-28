@@ -1,7 +1,7 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Linking from 'expo-linking';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useState, type ComponentProps } from 'react';
+import { useState, type ComponentProps } from 'react';
 import { Alert, Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/ui/app-text';
@@ -16,15 +16,15 @@ import { colors, radii, shadow, spacing } from '@/theme/tokens';
 type DisplayPlan = 'free' | 'plus';
 type IconName = ComponentProps<typeof MaterialCommunityIcons>['name'];
 
-const freeFeatures: Array<{ icon: IconName; label: string }> = [
+const freeFeatures: { icon: IconName; label: string }[] = [
   { icon: 'account-tie-outline', label: 'One designated Role' },
   { icon: 'file-document-edit-outline', label: 'One current living Handoff' },
-  { icon: 'source-branch', label: 'Capture, Review, Handoff check, and Publish' },
+  { icon: 'source-branch', label: 'Capture, Review, Preview, and Publish' },
   { icon: 'message-question-outline', label: '10 Ask Relay questions per published Handoff each day' },
   { icon: 'archive-check-outline', label: 'Existing knowledge and publications stay preserved' },
 ];
 
-const plusFeatures: Array<{ icon: IconName; label: string }> = [
+const plusFeatures: { icon: IconName; label: string }[] = [
   { icon: 'account-group-outline', label: 'Multiple active Roles and authorized Role Holders' },
   { icon: 'bookshelf', label: 'Current and historical Handoffs across the organization' },
   { icon: 'compare-horizontal', label: 'Organization Memory and year-to-year comparison' },
@@ -102,10 +102,6 @@ function PaywallContent({ initialOrganizationId, reason }: {
   const contextCopy = reason ? reasonCopy[reason] : undefined;
   const plusPrice = selectedPackage?.product.priceString;
   const plusCurrency = selectedPackage?.product.currencyCode;
-
-  useEffect(() => {
-    setSelectedPlan(reason ? 'plus' : null);
-  }, [organizationId, reason]);
 
   function closePaywall() {
     if (router.canGoBack()) router.back();
@@ -200,7 +196,7 @@ function PaywallContent({ initialOrganizationId, reason }: {
                   accessibilityRole="radio"
                   accessibilityState={{ checked: selected }}
                   key={candidate.id}
-                  onPress={() => setSelectedOrganizationId(candidate.id)}
+                  onPress={() => { setSelectedOrganizationId(candidate.id); setSelectedPlan(null); }}
                   style={({ pressed }) => [
                     styles.organizationOption,
                     selected && styles.organizationOptionSelected,

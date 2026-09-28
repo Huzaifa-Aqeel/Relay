@@ -1,8 +1,6 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { makeRedirectUri } from 'expo-auth-session';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Linking from 'expo-linking';
-import * as WebBrowser from 'expo-web-browser';
 import {
   getRecordingPermissionsAsync,
   RecordingPresets,
@@ -23,12 +21,9 @@ import {
   type CapturePrompt,
 } from '@/features/relay/capture-prompts';
 import {
-  refreshCaptureAttachments,
   useCreateCaptureDraft,
   useDiscardCaptureDraft,
   useFindExactDocumentDuplicate,
-  useGoogleDriveImport,
-  useRollbackCaptureAttachment,
   useSubmitCapture,
   useTranscribeVoiceRecording,
 } from '@/features/relay/queries';
@@ -105,9 +100,7 @@ export function UnifiedCaptureComposer({
 }) {
   const captureMutation = useSubmitCapture();
   const createDraftMutation = useCreateCaptureDraft();
-  const driveImportMutation = useGoogleDriveImport();
   const discardDraftMutation = useDiscardCaptureDraft();
-  const rollbackAttachmentMutation = useRollbackCaptureAttachment();
   const duplicateMutation = useFindExactDocumentDuplicate();
   const transcribeMutation = useTranscribeVoiceRecording();
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
@@ -133,8 +126,6 @@ export function UnifiedCaptureComposer({
     })) ?? []
   ));
   const [draftCaptureId, setDraftCaptureId] = useState<string | null>(null);
-  const [driveImportedSourceIds, setDriveImportedSourceIds] = useState<string[]>([]);
-  const [driveImporting, setDriveImporting] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const stopRecordingAtLimit = useEffectEvent(() => {
@@ -301,88 +292,7 @@ export function UnifiedCaptureComposer({
     });
   }
 
-  async function chooseDriveFiles() {
-    setLocalError(null);
-    setDriveImporting(true);
-    try {
-      let captureId = editingCapture?.id ?? draftCaptureId;
-      if (!captureId) {
-        captureId = await createDraftMutation.mutateAsync({
-          organizationId,
-          handoffId,
-          title: displayTitle(),
-          promptId: selectedPrompt?.id ?? null,
-          textContent: composerText.trim() || null,
-        });
-        setDraftCaptureId(captureId);
-      }
-
-      const persistedBefore = await refreshCaptureAttachments(captureId);
-      const before = new Set(persistedBefore.map((source) => source.id));
-      const returnUrl = makeRedirectUri({ scheme: 'relay', path: 'drive-import' });
-      const { authUrl } = await driveImportMutation.mutateAsync({ captureId, returnUrl, handoffId });
-      const result = await WebBrowser.openAuthSessionAsync(authUrl, returnUrl);
-      if (result.type !== 'success') return;
-
-      const parsed = Linking.parse(result.url);
-      const status = typeof parsed.queryParams?.drive_status === 'string'
-        ? parsed.queryParams.drive_status
-        : 'failed';
-      if (status === 'cancelled') return;
-      if (status !== 'success') throw new Error('Google Drive could not import those files. Try again.');
-
-      const persistedAfter = await refreshCaptureAttachments(captureId);
-      const imported = persistedAfter.filter((source) => !before.has(source.id));
-      const newSourceIds = imported.map((source) => source.id);
-      setDriveImportedSourceIds((current) => [...new Set([...current, ...newSourceIds])]);
-      setAttachments((current) => {
-        const currentSourceIds = new Set(current.flatMap((attachment) => attachment.sourceId ? [attachment.sourceId] : []));
-        const importedHashes = new Set(imported.map((source) => source.contentHash).filter(Boolean));
-        const local = current.filter((attachment) => attachment.sourceId || !attachment.contentHash
-          || !importedHashes.has(attachment.contentHash));
-        const serverAttachments = imported
-          .filter((source) => !currentSourceIds.has(source.id))
-          .map((source): Attachment => ({
-            key: source.id,
-            sourceId: source.id,
-            name: source.title,
-            size: source.sizeBytes,
-            mimeType: source.mimeType ?? 'application/octet-stream',
-            title: source.title,
-            contentHash: source.contentHash,
-          }));
-        return [...local, ...serverAttachments];
-      });
-
-      const duplicateCount = Number(parsed.queryParams?.drive_duplicates ?? 0);
-      const skippedCount = Number(parsed.queryParams?.drive_skipped ?? 0);
-      if (duplicateCount || skippedCount) {
-        const details = [
-          duplicateCount ? `${duplicateCount} duplicate ${duplicateCount === 1 ? 'file was' : 'files were'} not added` : '',
-          skippedCount ? `${skippedCount} unsupported, unavailable, or oversized ${skippedCount === 1 ? 'file was' : 'files were'} not added` : '',
-        ].filter(Boolean).join('. ');
-        Alert.alert('Some files were not added', `${details}.`);
-      }
-    } catch (caught) {
-      setLocalError(caught instanceof Error ? caught.message : 'Google Drive could not be opened. Try again.');
-    } finally {
-      setDriveImporting(false);
-    }
-  }
-
-  async function removeAttachment(attachment: Attachment) {
-    if (attachment.sourceId && driveImportedSourceIds.includes(attachment.sourceId)) {
-      setLocalError(null);
-      try {
-        const captureId = editingCapture?.id ?? draftCaptureId;
-        if (!captureId) throw new Error('This attachment is unavailable.');
-        await rollbackAttachmentMutation.mutateAsync({ captureId, sourceId: attachment.sourceId });
-        setDriveImportedSourceIds((current) => current.filter((sourceId) => sourceId !== attachment.sourceId));
-      } catch (caught) {
-        setLocalError(caught instanceof Error ? caught.message : 'Relay could not remove this file. Try again.');
-        return;
-      }
-    }
+  function removeAttachment(attachment: Attachment) {
     setAttachments((current) => current.filter((item) => item.key !== attachment.key));
   }
 
@@ -422,7 +332,6 @@ export function UnifiedCaptureComposer({
       setRecordingUri(null);
       setAttachments([]);
       setDraftCaptureId(null);
-      setDriveImportedSourceIds([]);
       setSelectedPrompt(undefined);
       setCaptureTitle('');
       duplicateMutation.reset();
@@ -438,8 +347,8 @@ export function UnifiedCaptureComposer({
 
   const transcribing = transcribeMutation.isPending;
   const transcriptionFailed = Boolean(recordingUri && transcribeMutation.error && !transcribing);
-  const busy = submitting || captureMutation.isPending || duplicateMutation.isPending || driveImporting
-    || createDraftMutation.isPending || discardDraftMutation.isPending || rollbackAttachmentMutation.isPending;
+  const busy = submitting || captureMutation.isPending || duplicateMutation.isPending
+    || createDraftMutation.isPending || discardDraftMutation.isPending;
 
   function openComposer(prompt?: CapturePrompt) {
     onEditComplete?.();
@@ -448,7 +357,6 @@ export function UnifiedCaptureComposer({
     setComposerText('');
     setAttachments([]);
     setDraftCaptureId(null);
-    setDriveImportedSourceIds([]);
     setVoicePreview(null);
     setRecordingUri(null);
     captureMutation.reset();
@@ -462,15 +370,10 @@ export function UnifiedCaptureComposer({
     if (busy || recorderState.isRecording || transcribing) return;
     setLocalError(null);
     try {
-      if (editingCapture) {
-        for (const sourceId of driveImportedSourceIds) {
-          await rollbackAttachmentMutation.mutateAsync({ captureId: editingCapture.id, sourceId });
-        }
-      } else if (draftCaptureId) {
+      if (!editingCapture && draftCaptureId) {
         await discardDraftMutation.mutateAsync(draftCaptureId);
       }
       setDraftCaptureId(null);
-      setDriveImportedSourceIds([]);
       setComposerOpen(false);
       onEditComplete?.();
     } catch (caught) {
@@ -639,22 +542,13 @@ export function UnifiedCaptureComposer({
                         tone="secondary"
                         onPress={() => void chooseFiles()}
                       />
-                      <Button
-                        disabled={busy}
-                        icon="google-drive"
-                        label={driveImporting ? 'Opening Drive…' : 'Google Drive'}
-                        style={styles.actionButton}
-                        tone="secondary"
-                        onPress={() => void chooseDriveFiles()}
-                      />
                     </View>
                   </View>
                 ) : null}
 
-                {localError || captureMutation.error || duplicateMutation.error || driveImportMutation.error ? (
+                {localError || captureMutation.error || duplicateMutation.error ? (
                   <AppText accessibilityLiveRegion="polite" variant="caption" color={colors.emergency}>
-                    {localError ?? captureMutation.error?.message ?? duplicateMutation.error?.message
-                      ?? driveImportMutation.error?.message}
+                    {localError ?? captureMutation.error?.message ?? duplicateMutation.error?.message}
                   </AppText>
                 ) : null}
 

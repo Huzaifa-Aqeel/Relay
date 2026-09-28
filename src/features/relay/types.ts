@@ -102,7 +102,7 @@ export type AssignedRole = {
   servicePeriod: string;
 };
 
-export type HandoffStage = 'capture' | 'review' | 'preflight' | 'preview' | 'published';
+export type HandoffStage = 'capture' | 'review' | 'preview' | 'published';
 export type HandoffStatus = 'draft' | 'published' | 'archived';
 
 export type Handoff = {
@@ -203,6 +203,7 @@ export type HandoffCapture = {
   structuringFailureReason: string | null;
   structuredAt: string | null;
   structuredProposalCount: number | null;
+  structuredDroppedCount: number | null;
   attachments: HandoffSource[];
   createdAt: string;
   updatedAt: string;
@@ -312,10 +313,6 @@ export type CaptureDraftInput = {
   promptId?: string | null;
 };
 
-export type GoogleDriveImportStart = {
-  authUrl: string;
-};
-
 export type VoiceRecordingInput = {
   organizationId: string;
   handoffId: string;
@@ -335,66 +332,6 @@ export type VoiceTranscriptPreview = {
 };
 
 export type KnowledgeItemUpdateInput = {
-  knowledgeType: KnowledgeType;
-  title: string;
-  content: string;
-};
-
-export type PreflightRunStatus = 'processing' | 'ready' | 'failed' | 'stale';
-export type PreflightFindingType = 'missing' | 'ambiguous' | 'incomplete' | 'contradiction';
-export type PreflightSeverity = 'critical' | 'optional';
-export type PreflightFindingStatus = 'open' | 'resolved' | 'skipped' | 'unknown';
-
-export type PreflightRun = {
-  id: string;
-  organizationId: string;
-  handoffId: string;
-  createdBy: string;
-  status: PreflightRunStatus;
-  failureReason: string | null;
-  findingCount: number | null;
-  criticalAcknowledgedAt: string | null;
-  startedAt: string;
-  completedAt: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type PreflightFinding = {
-  id: string;
-  runId: string;
-  organizationId: string;
-  handoffId: string;
-  findingType: PreflightFindingType;
-  severity: PreflightSeverity;
-  title: string;
-  question: string;
-  explanation: string;
-  suggestedKnowledgeType: KnowledgeType | null;
-  primaryKnowledgeItemId: string | null;
-  status: PreflightFindingStatus;
-  resolutionKnowledgeItemId: string | null;
-  decidedAt: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type PreflightEvidence = {
-  id: string;
-  findingId: string;
-  runId: string;
-  evidenceKind: 'knowledge' | 'source';
-  knowledgeItemId: string | null;
-  sourceId: string | null;
-  label: string;
-  excerpt: string;
-  locator: string | null;
-};
-
-export type PreflightResolutionInput = {
-  findingId: string;
-  handoffId: string;
-  knowledgeItemId?: string | null;
   knowledgeType: KnowledgeType;
   title: string;
   content: string;
@@ -466,25 +403,17 @@ export type RoleMemoryComparison = {
   completedAt: string | null;
 };
 
-export type MemoryReasonCategory =
-  | 'policy_driven'
-  | 'lesson_driven'
-  | 'leadership_preference'
-  | 'contact_resource'
-  | 'unknown';
-
 export type RoleMemoryChange = {
   id: string;
   comparisonId: string;
   changeType: 'added' | 'changed' | 'retired';
   title: string;
   summary: string;
-  reasonCategory: MemoryReasonCategory;
-  reasonExplanation: string;
+  /** One plain-language sentence when the approved evidence explicitly states why this changed; null when no reason is documented. */
+  reasonStatement: string | null;
   beforeSnapshot: MemorySnapshot | null;
   afterSnapshot: MemorySnapshot | null;
   supportingProvenance: { label: string; locator: string | null }[];
-  humanConfirmed: boolean;
 };
 
 export type AskRelayCitation = {

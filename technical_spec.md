@@ -28,11 +28,11 @@ This document records implementation-level decisions that should not be duplicat
 
 ### Document processing contract
 
-- PDF, DOCX, PPTX, JPEG, PNG, BMP, and HEIC documents use the Unstructured Transform API with elements output so Relay retains element type and page metadata.
-- TXT, Markdown, and CSV uploads are decoded directly because the Transform v2 endpoint does not accept those extensions and they require no OCR or layout parsing.
+- PDF, DOCX, PPTX, JPEG, PNG, BMP, HEIC, and TIFF documents use the Unstructured Transform API with elements output so Relay retains element type and page metadata.
+- TXT, Markdown, and CSV uploads are decoded directly. XLSX is parsed directly with SheetJS because the configured Transform endpoint does not accept it.
 - Unstructured embeddings are disabled. Parsed element text is sent to Astra `$vectorize` in bounded segments.
-- Processing is asynchronous. The source remains private and records `processing`, `ready`, or a plain-language `failed` state while the original upload is retained.
-- Unstructured job IDs are stored only as resumable provider references after a parse job is created; they are not credentials or required configuration.
+- Processing is asynchronous. An atomic `pending`/`failed` → `processing` claim prevents two ordinary requests from processing and indexing one Source concurrently. The source remains private and records `processing`, `ready`, or a plain-language `failed` state while the original upload is retained.
+- Unstructured job IDs are stored only as resumable provider references after a parse job is created; they are not credentials or required configuration. A slow job may resume for at most three bounded processing attempts rather than restarting the provider job.
 
 ### Server-only configuration
 
@@ -47,26 +47,7 @@ This document records implementation-level decisions that should not be duplicat
 
 Provider secrets are stored only in Supabase Edge Function secrets or an ignored local server environment file. They must never be exposed through an `EXPO_PUBLIC_*` variable.
 
-## Google Drive attachment import
-
-- Relay uses Google Picker through the system browser with the single `https://www.googleapis.com/auth/drive.file` scope and multiple selection enabled.
-- For every selection, the Expo client asks the authenticated `google-drive-import` Edge Function for a signed authorization URL. Google returns the one-use authorization code and selected file IDs to the hosted callback. The OAuth client secret and access token never enter Expo.
-- OAuth state is HMAC-signed, expires after ten minutes, binds the Relay user/Organization/Handoff/Capture/return URL, and is followed by a fresh active-membership and exact Role Assignment authorization check at callback time.
-- The authorization request uses `access_type=online`, the Google-required `prompt=consent`, `trigger_onepick=true`, and `allow_multiple=true`. Relay does not persist access or refresh tokens. The callback iterates over every validated ID from `picked_file_ids` and imports each file independently.
-- The server downloads ordinary Drive files with `files.get?alt=media`; Google Docs, Sheets, and Slides use `files.export` to DOCX, XLSX, and PPTX.
-- Imported bytes must match the local upload allow-list, remain at or below 25 MB, and receive a SHA-256 hash before Storage/Source insertion. Exact duplicates in the Handoff are skipped.
-- Successful imports are ordinary private `pending` document Sources attached to the existing Capture. Import and Save never invoke Unstructured, Astra, or Groq; explicit Organize retains sole responsibility for processing/indexing and proposal generation.
-- The browser callback is `https://hygwsszjajrqqdxwzqya.supabase.co/functions/v1/google-drive-import/callback`; the Edge Function then returns to the validated web `/drive-import` route or installed `relay://drive-import` route.
-
-### Server-only Google Drive configuration
-
-- `GOOGLE_DRIVE_CLIENT_ID`
-- `GOOGLE_DRIVE_CLIENT_SECRET`
-- `GOOGLE_DRIVE_STATE_SECRET`
-- `GOOGLE_DRIVE_CALLBACK_URL`
-- `GOOGLE_DRIVE_ALLOWED_WEB_ORIGINS`
-
-The OAuth client is a Google **Web application** because Google returns to the HTTPS Edge Function. The installed Android APK still completes through Relay's custom app scheme; the Web client secret is never packaged in the APK.
+Google Drive attachment import was removed (2026-09-27) as unnecessary complexity relative to the core handoff problem — direct file upload, voice, and typed text remain the supported Capture evidence paths. See `progress.md` for the removal record.
 
 ## Groq transcription and reasoning
 
@@ -79,54 +60,46 @@ The OAuth client is a Google **Web application** because Google returns to the H
 
 - The same server-only `GROQ_API_KEY` is used by separate Supabase Edge Functions for transcription and reasoning.
 - Stopped voice audio remains temporary on the device and is sent as the authenticated Edge Function request body directly to Groq; it is never written to Supabase Storage or `sources`.
-- On successful transcription, the client shows the full editable transcript. Only explicit **Continue** confirmation inserts a Ready voice Source containing the reviewed transcript and Groq provenance reference; no audio object is uploaded or retained.
+- On successful transcription, the client shows the full editable transcript. Only explicit **Continue** confirmation places the reviewed transcript into Capture text; no audio object is uploaded or retained.
 - On transcription failure, Relay offers **Record again** and the existing typed-note capture through **Write instead**. It creates no failed voice Source, persistent audio object, retry queue, or saved-source reprocessing state.
 - AI structuring accepts only the five broad categories `process`, `contact`, `rule_deadline`, `access_resource`, and `warning_lesson` for new suggestions. Existing legacy category values remain readable so immutable published history is preserved. Each proposal must include an exact source excerpt, pass server-side validation, and enter Relay as `proposed` rather than approved.
 - Organize extracts grounded facts, groups them into independently useful operational units, incorporates dependent steps, task-specific contacts, rules, warnings, rationale, examples, and historical context, and only then assigns one primary category. A final boundary-and-coverage audit removes cross-category duplication without dropping useful grounded guidance. Independently useful or separately evidenced workflows remain separate for retrieval and provenance integrity.
 - Provider output never writes directly to published or approved knowledge.
 
+### Organize execution contract
+
+- Save never calls document processing or Groq. `request_capture_organize` records a short-lived intent only when the Role Holder explicitly chooses **Organize**.
+- A document shared by several Captures may continue Organize only for linked Captures with that explicit pending intent. Completing the Source never organizes every linked Capture.
+- The Source and Capture model-call claims are atomic. Starting generation clears the pending intent, so duplicate clicks or concurrent Source completions cannot queue a second model call behind the first.
+- Capture evidence is split into stable numbered spans. The model cites one ordered contiguous span run from one Source; Relay resolves the exact Source substring server-side and never asks the model to reproduce provenance text.
+- The active model uses non-reasoning/instruct mode for extraction and a 1,000-token completion ceiling, matching the configured provider tier. Retryable provider/schema failures receive one bounded server retry; rate limits are never automatically retried.
+- At most 100 approved items enter the prompt. When a Handoff has more, deterministic evidence-token overlap selects the most relevant items with stable ordering rather than blindly taking the first 100.
+- Individual unsupported suggestions are omitted and counted while valid suggestions from the same response may proceed to Review. A response containing only unverifiable suggestions fails closed. More than 30 returned suggestions fails explicitly rather than being silently truncated.
+- A ten-minute stale sweep runs during normal Capture loading and before generation. It turns abandoned Source/Capture processing into a retryable failed state and clears obsolete Organize intent without polling.
+
 ## Processing-state delivery
 
 - The client performs one ordinary Supabase query for initial source state.
-- While a Handoff or source screen is mounted, it subscribes only to matching `sources` updates through Supabase Realtime Postgres Changes and invalidates the relevant local query cache when an event arrives.
+- While a Handoff or source screen is mounted, it subscribes only to matching `captures` and `sources` updates through Supabase Realtime Postgres Changes and invalidates the relevant local query cache when an event arrives.
 - Relay does not use fixed-interval Postgres/PostgREST polling for processing or structuring state.
 - The document Edge Function may poll the external Unstructured job endpoint within a bounded processing attempt because that provider operation is asynchronous; this does not poll Supabase.
 - Groq transcription returns the candidate transcript within its originating Edge Function request without mutating a Source. Proposal generation still updates only an already-confirmed Source.
 
-## Preflight contract
+## Review-to-Preview contract
 
-### Evidence and reasoning
-
-- Preflight can start only for a draft in Review/Preflight, after every proposal has been decided and at least one Knowledge Item is approved.
-- The server evaluates approved Knowledge Items, saved provenance excerpts, and permission-filtered Astra document chunks for the same organization and Handoff.
-- Astra retrieval filters on both `organization_id` and `handoff_id`; source material from another Handoff cannot enter the prompt or a stored finding.
-- Groq `openai/gpt-oss-120b` returns strict-schema findings limited to missing, ambiguous, incomplete, or contradictory information. Each finding is Critical or Optional and cites one to six authorized evidence references; contradictions require at least two.
-- Provider output is validated again by the Edge Function and by the database transaction. IDs must belong to the active Handoff, evidence is stored as an exact snapshot, and an invalid batch rolls back without partial findings.
-- Preflight asks a human question and explains why it matters. It does not invent an answer or present an arbitrary completeness percentage.
-
-### Lifecycle and concurrency
-
-- A Handoff can have only one Processing Preflight run at a time. An abandoned Processing run becomes Failed after ten minutes when an admin retries.
-- A completed run is Ready and stores its finding count. Provider or validation errors become Failed with bounded, plain-language copy.
-- Any insert, deletion, or material edit to Knowledge Items or source text makes Ready runs Stale, clears critical acknowledgement, and returns a draft in Preflight/Preview to Review.
-- If material knowledge changes while a run is Processing, that run becomes Failed rather than being allowed to complete against an outdated snapshot.
-- Resolving a finding atomically creates approved manual knowledge or edits the selected approved Knowledge Item. Because that is a material change, Preflight must then rerun.
-- Skip and Unknown are explicit unresolved decisions. Optional unresolved findings can continue to Preview. Critical unresolved, skipped, or unknown findings require a recorded admin acknowledgement before Preview.
-- Publication must recheck the latest Ready run and the critical acknowledgement contract; reaching Preview alone does not publish or expose data.
-
-### Client state delivery
-
-- The client queries the current run once, subscribes to matching `preflight_runs` changes, and refreshes its scoped cache when the run changes.
-- Finding decision updates use a separate subscription scoped to the active run.
-- Preflight uses no fixed-interval database/PostgREST polling. External reasoning remains a bounded Edge Function request, and reconnecting triggers one cache refresh.
+- Review can advance only after every proposal has been decided and at least one Knowledge Item is approved.
+- The active Role Holder explicitly opens exact Preview. There is no Handoff Check/Preflight run, finding queue, AI readiness score, critical acknowledgement, or separate resolution phase.
+- Any insert, deletion, or edit to Knowledge Items, or any insert, deletion, or text edit to a Source, returns a draft in Preview to Review. The Role Holder must inspect the current approved knowledge and open Preview again.
+- The database enforces Role-assignment authorization and rechecks the proposal and approved-item gates when advancing to Preview.
+- Astra working-document chunks remain available to Organize. Removing Handoff Check does not remove document indexing or Ask Relay's separate publication-scoped Astra retrieval.
 
 ## Preview, publication, and recipient access
 
 ### Snapshot boundary
 
 - Draft Preview and the recipient page use the same `HandoffDocument` renderer and the same fixed section order.
-- Publishing is a database transaction that locks the draft, rechecks Preview stage, proposal decisions, the latest Ready Preflight, and any required critical acknowledgement.
-- The transaction copies only Approved Knowledge Items into publication snapshot rows and then marks the Handoff Published. Sources, transcripts, uploads, provenance, proposals, Preflight findings, and authorization IDs are excluded from the public JSON contract.
+- Publishing is a database transaction that locks the draft and rechecks Preview stage, proposal decisions, and the presence of approved knowledge.
+- The transaction copies only Approved Knowledge Items into publication snapshot rows and then marks the Handoff Published. Sources, transcripts, uploads, private provenance, proposals, and authorization IDs are excluded from the public JSON contract.
 - Material changes already return a draft to Review, so the server rejects publication when the owner's displayed Preview is stale. After publication, RLS freezes the original Handoff, Knowledge Items, source records, provenance, and source-file mutations.
 - The recipient renderer reads snapshot data and has no dependency on Groq, Unstructured, Astra, or another AI provider.
 
@@ -185,6 +158,27 @@ The OAuth client is a Google **Web application** because Google returns to the H
 - `ASK_RELAY_PRO_DAILY_LIMIT`
 
 Ask also uses the existing Astra and Groq server configuration listed above.
+
+## Organization Memory
+
+### Scope and immutable inputs
+
+- The authenticated comparison resolves one requested Role, rechecks `can_view_role_history`, and separately checks the Organization plan. Owner and active Role Holder behavior therefore remains enforced by the existing Role-history authorization boundary.
+- The default pair is the latest two structurally ordered published service periods for that exact Organization + Role. Publications from another Role or Organization cannot enter the pair.
+- Comparison reads only `handoff_publication_items`, which are immutable snapshots of approved Knowledge Items. It never reads raw Captures, Sources, document chunks, working Knowledge Items, or Handoff-check state.
+
+### Matching and materiality
+
+- Preserved carry-forward `knowledge_lineage_id` is the normal matching path. One prior and one current item with the same lineage form a Changed candidate; a current lineage with no predecessor is an Added candidate; and a prior lineage absent from current truth is a Retired candidate.
+- A deterministic normalization pass hides punctuation, formatting, word-order, and common grammatical-only rewrites before model review. Groq receives only the remaining server-approved candidates and may omit broader meaning-equivalent rewrites or non-material differences.
+- `strong_semantic` remains an internal legacy storage value only. The fallback can form a pair only when both immutable publication rows lack lineage, their broad knowledge types agree, and they are an unambiguous mutual-best match. Ambiguous legacy candidates are omitted rather than labeled Added/Retired or forced into a relationship.
+- Provider output cannot choose its own match basis or pair arbitrary references. Server validation maps output back to the precomputed candidate plan. Comparison writes only `role_memory_comparisons` and `role_memory_changes`; it never repairs or mutates canonical or published lineage.
+
+### Optional reason
+
+- A material change does not require a reason category. The provider may return one short `reason_statement` plus an approved publication evidence reference only when that evidence explicitly states a causal link. Server validation rejects unsupported statements and chronology-only explanations, producing `Reason not documented.` in the UI.
+- Safe citation labels/locators from the before, after, and accepted reason-evidence publication items are deduplicated into displayed provenance. Internal match basis, confidence, lineage IDs, and publication IDs are not part of the normal UI.
+- `202609270042_thin_organization_memory.sql` adds the optional evidence-backed `reason_statement` and permits missing lineage only for imported publication snapshots. `202609270043_remove_legacy_memory_reasons.sql` removes the obsolete reason-category columns, manual confirmation RPCs, and Warning/Lesson-to-Process relationship table.
 
 ## RevenueCat entitlement contract
 

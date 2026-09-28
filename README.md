@@ -4,7 +4,7 @@ Relay is an Android-first Expo application for preserving student-organization l
 
 The core product loop is:
 
-**Capture → Structure → Preflight → Resolve → Publish → Ask → Learn**
+**Capture → Organize → Review → Preview → Publish → Ask → Learn**
 
 ## Current state
 
@@ -18,7 +18,7 @@ Relay now has a working secure P0 path from capture through grounded recipient q
 - organization, role, and handoff history screens
 - voice, typed, document, and manual capture
 - human-reviewed structured knowledge with provenance
-- evidence-backed Preflight and resolution
+- direct Review-to-Preview publication flow with stale-preview protection
 - exact recipient Preview
 - revocable unguessable links, QR sharing, and a no-login recipient page
 - permission-filtered Ask Relay answers with immutable citations and explicit unsupported responses

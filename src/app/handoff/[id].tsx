@@ -47,6 +47,7 @@ function CaptureCard({
   const reviewSummary = captureReviewSummary({
     structuredProposalCount: capture.structuredProposalCount,
     pendingProposalCount,
+    droppedCount: capture.structuredDroppedCount,
   });
   const summary = [
     capture.attachments.length
@@ -80,9 +81,9 @@ function CaptureCard({
         <View style={styles.captureActions}>
           <Button disabled={structuring || processing} icon="pencil-outline" label="Edit" tone="ghost" onPress={onEdit} />
           <Button
-            disabled={structuring || processing}
+            disabled={structuring}
             icon="creation-outline"
-            label={structuring || processing ? 'Organizing…' : capture.structuringStatus === 'ready' ? 'Organize again' : 'Organize'}
+            label={structuring ? 'Organizing…' : processing ? 'Check progress' : capture.structuringStatus === 'ready' ? 'Organize again' : 'Organize'}
             tone="secondary"
             onPress={onStructure}
           />
@@ -224,6 +225,7 @@ function KnowledgeCard({
 export default function HandoffScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [editingCapture, setEditingCapture] = useState<HandoffCapture | null>(null);
+  const [organizingCaptureIds, setOrganizingCaptureIds] = useState<ReadonlySet<string>>(new Set());
   const handoffQuery = useHandoff(id);
   const roleQuery = useRole(handoffQuery.data?.roleId);
   const organizationQuery = useOrganization(handoffQuery.data?.organizationId);
@@ -282,10 +284,6 @@ export default function HandoffScreen() {
       router.push((`/handoff-preview?handoffId=${handoff.id}`) as Href);
       return;
     }
-    if (handoff.stage === 'preflight') {
-      router.push((`/handoff-preflight?handoffId=${handoff.id}`) as Href);
-      return;
-    }
     if (handoff.stage === 'capture') {
       await reviewMutation.mutateAsync({ handoffId: handoff.id });
     }
@@ -300,18 +298,10 @@ export default function HandoffScreen() {
         button: 'Preview & share',
         icon: 'share-variant-outline' as const,
       }
-    : handoff.stage === 'preflight'
-    ? {
-        eyebrow: 'HANDOFF CHECK',
-        title: 'Settle the details before Preview',
-        body: 'Review evidence-backed gaps, resolve what you know, and make deliberate decisions about what remains.',
-        button: 'Open handoff check',
-        icon: 'shield-check-outline' as const,
-      }
     : handoff.stage === 'preview'
       ? {
           eyebrow: 'READY FOR PREVIEW',
-          title: 'Handoff check decisions are recorded',
+          title: 'Review the recipient experience',
           body: 'Review exactly what the incoming leader will see, then publish the approved snapshot when it is ready.',
           button: 'Preview recipient view',
           icon: 'eye-check-outline' as const,
@@ -319,7 +309,7 @@ export default function HandoffScreen() {
       : {
           eyebrow: 'NEXT STEP',
           title: 'Review what Relay found',
-          body: 'Choose what belongs in the handoff. Relay checks it automatically when Review is complete.',
+          body: 'Choose what belongs in the handoff, then preview exactly what the next leader will receive.',
           button: 'Review findings',
           icon: 'arrow-right' as const,
         };
@@ -426,9 +416,18 @@ export default function HandoffScreen() {
                 editable={handoff.status === 'draft'}
                 key={capture.id}
                 pendingProposalCount={proposedItems.filter((item) => item.captureId === capture.id).length}
-                structuring={structureMutation.isPending && structureMutation.variables?.captureId === capture.id}
+                structuring={organizingCaptureIds.has(capture.id)}
                 onEdit={() => setEditingCapture(capture)}
-                onStructure={() => structureMutation.mutate({ captureId: capture.id, handoffId: capture.handoffId })}
+                onStructure={() => {
+                  setOrganizingCaptureIds((current) => new Set(current).add(capture.id));
+                  structureMutation.mutate({ captureId: capture.id, handoffId: capture.handoffId }, {
+                    onSettled: () => setOrganizingCaptureIds((current) => {
+                      const next = new Set(current);
+                      next.delete(capture.id);
+                      return next;
+                    }),
+                  });
+                }}
               />
             ))}
           </View>

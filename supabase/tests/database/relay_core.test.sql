@@ -66,6 +66,12 @@ where title = 'President'
     select organization_id from public.organization_members
     where user_id = '33333333-3333-4333-8333-333333333333'
   );
+update public.organizations
+set free_role_id = '55555555-5555-4555-8555-555555555555'
+where id = (
+  select organization_id from public.organization_members
+  where user_id = '33333333-3333-4333-8333-333333333333'
+);
 insert into public.role_assignments(organization_id,role_id,user_id,service_period,assigned_by)
 select organization_id,id,'33333333-3333-4333-8333-333333333333',period,'33333333-3333-4333-8333-333333333333'
 from public.roles cross join (values ('2026–2027'),('2027–2028')) p(period) where id = '55555555-5555-4555-8555-555555555555';
@@ -594,7 +600,7 @@ select is(
 );
 select is((select count(*) from public.organizations), 1::bigint, 'a member can read their organization');
 select is((select count(*) from public.roles), 1::bigint, 'a member can read organization roles');
-select is((select count(*) from public.handoffs), 1::bigint, 'a member can read organization handoffs');
+select is((select count(*) from public.handoffs), 0::bigint, 'membership alone cannot read private handoffs');
 select is((select count(*) from public.sources), 0::bigint, 'membership alone cannot read role sources');
 select is((select count(*) from public.captures), 0::bigint, 'membership alone cannot read private Captures');
 select is((select count(*) from storage.objects where bucket_id = 'handoff-sources'), 0::bigint, 'membership alone cannot read private source files');
@@ -731,483 +737,16 @@ select set_config(
 
 select lives_ok(
   $$select public.begin_handoff_review('66666666-6666-4666-8666-666666666666')$$,
-  'the admin can return the current handoff to Review before Preflight'
-);
-
-select lives_ok(
-  $$select public.begin_preflight_run('66666666-6666-4666-8666-666666666666')$$,
-  'an admin can begin Preflight after every proposal has a decision'
-);
-
-select is(
-  (select stage from public.handoffs where id = '66666666-6666-4666-8666-666666666666'),
-  'preflight',
-  'starting Preflight advances the handoff stage'
-);
-
-select is(
-  (select status from public.preflight_runs where handoff_id = '66666666-6666-4666-8666-666666666666'),
-  'processing',
-  'a new Preflight run has an explicit processing state'
-);
-
-select throws_ok(
-  $$select public.begin_preflight_run('66666666-6666-4666-8666-666666666666')$$,
-  '55000',
-  null,
-  'a handoff cannot start two concurrent Preflight runs'
-);
-
-select throws_ok(
-  $test$
-    select public.complete_preflight_run(
-      (select id from public.preflight_runs where status = 'processing'),
-      jsonb_build_array(jsonb_build_object(
-        'finding_type', 'contradiction',
-        'severity', 'critical',
-        'title', 'Conflicting venue instructions',
-        'question', 'Which venue instruction should the successor follow?',
-        'explanation', 'A contradiction needs evidence from both sides.',
-        'suggested_knowledge_type', 'process',
-        'primary_knowledge_item_id', '88888888-8888-4888-8888-888888888888',
-        'evidence', jsonb_build_array(jsonb_build_object(
-          'evidence_kind', 'knowledge',
-          'knowledge_item_id', '88888888-8888-4888-8888-888888888888',
-          'source_id', null,
-          'label', 'Reserve the venue',
-          'excerpt', 'Submit the venue request twelve weeks before RoboFest.',
-          'locator', null
-        ))
-      ))
-    )
-  $test$,
-  '22023',
-  null,
-  'a claimed contradiction is rejected unless it cites at least two pieces of evidence'
-);
-
-select is(
-  (select count(*) from public.preflight_findings),
-  0::bigint,
-  'invalid Preflight output rolls back without partial findings'
-);
-
-select is(
-  (
-    select public.complete_preflight_run(
-      (select id from public.preflight_runs where status = 'processing'),
-      jsonb_build_array(jsonb_build_object(
-        'finding_type', 'ambiguous',
-        'severity', 'critical',
-        'title', 'Facilities contact is incomplete',
-        'question', 'How should the next president contact Sarah in Facilities?',
-        'explanation', 'The handoff names the contact but gives no reliable contact method.',
-        'suggested_knowledge_type', 'contact',
-        'primary_knowledge_item_id', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-        'evidence', jsonb_build_array(
-          jsonb_build_object(
-            'evidence_kind', 'knowledge',
-            'knowledge_item_id', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-            'source_id', null,
-            'label', 'Sarah in Facilities',
-            'excerpt', 'Sarah coordinates Engineering Hall reservations.',
-            'locator', null
-          ),
-          jsonb_build_object(
-            'evidence_kind', 'source',
-            'knowledge_item_id', null,
-            'source_id', '77777777-7777-4777-8777-777777777777',
-            'label', 'RoboFest notes',
-            'excerpt', 'Book the hall early and speak to Facilities.',
-            'locator', null
-          )
-        )
-      ))
-    )
-  ),
-  1,
-  'valid evidence-backed findings complete a Preflight run atomically'
-);
-
-select is(
-  (
-    select status || ':' || finding_count::text
-    from public.preflight_runs
-    order by created_at desc, id desc
-    limit 1
-  ),
-  'ready:1',
-  'a completed Preflight records ready state and its finding count'
-);
-
-select is(
-  (select count(*) from public.preflight_finding_evidence),
-  2::bigint,
-  'Preflight retains exact knowledge and source evidence snapshots'
-);
-
-select throws_ok(
-  $$select public.advance_handoff_to_preview('66666666-6666-4666-8666-666666666666', false)$$,
-  '22023',
-  null,
-  'critical unresolved findings block Preview without deliberate acknowledgement'
-);
-
-select lives_ok(
-  $$
-    select public.decide_preflight_finding(
-      (select id from public.preflight_findings where title = 'Facilities contact is incomplete'),
-      'unknown'
-    )
-  $$,
-  'the admin can honestly mark a Preflight answer unknown'
-);
-
-select is(
-  (select status from public.preflight_findings where title = 'Facilities contact is incomplete'),
-  'unknown',
-  'an unknown decision remains visible rather than pretending to resolve the issue'
-);
-
-select throws_ok(
-  $$select public.advance_handoff_to_preview('66666666-6666-4666-8666-666666666666', false)$$,
-  '22023',
-  null,
-  'marking a critical finding unknown still requires acknowledgement'
-);
-
-select is(
-  (
-    select public.resolve_preflight_finding(
-      (select id from public.preflight_findings where title = 'Facilities contact is incomplete'),
-      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-      'contact',
-      'Sarah in Facilities',
-      'Contact Sarah through facilities@northbridge.example for Engineering Hall reservations.'
-    )
-  ),
-  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'::uuid,
-  'a finding can be resolved by atomically improving existing approved knowledge'
-);
-
-select is(
-  (select status from public.preflight_findings where title = 'Facilities contact is incomplete'),
-  'resolved',
-  'resolving a finding records its decision explicitly'
-);
-
-select is(
-  (select status from public.preflight_runs order by created_at asc, id asc limit 1),
-  'stale',
-  'material knowledge changes make the completed Preflight stale'
-);
-
-select is(
-  (select stage from public.handoffs where id = '66666666-6666-4666-8666-666666666666'),
-  'review',
-  'resolving a finding returns the draft to Review before rerunning Preflight'
-);
-
-select lives_ok(
-  $$select public.begin_preflight_run('66666666-6666-4666-8666-666666666666')$$,
-  'Preflight can rerun after a material resolution'
-);
-
-select is(
-  (
-    select public.complete_preflight_run(
-      (select id from public.preflight_runs where status = 'processing'),
-      jsonb_build_array(
-        jsonb_build_object(
-          'finding_type', 'incomplete',
-          'severity', 'critical',
-          'title', 'Venue confirmation owner is missing',
-          'question', 'Who confirms that the venue request was accepted?',
-          'explanation', 'The process has no accountable person for confirmation.',
-          'suggested_knowledge_type', 'process',
-          'primary_knowledge_item_id', '88888888-8888-4888-8888-888888888888',
-          'evidence', jsonb_build_array(jsonb_build_object(
-            'evidence_kind', 'knowledge',
-            'knowledge_item_id', '88888888-8888-4888-8888-888888888888',
-            'source_id', null,
-            'label', 'Reserve the venue',
-            'excerpt', 'Submit the venue request twelve weeks before RoboFest.',
-            'locator', null
-          ))
-        ),
-        jsonb_build_object(
-          'finding_type', 'missing',
-          'severity', 'optional',
-          'title', 'Confirmation storage is unspecified',
-          'question', 'Where should the venue confirmation be stored?',
-          'explanation', 'A shared location would make the confirmation easier to find.',
-          'suggested_knowledge_type', 'access_resource',
-          'primary_knowledge_item_id', null,
-          'evidence', jsonb_build_array(jsonb_build_object(
-            'evidence_kind', 'source',
-            'knowledge_item_id', null,
-            'source_id', '77777777-7777-4777-8777-777777777777',
-            'label', 'RoboFest notes',
-            'excerpt', 'Keep the confirmation email.',
-            'locator', null
-          ))
-        )
-      )
-    )
-  ),
-  2,
-  'a rerun can retain both critical and optional findings'
-);
-
-select is(
-  (
-    select count(*) from public.preflight_findings
-    where run_id = (select id from public.preflight_runs where status = 'ready')
-  ),
-  2::bigint,
-  'the readiness record exposes every unresolved finding without a percentage score'
-);
-
-select lives_ok(
-  $$
-    select public.decide_preflight_finding(
-      (select id from public.preflight_findings where title = 'Confirmation storage is unspecified'),
-      'skipped'
-    )
-  $$,
-  'an optional finding can be deliberately skipped for now'
-);
-
-select lives_ok(
-  $$
-    select public.decide_preflight_finding(
-      (select id from public.preflight_findings where title = 'Venue confirmation owner is missing'),
-      'unknown'
-    )
-  $$,
-  'a critical finding can remain visibly unknown'
-);
-
-select throws_ok(
-  $$select public.advance_handoff_to_preview('66666666-6666-4666-8666-666666666666', false)$$,
-  '22023',
-  null,
-  'critical unknown findings cannot silently pass into Preview'
-);
-
-select lives_ok(
-  $$select public.advance_handoff_to_preview('66666666-6666-4666-8666-666666666666', true)$$,
-  'an admin can explicitly acknowledge critical unresolved findings and continue'
-);
-
-select is(
-  (select stage from public.handoffs where id = '66666666-6666-4666-8666-666666666666'),
-  'preview',
-  'deliberate critical acknowledgement advances the draft to Preview'
-);
-
-select ok(
-  (
-    select critical_acknowledged_at is not null and critical_acknowledged_by = '33333333-3333-4333-8333-333333333333'
-    from public.preflight_runs
-    where status = 'ready'
-  ),
-  'critical acknowledgement records the accountable actor and time'
-);
-
-select lives_ok(
-  $$
-    update public.sources
-    set text_content = text_content || ' Save it in the shared drive.'
-    where id = '77777777-7777-4777-8777-777777777777'
-  $$,
-  'source evidence can still be corrected after Preview'
-);
-
-select is(
-  (
-    select status from public.preflight_runs
-    where finding_count = 2
-    order by created_at desc, id desc limit 1
-  ),
-  'stale',
-  'changing source evidence invalidates the prior readiness result'
-);
-
-select is(
-  (select stage from public.handoffs where id = '66666666-6666-4666-8666-666666666666'),
-  'review',
-  'a stale result moves Preview back to Review'
-);
-
-select lives_ok(
-  $$select public.begin_preflight_run('66666666-6666-4666-8666-666666666666')$$,
-  'Preflight can run again after source evidence changes'
-);
-
-select is(
-  (
-    select public.complete_preflight_run(
-      (select id from public.preflight_runs where status = 'processing'),
-      jsonb_build_array(jsonb_build_object(
-        'finding_type', 'missing',
-        'severity', 'optional',
-        'title', 'Backup contact is optional',
-        'question', 'Would a backup Facilities contact be useful?',
-        'explanation', 'The primary contact is actionable; a backup would add resilience.',
-        'suggested_knowledge_type', 'contact',
-        'primary_knowledge_item_id', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-        'evidence', jsonb_build_array(jsonb_build_object(
-          'evidence_kind', 'knowledge',
-          'knowledge_item_id', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-          'source_id', null,
-          'label', 'Sarah in Facilities',
-          'excerpt', 'Contact Sarah through facilities@northbridge.example for Engineering Hall reservations.',
-          'locator', null
-        ))
-      ))
-    )
-  ),
-  1,
-  'Preflight can complete with only optional improvements'
-);
-
-select lives_ok(
-  $$select public.advance_handoff_to_preview('66666666-6666-4666-8666-666666666666', false)$$,
-  'optional unresolved findings do not block Preview'
-);
-
-select is(
-  (select stage from public.handoffs where id = '66666666-6666-4666-8666-666666666666'),
-  'preview',
-  'the handoff reaches Preview without a false critical acknowledgement'
-);
-
-select is(
-  (
-    select critical_acknowledged_at
-    from public.preflight_runs
-    where status = 'ready'
-    order by created_at desc, id desc limit 1
-  ),
-  null,
-  'optional-only readiness does not fabricate a critical acknowledgement'
-);
-
-select lives_ok(
-  $$
-    update public.sources
-    set text_content = text_content || ' Keep the request number too.'
-    where id = '77777777-7777-4777-8777-777777777777'
-  $$,
-  'a further material change correctly invalidates optional-only readiness'
-);
-
-select lives_ok(
-  $$select public.begin_preflight_run('66666666-6666-4666-8666-666666666666')$$,
-  'a fresh processing run can start after the latest change'
-);
-
-select lives_ok(
-  $$
-    update public.knowledge_items
-    set content = content || ' Retain the request number.'
-    where id = '88888888-8888-4888-8888-888888888888'
-  $$,
-  'approved knowledge remains editable during a processing attempt'
-);
-
-select is(
-  (
-    select status from public.preflight_runs
-    where failure_reason = 'Knowledge changed while Preflight was running. Run it again with the current handoff.'
-    order by started_at desc limit 1
-  ),
-  'failed',
-  'a material change during processing fails the run instead of publishing stale readiness'
-);
-
-select is(
-  (select stage from public.handoffs where id = '66666666-6666-4666-8666-666666666666'),
-  'review',
-  'a concurrent material change safely returns the draft to Review'
+  'the admin can move the current handoff into Review'
 );
 
 set local role postgres;
 
-select ok(
-  exists (
-    select 1 from pg_publication_tables
-    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'preflight_runs'
-  ),
-  'Preflight run completion is delivered through Supabase Realtime'
-);
-
-select ok(
-  exists (
-    select 1 from pg_publication_tables
-    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'preflight_findings'
-  ),
-  'Preflight finding decisions are delivered through Supabase Realtime'
-);
-
-set local role authenticated;
-select set_config(
-  'request.jwt.claims',
-  '{"sub":"44444444-4444-4444-8444-444444444444","role":"authenticated"}',
-  true
-);
-
-select is((select count(*) from public.preflight_runs), 0::bigint, 'membership alone cannot read private Preflight history');
-select is((select count(*) from public.preflight_findings), 0::bigint, 'membership alone cannot read private Preflight findings');
-select is((select count(*) from public.preflight_finding_evidence), 0::bigint, 'membership alone cannot read private Preflight evidence');
-
-select throws_ok(
-  $$select public.begin_preflight_run('66666666-6666-4666-8666-666666666666')$$,
-  '42501',
-  null,
-  'a normal member cannot start Preflight'
-);
-
-select throws_ok(
-  $$
-    select public.decide_preflight_finding(
-      (select id from public.preflight_findings where title = 'Backup contact is optional'),
-      'skipped'
-    )
-  $$,
-  '42501',
-  null,
-  'a normal member cannot decide Preflight findings'
-);
-
-select throws_ok(
-  $$
-    select public.resolve_preflight_finding(
-      (select id from public.preflight_findings where title = 'Backup contact is optional'),
-      null,
-      'contact',
-      'Backup contact',
-      'Use the Facilities office as the backup contact.'
-    )
-  $$,
-  '42501',
-  null,
-  'a normal member cannot resolve Preflight findings'
-);
-
-select throws_ok(
-  $$select public.advance_handoff_to_preview('66666666-6666-4666-8666-666666666666', true)$$,
-  '42501',
-  null,
-  'a normal member cannot advance the handoff from Preflight'
-);
-
-set local role anon;
-select set_config('request.jwt.claims', '{"role":"anon"}', true);
-select is((select count(*) from public.preflight_runs), 0::bigint, 'anonymous users cannot read Preflight runs');
-select is((select count(*) from public.preflight_findings), 0::bigint, 'anonymous users cannot read Preflight findings');
-select is((select count(*) from public.preflight_finding_evidence), 0::bigint, 'anonymous users cannot read Preflight evidence');
+select is(to_regclass('public.preflight_runs'), null::regclass, 'the Preflight run table is removed');
+select is(to_regclass('public.preflight_findings'), null::regclass, 'the Preflight finding table is removed');
+select is(to_regclass('public.preflight_finding_evidence'), null::regclass, 'the Preflight evidence table is removed');
+select is(to_regprocedure('public.begin_preflight_run(uuid)'), null::regprocedure, 'the Preflight start RPC is removed');
+select is(to_regprocedure('public.complete_preflight_run(uuid,jsonb)'), null::regprocedure, 'the Preflight completion RPC is removed');
 
 set local role authenticated;
 select set_config(
@@ -1217,24 +756,73 @@ select set_config(
 );
 
 select lives_ok(
-  $$select public.begin_preflight_run('66666666-6666-4666-8666-666666666666')$$,
-  'the admin can run the final Preflight before publication'
+  $$select public.advance_handoff_to_preview('66666666-6666-4666-8666-666666666666')$$,
+  'the active Role Holder advances directly from Review to Preview'
 );
 
 select is(
-  (
-    select public.complete_preflight_run(
-      (select id from public.preflight_runs where status = 'processing'),
-      '[]'::jsonb
-    )
-  ),
-  0,
-  'a fully actionable handoff can complete Preflight with no findings'
+  (select stage from public.handoffs where id = '66666666-6666-4666-8666-666666666666'),
+  'preview',
+  'direct Preview has no intermediate Handoff Check stage'
 );
 
 select lives_ok(
-  $$select public.advance_handoff_to_preview('66666666-6666-4666-8666-666666666666', false)$$,
-  'a ready handoff can advance to exact Preview'
+  $$
+    update public.sources
+    set text_content = text_content || ' Save it in the shared drive.'
+    where id = '77777777-7777-4777-8777-777777777777'
+  $$,
+  'source evidence remains editable after Preview'
+);
+
+select is(
+  (select stage from public.handoffs where id = '66666666-6666-4666-8666-666666666666'),
+  'review',
+  'changing source content returns a previewed draft to Review'
+);
+
+select lives_ok(
+  $$select public.advance_handoff_to_preview('66666666-6666-4666-8666-666666666666')$$,
+  'the active Role Holder can Preview again after reviewing a source edit'
+);
+
+select lives_ok(
+  $$
+    update public.knowledge_items
+    set content = content || ' Retain the request number.'
+    where id = '88888888-8888-4888-8888-888888888888'
+  $$,
+  'approved knowledge remains editable after Preview'
+);
+
+select is(
+  (select stage from public.handoffs where id = '66666666-6666-4666-8666-666666666666'),
+  'review',
+  'changing approved knowledge returns a previewed draft to Review'
+);
+
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"44444444-4444-4444-8444-444444444444","role":"authenticated"}',
+  true
+);
+
+select throws_ok(
+  $$select public.advance_handoff_to_preview('66666666-6666-4666-8666-666666666666')$$,
+  '42501',
+  null,
+  'an Organization member without the active Role Assignment cannot advance Preview'
+);
+
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"33333333-3333-4333-8333-333333333333","role":"authenticated"}',
+  true
+);
+
+select lives_ok(
+  $$select public.advance_handoff_to_preview('66666666-6666-4666-8666-666666666666')$$,
+  'the active Role Holder can advance the reviewed handoff to exact Preview'
 );
 
 select is(
@@ -1864,8 +1452,7 @@ insert into public.role_memory_comparisons (
 
 insert into public.role_memory_changes (
   id, comparison_id, organization_id, role_id, change_type, title, summary,
-  current_publication_item_id, match_basis, reason_category, reason_explanation,
-  after_snapshot
+  current_publication_item_id, match_basis, after_snapshot
 ) values (
   '20202020-1010-4010-8010-101010101010',
   '19191919-1010-4010-8010-101010101010',
@@ -1873,7 +1460,6 @@ insert into public.role_memory_changes (
   '55555555-5555-4555-8555-555555555555',
   'added', 'Test the projector', 'A pre-opening equipment test was added.',
   '18181818-1010-4010-8010-101010101010', 'not_applicable',
-  'unknown', 'Reason not established.',
   jsonb_build_object(
     'id', '18181818-1010-4010-8010-101010101010',
     'sourceKnowledgeItemId', '16161616-1010-4010-8010-101010101010',
@@ -1889,36 +1475,6 @@ select set_config(
   'request.jwt.claims',
   '{"sub":"33333333-3333-4333-8333-333333333333","role":"authenticated"}',
   true
-);
-
-select lives_ok(
-  $$select public.confirm_memory_change_reason_v13(
-    '20202020-1010-4010-8010-101010101010',
-    'lesson_driven',
-    'The equipment test was added because the projector failure delayed opening.',
-    '15151515-1010-4010-8010-101010101010'
-  )$$,
-  'a human can explicitly confirm a lesson-to-practice relationship'
-);
-
-select is(
-  (select reason_category from public.role_memory_changes where id = '20202020-1010-4010-8010-101010101010'),
-  'lesson_driven',
-  'the human-confirmed reason is stored on the material change'
-);
-
-select is(
-  (select human_confirmed from public.role_memory_changes where id = '20202020-1010-4010-8010-101010101010'),
-  true,
-  'the reason remains distinguishable as human-confirmed metadata'
-);
-
-select is(
-  (select count(*) from public.knowledge_relationships
-   where from_knowledge_item_id = '15151515-1010-4010-8010-101010101010'
-     and to_knowledge_item_id = '16161616-1010-4010-8010-101010101010'),
-  1::bigint,
-  'human confirmation creates an explicit lesson-to-practice link'
 );
 
 select lives_ok(

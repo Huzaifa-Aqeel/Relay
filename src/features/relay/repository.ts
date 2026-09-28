@@ -33,10 +33,6 @@ import type {
   OrganizationPlan,
   OrganizationRole,
   AssignedRole,
-  PreflightEvidence,
-  PreflightFinding,
-  PreflightResolutionInput,
-  PreflightRun,
   RoleInput,
   SharedHandoff,
   MemoryRole,
@@ -46,7 +42,6 @@ import type {
   DocumentSourceInput,
   DocumentDuplicateCheckInput,
   DocumentDuplicateCheckResult,
-  GoogleDriveImportStart,
   SourceUploadResult,
   VoiceRecordingInput,
   VoiceTranscriptPreview,
@@ -59,9 +54,6 @@ type HandoffRow = Database['public']['Tables']['handoffs']['Row'];
 type SourceRow = Database['public']['Tables']['sources']['Row'];
 type CaptureRow = Database['public']['Tables']['captures']['Row'];
 type KnowledgeItemRow = Database['public']['Tables']['knowledge_items']['Row'];
-type PreflightRunRow = Database['public']['Tables']['preflight_runs']['Row'];
-type PreflightFindingRow = Database['public']['Tables']['preflight_findings']['Row'];
-type PreflightEvidenceRow = Database['public']['Tables']['preflight_finding_evidence']['Row'];
 type HandoffPublicationRow = Database['public']['Tables']['handoff_publications']['Row'];
 type HandoffPublicationItemRow = Database['public']['Tables']['handoff_publication_items']['Row'];
 type RoleMemoryComparisonRow = Database['public']['Tables']['role_memory_comparisons']['Row'];
@@ -96,8 +88,6 @@ function messageFor(error: { code?: string; message: string }) {
   if (error.code === '42501') return 'You do not have permission to make that change.';
   if (error.code === 'PGRST116') return 'This item no longer exists or you do not have access.';
   if (error.message.includes('Preview this handoff')) return 'Open the exact recipient Preview before publishing.';
-  if (error.message.includes('Run Preflight')) return 'Run Preflight again before publishing this handoff.';
-  if (error.message.includes('Critical findings')) return 'Acknowledge the remaining critical findings before publishing.';
   if (error.message.includes('Review every proposal')) return 'Review every proposed item before publishing.';
   if (error.message.includes('every capture to finish')) return 'Wait for every capture to finish, then open Review.';
   if (error.message.includes('Active published link unavailable')) return 'This published link is already inactive.';
@@ -217,6 +207,7 @@ function mapCapture(row: CaptureRow, attachments: HandoffSource[]): HandoffCaptu
     structuringFailureReason: row.structuring_failure_reason,
     structuredAt: row.structured_at,
     structuredProposalCount: row.structured_proposal_count,
+    structuredDroppedCount: row.structured_dropped_count,
     attachments,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -245,58 +236,6 @@ function mapKnowledgeItem(row: KnowledgeItemRow): KnowledgeItem {
     decidedAt: row.decided_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-  };
-}
-
-function mapPreflightRun(row: PreflightRunRow): PreflightRun {
-  return {
-    id: row.id,
-    organizationId: row.organization_id,
-    handoffId: row.handoff_id,
-    createdBy: row.created_by,
-    status: row.status as PreflightRun['status'],
-    failureReason: row.failure_reason,
-    findingCount: row.finding_count,
-    criticalAcknowledgedAt: row.critical_acknowledged_at,
-    startedAt: row.started_at,
-    completedAt: row.completed_at,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
-}
-
-function mapPreflightFinding(row: PreflightFindingRow): PreflightFinding {
-  return {
-    id: row.id,
-    runId: row.run_id,
-    organizationId: row.organization_id,
-    handoffId: row.handoff_id,
-    findingType: row.finding_type as PreflightFinding['findingType'],
-    severity: row.severity as PreflightFinding['severity'],
-    title: row.title,
-    question: row.question,
-    explanation: row.explanation,
-    suggestedKnowledgeType: row.suggested_knowledge_type as PreflightFinding['suggestedKnowledgeType'],
-    primaryKnowledgeItemId: row.primary_knowledge_item_id,
-    status: row.status as PreflightFinding['status'],
-    resolutionKnowledgeItemId: row.resolution_knowledge_item_id,
-    decidedAt: row.decided_at,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
-}
-
-function mapPreflightEvidence(row: PreflightEvidenceRow): PreflightEvidence {
-  return {
-    id: row.id,
-    findingId: row.finding_id,
-    runId: row.run_id,
-    evidenceKind: row.evidence_kind as PreflightEvidence['evidenceKind'],
-    knowledgeItemId: row.knowledge_item_id,
-    sourceId: row.source_id,
-    label: row.label,
-    excerpt: row.excerpt,
-    locator: row.locator,
   };
 }
 
@@ -791,6 +730,8 @@ export async function listHandoffSources(handoffId: string) {
 
 export async function listHandoffCaptures(handoffId: string): Promise<HandoffCapture[]> {
   const client = requireSupabase();
+  const swept = await client.rpc('sweep_stale_capture_processing', { target_handoff_id: handoffId });
+  throwDataError(swept.error);
   const { data: captures, error: captureError } = await client
     .from('captures')
     .select('*')
@@ -826,27 +767,6 @@ export async function listHandoffCaptures(handoffId: string): Promise<HandoffCap
   return captures.map((capture) => mapCapture(capture, attachmentsByCapture.get(capture.id) ?? []));
 }
 
-export async function listCaptureAttachments(captureId: string): Promise<HandoffSource[]> {
-  const client = requireSupabase();
-  const { data: links, error: linkError } = await client.from('capture_sources')
-    .select('source_id, position')
-    .eq('capture_id', captureId)
-    .eq('relationship', 'attachment')
-    .is('removed_at', null)
-    .order('position', { ascending: true });
-  throwDataError(linkError);
-  if (!links.length) return [];
-  const { data: sources, error: sourceError } = await client.from('sources')
-    .select('*')
-    .in('id', links.map((link) => link.source_id));
-  throwDataError(sourceError);
-  const sourceById = new Map(sources.map((source) => [source.id, mapSource(source)]));
-  return links.flatMap((link) => {
-    const source = sourceById.get(link.source_id);
-    return source ? [source] : [];
-  });
-}
-
 export async function getHandoffSource(id: string) {
   const { data, error } = await requireSupabase().from('sources').select('*').eq('id', id).single();
   throwDataError(error);
@@ -858,7 +778,8 @@ async function markDocumentProcessingFailed(sourceId: string) {
   const { error } = await requireSupabase()
     .from('sources')
     .update({ processing_status: 'failed', failure_reason: reason })
-    .eq('id', sourceId);
+    .eq('id', sourceId)
+    .in('processing_status', ['pending', 'processing']);
   throwDataError(error);
 }
 
@@ -1008,32 +929,6 @@ export async function createCaptureDraft(input: CaptureDraftInput) {
   return data;
 }
 
-async function functionErrorMessage(error: unknown, fallback: string) {
-  if (error instanceof FunctionsHttpError) {
-    try {
-      const body = await error.context.clone().json();
-      if (typeof body?.error === 'string' && body.error.trim()) return body.error.trim();
-    } catch {
-      // Keep the safe fallback when the response has no readable JSON body.
-    }
-  }
-  return fallback;
-}
-
-export async function startGoogleDriveImport(captureId: string, returnUrl: string): Promise<GoogleDriveImportStart> {
-  const result = await requireSupabase().functions.invoke('google-drive-import', {
-    body: { captureId, returnUrl },
-  });
-  if (result.error) {
-    throw new Error(await functionErrorMessage(result.error, 'Google Drive could not be opened. Try again.'));
-  }
-  const authUrl = typeof result.data?.authUrl === 'string' ? result.data.authUrl : '';
-  if (!/^https:\/\/accounts\.google\.com\//.test(authUrl)) {
-    throw new Error('Google Drive could not be opened. Try again.');
-  }
-  return { authUrl };
-}
-
 export async function submitCapture(input: CaptureInput, userId: string): Promise<CaptureSubmitResult> {
   const client = requireSupabase();
   let captureId = input.captureId ?? null;
@@ -1091,6 +986,19 @@ export async function submitCapture(input: CaptureInput, userId: string): Promis
   }
 }
 
+/**
+ * `retryable` is authoritative when the server sends it (currently: any 429
+ * is always `false`, regardless of body correctness, as a hard client-side
+ * guarantee against re-firing a rate-limited Organize call). It stays
+ * `undefined` for error paths that predate this field — callers fall back to
+ * their own heuristic in that case.
+ */
+export class OrganizeError extends Error {
+  constructor(message: string, public readonly retryable?: boolean) {
+    super(message);
+  }
+}
+
 export async function generateCaptureProposals(captureId: string) {
   const client = requireSupabase();
   const { data: relations, error: relationError } = await client.from('capture_sources')
@@ -1108,27 +1016,34 @@ export async function generateCaptureProposals(captureId: string) {
     ? await client.from('sources').select('id, processing_status').in('id', activeIds)
     : { data: [], error: null };
   throwDataError(sourceError);
+  const requested = await client.rpc('request_capture_organize', {
+    requested_capture_id: captureId,
+  });
+  throwDataError(requested.error);
   const toProcess = activeSources.filter((source) => source.processing_status === 'pending' || source.processing_status === 'failed');
   if (toProcess.length) {
-    await Promise.all(toProcess.map((source) => processDocumentSource(source.id)));
-    return 0;
+    await Promise.allSettled(toProcess.map((source) => processDocumentSource(source.id)));
   }
-  if (activeSources.some((source) => source.processing_status === 'processing')) return 0;
 
   const result = await client.functions.invoke('generate-knowledge-proposals', {
     body: { captureId },
   });
   if (result.error) {
     let message = "We couldn't organize this capture. Try again.";
+    let retryable: boolean | undefined;
     if (result.error instanceof FunctionsHttpError) {
       try {
         const body = await result.error.context.clone().json();
         if (typeof body?.error === 'string' && body.error.trim()) message = body.error.trim();
+        if (typeof body?.retryable === 'boolean') retryable = body.retryable;
       } catch {
         // Retain the safe fallback when the function response has no readable JSON body.
       }
+      // Hard override, independent of the body: never auto-retry a rate limit,
+      // even if a future change to the server forgets to set `retryable`.
+      if (result.error.context.status === 429) retryable = false;
     }
-    throw new Error(message);
+    throw new OrganizeError(message, retryable);
   }
   return Number(result.data?.proposalCount ?? 0);
 }
@@ -1223,69 +1138,9 @@ export async function decideKnowledgeProposal(id: string, decision: 'approved' |
   throwDataError(error);
 }
 
-export async function getLatestPreflightRun(handoffId: string) {
-  const { data, error } = await requireSupabase()
-    .from('preflight_runs')
-    .select('*')
-    .eq('handoff_id', handoffId)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  throwDataError(error);
-  return data ? mapPreflightRun(data) : null;
-}
-
-export async function listPreflightFindings(runId: string) {
-  const { data, error } = await requireSupabase()
-    .from('preflight_findings')
-    .select('*')
-    .eq('run_id', runId)
-    .order('severity', { ascending: true })
-    .order('created_at', { ascending: true });
-  throwDataError(error);
-  return data.map(mapPreflightFinding);
-}
-
-export async function listPreflightEvidence(runId: string) {
-  const { data, error } = await requireSupabase()
-    .from('preflight_finding_evidence')
-    .select('*')
-    .eq('run_id', runId)
-    .order('created_at', { ascending: true });
-  throwDataError(error);
-  return data.map(mapPreflightEvidence);
-}
-
-export async function runPreflight(handoffId: string) {
-  const result = await requireSupabase().functions.invoke('run-preflight', { body: { handoffId } });
-  if (result.error) throw new Error('Relay could not complete Preflight. Check its status and retry.');
-  return String(result.data?.runId ?? '');
-}
-
-export async function decidePreflightFinding(id: string, decision: 'skipped' | 'unknown') {
-  const { error } = await requireSupabase().rpc('decide_preflight_finding', {
-    requested_finding_id: id,
-    decision,
-  });
-  throwDataError(error);
-}
-
-export async function resolvePreflightFinding(input: PreflightResolutionInput) {
-  const { data, error } = await requireSupabase().rpc('resolve_preflight_finding', {
-    requested_finding_id: input.findingId,
-    requested_knowledge_item_id: input.knowledgeItemId ?? null,
-    requested_knowledge_type: input.knowledgeType,
-    requested_title: input.title.trim(),
-    requested_content: input.content.trim(),
-  });
-  throwDataError(error);
-  return data;
-}
-
-export async function advanceHandoffToPreview(handoffId: string, acknowledgeCritical: boolean) {
+export async function advanceHandoffToPreview(handoffId: string) {
   const { error } = await requireSupabase().rpc('advance_handoff_to_preview', {
     requested_handoff_id: handoffId,
-    acknowledge_critical: acknowledgeCritical,
   });
   throwDataError(error);
 }
@@ -1420,12 +1275,10 @@ function mapMemoryChange(row: RoleMemoryChangeRow): RoleMemoryChange {
     changeType: row.change_type as RoleMemoryChange['changeType'],
     title: row.title,
     summary: row.summary,
-    reasonCategory: row.reason_category as RoleMemoryChange['reasonCategory'],
-    reasonExplanation: row.reason_explanation,
+    reasonStatement: row.reason_statement,
     beforeSnapshot: parseMemorySnapshot(row.before_snapshot),
     afterSnapshot: parseMemorySnapshot(row.after_snapshot),
     supportingProvenance: parseCitationSources(row.supporting_provenance),
-    humanConfirmed: row.human_confirmed,
   };
 }
 
@@ -1493,35 +1346,6 @@ export async function listRoleMemoryChanges(comparisonId: string): Promise<RoleM
     .order('created_at', { ascending: true });
   throwDataError(error);
   return data.map(mapMemoryChange);
-}
-
-export async function listRoleLessons(roleId: string): Promise<Pick<KnowledgeItem, 'id' | 'title' | 'content'>[]> {
-  const client = requireSupabase();
-  const publications = await listRolePublications(roleId);
-  if (!publications.length) return [];
-  const { data, error } = await client
-    .from('handoff_publication_items')
-    .select('source_knowledge_item_id, title, content')
-    .in('publication_id', publications.map(p => p.id))
-    .in('knowledge_type', ['lesson', 'warning_lesson'])
-    .order('created_at', { ascending: false });
-  throwDataError(error);
-  return data.map(item => ({ id: item.source_knowledge_item_id, title: item.title, content: item.content }));
-}
-
-export async function confirmMemoryChangeReason(input: {
-  changeId: string;
-  reasonCategory: 'lesson_driven' | 'leadership_preference' | 'contact_resource' | 'unknown';
-  explanation: string;
-  lessonKnowledgeItemId?: string | null;
-}) {
-  const { error } = await requireSupabase().rpc('confirm_memory_change_reason_v13', {
-    requested_change_id: input.changeId,
-    requested_reason_category: input.reasonCategory,
-    requested_explanation: input.explanation.trim(),
-    requested_lesson_knowledge_item_id: input.lessonKnowledgeItemId ?? null,
-  });
-  throwDataError(error);
 }
 
 export async function compareRoleHandoffs(roleId: string) {

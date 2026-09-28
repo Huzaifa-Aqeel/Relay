@@ -13,8 +13,7 @@ const overviewSchema = z.object({
     assignments: z.array(z.object({ id: z.string(), userId: z.string(), name: z.string(), servicePeriod: z.string() })),
     handoffs: z.array(z.object({
       id: z.string(), servicePeriod: z.string(), status: z.string(), stage: z.string(), updatedAt: z.string(),
-      canMaintain: z.boolean(), approvedCount: z.number(), unresolvedCount: z.number(),
-      preflightStatus: z.string().nullable(), publicationStatus: z.string().nullable(),
+      canMaintain: z.boolean(), approvedCount: z.number(), publicationStatus: z.string().nullable(),
     })),
   })),
 });

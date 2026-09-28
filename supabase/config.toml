@@ -47,9 +47,6 @@ verify_jwt = true
 [functions.generate-knowledge-proposals]
 verify_jwt = true
 
-[functions.run-preflight]
-verify_jwt = true
-
 [functions.compare-handoffs]
 verify_jwt = true
 
@@ -58,11 +55,6 @@ verify_jwt = false
 
 [functions.index-publication-knowledge]
 verify_jwt = true
-
-# Google calls the callback without a Relay JWT. The function validates JWTs
-# on start requests and protects callbacks with a signed, expiring OAuth state.
-[functions.google-drive-import]
-verify_jwt = false
 
 [functions.sync-revenuecat-entitlement]
 verify_jwt = true

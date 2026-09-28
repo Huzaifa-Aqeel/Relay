@@ -1,4 +1,5 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.116.0';
+import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.3/package/xlsx.mjs';
 import { completeDocumentText, DocumentTextLimitError } from '../_shared/document-text.ts';
 
 const corsHeaders = {
@@ -15,9 +16,38 @@ const MAX_INDEXED_CHUNKS = 1_200;
 const ASTRA_BATCH_SIZE = 20;
 const POLL_INTERVAL_MS = 2_000;
 const MAX_POLL_MS = 110_000;
+// A single invocation is bounded by the platform's wall-clock ceiling, so a
+// genuinely slow (not stuck) document is given several bounded, resumable
+// attempts instead of failing outright the first time MAX_POLL_MS is hit.
+// The stored Unstructured job id makes each attempt a true resumption, not a
+// restart. Total ceiling (~5.5 minutes) stays well under the 10-minute
+// stale-processing reaper, so the two never race.
+const MAX_SOURCE_ATTEMPTS = 3;
 
 const DIRECT_TEXT_EXTENSIONS = new Set(['txt', 'md', 'csv']);
-const UNSTRUCTURED_EXTENSIONS = new Set(['bmp', 'docx', 'heic', 'jpeg', 'jpg', 'pdf', 'png', 'pptx', 'xlsx']);
+// xlsx is not included — Unstructured's API (at the current tier) does not
+// support it. XLSX files are parsed locally via SheetJS instead.
+const UNSTRUCTURED_EXTENSIONS = new Set(['bmp', 'docx', 'heic', 'jpeg', 'jpg', 'pdf', 'png', 'pptx', 'tiff']);
+const XLSX_EXTENSIONS = new Set(['xlsx']);
+
+// Cloud pickers (Google Drive, OneDrive, etc.) sometimes strip the file
+// extension from the filename, leaving a storage path with no recognisable
+// suffix. Fall back to the stored MIME type when that happens.
+const MIME_TO_EXTENSION: Record<string, string> = {
+  'application/pdf': 'pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+  'application/vnd.ms-excel': 'xlsx',
+  'text/plain': 'txt',
+  'text/markdown': 'md',
+  'text/csv': 'csv',
+  'image/bmp': 'bmp',
+  'image/heic': 'heic',
+  'image/jpeg': 'jpeg',
+  'image/jpg': 'jpg',
+  'image/png': 'png',
+};
 
 type SourceRow = {
   id: string;
@@ -79,6 +109,9 @@ class ProcessingError extends Error {
   }
 }
 
+/** A poll that ran out of time this attempt — recoverable by continuing, unlike other ProcessingErrors. */
+class PollTimeoutError extends ProcessingError {}
+
 function json(body: unknown, status = 200) {
   return Response.json(body, { status, headers: corsHeaders });
 }
@@ -109,6 +142,36 @@ function readConfig(): ServerConfig {
     astraMetric: requiredEnv('ASTRA_DB_VECTOR_METRIC').toLowerCase(),
   };
 }
+
+// ---------------------------------------------------------------------------
+// XLSX parser — uses SheetJS (official Deno ESM build from cdn.sheetjs.com).
+// ---------------------------------------------------------------------------
+
+function parseXlsxToElements(buffer: ArrayBuffer): TransformElement[] {
+  const workbook = XLSX.read(new Uint8Array(buffer), { type: 'array' });
+  const elements: TransformElement[] = [];
+  for (const sheetName of workbook.SheetNames) {
+    const sheet = workbook.Sheets[sheetName];
+    const csv = XLSX.utils.sheet_to_csv(sheet);
+    if (csv.trim()) {
+      elements.push({
+        element_id: `sheet-${sheetName}`,
+        type: 'Table',
+        text: csv.trim(),
+        metadata: { page_number: null },
+      });
+    }
+  }
+  return elements;
+}
+
+function mimeExtension(mimeType: string | null): string {
+  if (!mimeType) return '';
+  const found = MIME_TO_EXTENSION[mimeType];
+  return found || '';
+}
+
+// ---------------------------------------------------------------------------
 
 function extensionFor(path: string) {
   const filename = path.split('/').pop() ?? '';
@@ -237,7 +300,7 @@ async function pollTransformJob(config: ServerConfig, jobId: string): Promise<Tr
     }
     await delay(POLL_INTERVAL_MS);
   }
-  throw new ProcessingError('This document is taking longer than expected. Retry to continue checking it; your original file is safe.');
+  throw new PollTimeoutError('This document is taking longer than expected. Retry to continue checking it; your original file is safe.');
 }
 
 async function parseWithUnstructured(
@@ -254,8 +317,16 @@ async function parseWithUnstructured(
     if (existingResult) return existingResult;
   }
 
+  // Always re-type using the authoritative mime_type stored in the sources row.
+  // Supabase Storage downloads in Deno return a Blob whose type is either empty
+  // or falls back to application/octet-stream — both cause Unstructured to
+  // return 415 for ZIP-based formats like XLSX that can't be sniffed from
+  // magic bytes alone.
+  const typedFile = source.mime_type
+    ? new Blob([await file.arrayBuffer()], { type: source.mime_type })
+    : file;
   const form = new FormData();
-  form.append('input', file, safeFilename(source.storage_path!));
+  form.append('input', typedFile, safeFilename(source.storage_path!));
   form.append('output', 'elements');
   form.append('profile', 'balanced');
 
@@ -268,7 +339,17 @@ async function parseWithUnstructured(
     body: form,
   });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw transformError(response.status, body);
+  if (!response.ok) {
+    console.error('Unstructured /parse rejected', JSON.stringify({
+      sourceId: source.id,
+      mimeType: source.mime_type,
+      blobType: typedFile.type,
+      filename: safeFilename(source.storage_path!),
+      status: response.status,
+      body,
+    }));
+    throw transformError(response.status, body);
+  }
 
   if (response.status === 200) {
     if (!Array.isArray(body.elements)) {
@@ -317,10 +398,10 @@ async function validateAstraCollection(config: ServerConfig) {
   const collection = collections.find((candidate: { name?: string }) => candidate.name === config.astraCollection);
   const vector = collection?.options?.vector;
   if (!collection || !vector?.service) {
-    throw new ProcessingError('Relay’s document index is not configured for automatic embeddings.');
+    throw new ProcessingError("Relay's document index is not configured for automatic embeddings.");
   }
   if (vector.dimension !== config.astraDimensions || String(vector.metric).toLowerCase() !== config.astraMetric) {
-    throw new ProcessingError('Relay’s document index settings do not match the configured dimensions and similarity metric.');
+    throw new ProcessingError("Relay's document index settings do not match the configured dimensions and similarity metric.");
   }
 }
 
@@ -417,6 +498,8 @@ async function markFailed(
       structuring_failure_reason: processingError.publicMessage.slice(0, 500),
       structured_at: null,
       structured_proposal_count: null,
+      structured_dropped_count: null,
+      organize_requested_at: null,
     }).eq('id', link.capture_id).neq('structuring_status', 'processing');
   }
 }
@@ -434,8 +517,16 @@ async function continueRequestedOrganize(
     .eq('relationship', 'attachment')
     .is('removed_at', null);
   if (captureLinkError) throw captureLinkError;
-  if (captureLinks?.length) {
-    for (const link of captureLinks) {
+  const linkedCaptureIds = [...new Set((captureLinks ?? []).map((link) => link.capture_id))];
+  const { data: requestedCaptures, error: requestedCaptureError } = linkedCaptureIds.length
+    ? await admin.from('captures')
+      .select('id')
+      .in('id', linkedCaptureIds)
+      .not('organize_requested_at', 'is', null)
+    : { data: [], error: null };
+  if (requestedCaptureError) throw requestedCaptureError;
+  if (requestedCaptures?.length) {
+    for (const capture of requestedCaptures) {
       try {
         const response = await fetch(`${config.supabaseUrl}/functions/v1/generate-knowledge-proposals`, {
           method: 'POST',
@@ -444,18 +535,32 @@ async function continueRequestedOrganize(
             apikey: config.anonKey,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ captureId: link.capture_id }),
+          body: JSON.stringify({ captureId: capture.id }),
         });
         // Waiting for another attachment and an already-claimed Capture are both
         // expected. Model/storage failures are recorded by the Organize function.
-        if (response.status === 202 || response.status === 409 || response.ok) continue;
+        if (response.status === 202 || response.ok) continue;
+        const body = await response.json().catch(() => ({}));
+        const message = typeof body?.error === 'string'
+          ? body.error
+          : "We couldn't organize this capture.";
+        await admin.from('captures').update({
+          structuring_status: 'failed',
+          structuring_failure_reason: message.slice(0, 500),
+          structured_at: null,
+          structured_proposal_count: null,
+          structured_dropped_count: null,
+          organize_requested_at: null,
+        }).eq('id', capture.id).not('organize_requested_at', 'is', null);
       } catch {
         await admin.from('captures').update({
           structuring_status: 'failed',
           structuring_failure_reason: "We couldn't organize this capture.",
           structured_at: null,
           structured_proposal_count: null,
-        }).eq('id', link.capture_id).eq('structuring_status', 'not_started');
+          structured_dropped_count: null,
+          organize_requested_at: null,
+        }).eq('id', capture.id).not('organize_requested_at', 'is', null);
       }
     }
     return;
@@ -498,15 +603,34 @@ async function removeAttachment(
   }
 }
 
+/** Fire the next bounded attempt at this same document. The stored provider_reference job id makes it a resumption, not a restart. */
+async function continueProcessingAttempt(
+  config: ServerConfig,
+  source: SourceRow,
+  authorization: string,
+  nextAttempt: number,
+) {
+  await fetch(`${config.supabaseUrl}/functions/v1/process-document-source`, {
+    method: 'POST',
+    headers: {
+      Authorization: authorization,
+      apikey: config.anonKey,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ sourceId: source.id, continuation: true, attempt: nextAttempt }),
+  });
+}
+
 async function processDocument(
   config: ServerConfig,
   admin: ReturnType<typeof createClient>,
   source: SourceRow,
   authorization: string,
+  attempt: number,
 ) {
   try {
-    const extension = extensionFor(source.storage_path!);
-    if (!DIRECT_TEXT_EXTENSIONS.has(extension) && !UNSTRUCTURED_EXTENSIONS.has(extension)) {
+    const extension = extensionFor(source.storage_path!) || mimeExtension(source.mime_type);
+    if (!DIRECT_TEXT_EXTENSIONS.has(extension) && !UNSTRUCTURED_EXTENSIONS.has(extension) && !XLSX_EXTENSIONS.has(extension)) {
       throw new ProcessingError('This document format is not supported. Use PDF, DOCX, PPTX, XLSX, TXT, Markdown, CSV, JPEG, PNG, BMP, or HEIC.');
     }
 
@@ -517,7 +641,7 @@ async function processDocument(
       throw new ProcessingError('Relay could not retrieve the saved document. Upload it again or add the information manually.');
     }
     if (file.size > MAX_SOURCE_BYTES) {
-      throw new ProcessingError('This document is larger than Relay’s 25 MB limit. Choose a smaller file.');
+      throw new ProcessingError("This document is larger than Relay's 25 MB limit. Choose a smaller file.");
     }
 
     let elements: TransformElement[];
@@ -531,6 +655,9 @@ async function processDocument(
         metadata: { page_number: null },
       }];
       providerReference = 'direct-text';
+    } else if (XLSX_EXTENSIONS.has(extension)) {
+      elements = parseXlsxToElements(await file.arrayBuffer());
+      providerReference = 'direct-xlsx';
     } else {
       const parsed = await parseWithUnstructured(config, admin, source, file);
       elements = parsed.elements ?? [];
@@ -572,7 +699,19 @@ async function processDocument(
     }
     await continueRequestedOrganize(config, admin, source, authorization);
   } catch (error) {
-    console.error('Document source processing failed', error instanceof Error ? error.message : 'unknown error');
+    if (error instanceof PollTimeoutError && attempt < MAX_SOURCE_ATTEMPTS - 1) {
+      console.warn('Document source processing still running, continuing', JSON.stringify({
+        sourceId: source.id,
+        attempt,
+      }));
+      await continueProcessingAttempt(config, source, authorization, attempt + 1);
+      return;
+    }
+    console.error('Document source processing failed', JSON.stringify({
+      sourceId: source.id,
+      attempt,
+      message: error instanceof Error ? error.message : 'unknown error',
+    }));
     await markFailed(admin, source.id, error);
   }
 }
@@ -601,11 +740,15 @@ Deno.serve(async (request) => {
   let sourceId = '';
   let captureId = '';
   let action = 'process';
+  let continuation = false;
+  let attempt = 0;
   try {
     const body = await request.json();
     sourceId = typeof body?.sourceId === 'string' ? body.sourceId : '';
     captureId = typeof body?.captureId === 'string' ? body.captureId : '';
     action = body?.action === 'remove' ? 'remove' : 'process';
+    continuation = body?.continuation === true;
+    attempt = Number.isInteger(body?.attempt) && body.attempt > 0 ? body.attempt : 0;
   } catch {
     return json({ error: 'A source ID is required.' }, 400);
   }
@@ -641,20 +784,39 @@ Deno.serve(async (request) => {
       return json({ error: 'Relay could not finish removing this attachment. Try Organize again.' }, 500);
     }
   }
+  if (continuation) {
+    // A self-continuation resumes a job this same function already claimed —
+    // it's expected to still be 'processing'. If it isn't anymore (already
+    // finished, failed, or reaped concurrently), there's nothing left to do.
+    if (source.processing_status !== 'processing') {
+      return json({ accepted: false, sourceId: source.id });
+    }
+    const task = processDocument(config, admin, source as SourceRow, authorization, attempt);
+    const edgeRuntime = (globalThis as typeof globalThis & {
+      EdgeRuntime?: { waitUntil(promise: Promise<unknown>): void };
+    }).EdgeRuntime;
+    if (edgeRuntime) edgeRuntime.waitUntil(task);
+    else await task;
+    return json({ accepted: true, sourceId: source.id }, 202);
+  }
+
   if (source.processing_status === 'ready') {
     return json({ accepted: false, alreadyReady: true, sourceId: source.id });
   }
   if (source.processing_status === 'processing') {
     return json({ accepted: true, alreadyProcessing: true, sourceId: source.id }, 202);
   }
-  const { error: statusError } = await admin
+  const { data: claimed, error: statusError } = await admin
     .from('sources')
     .update({ processing_status: 'processing', failure_reason: null })
     .eq('id', source.id)
-    .in('processing_status', ['pending', 'failed']);
+    .in('processing_status', ['pending', 'failed'])
+    .select('id, organization_id, handoff_id, kind, title, storage_path, mime_type, size_bytes, processing_status, provider_reference')
+    .maybeSingle();
   if (statusError) return json({ error: 'Relay could not start document processing.' }, 500);
+  if (!claimed) return json({ accepted: true, alreadyProcessing: true, sourceId: source.id }, 202);
 
-  const task = processDocument(config, admin, source as SourceRow, authorization);
+  const task = processDocument(config, admin, claimed as SourceRow, authorization, 0);
   const edgeRuntime = (globalThis as typeof globalThis & {
     EdgeRuntime?: { waitUntil(promise: Promise<unknown>): void };
   }).EdgeRuntime;

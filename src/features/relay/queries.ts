@@ -13,10 +13,8 @@ import {
   createOrganization,
   createRole,
   compareRoleHandoffs,
-  confirmMemoryChangeReason,
   deleteKnowledgeItem,
   decideKnowledgeProposal,
-  decidePreflightFinding,
   getHandoff,
   getRelayAccess,
   getHandoffPublication,
@@ -25,21 +23,17 @@ import {
   getSharedHandoff,
   generateCaptureProposals,
   getKnowledgeItem,
-  getLatestPreflightRun,
   getLatestRoleMemoryComparison,
   getOrganization,
   getOrganizationPlan,
   getRole,
   listHandoffSources,
   listHandoffCaptures,
-  listCaptureAttachments,
   listHandoffPublicationItems,
   listKnowledgeItems,
   listKnowledgeProvenance,
   listMemoryRoles,
   listMyAssignedRoles,
-  listPreflightEvidence,
-  listPreflightFindings,
   listOrganizationHandoffs,
   listOrganizations,
   listMyMembershipRequests,
@@ -47,19 +41,15 @@ import {
   listRoleHandoffs,
   listRolePublications,
   listRoleMemoryChanges,
-  listRoleLessons,
   listRoles,
   moveKnowledgeItem,
   publishHandoff,
   replaceHandoffLink,
-  resolvePreflightFinding,
   revokeHandoffLink,
   returnHandoffToCapture,
-  runPreflight,
   submitCapture,
-  startGoogleDriveImport,
   discardCaptureDraft,
-  rollbackCaptureAttachment,
+  OrganizeError,
   transcribeVoiceRecording,
   updateKnowledgeItem,
   updateOrganizationContent,
@@ -75,7 +65,6 @@ import type {
   KnowledgeItemUpdateInput,
   OrganizationInput,
   OrganizationContentInput,
-  PreflightResolutionInput,
   RoleInput,
   VoiceRecordingInput,
 } from '@/features/relay/types';
@@ -99,16 +88,12 @@ export const relayKeys = {
   knowledgeItem: (id: string) => ['relay', 'knowledge-item', id] as const,
   source: (id: string) => ['relay', 'source', id] as const,
   knowledgeProvenance: (handoffId: string) => ['relay', 'knowledge-provenance', handoffId] as const,
-  preflightRun: (handoffId: string) => ['relay', 'preflight-run', handoffId] as const,
-  preflightFindings: (runId: string) => ['relay', 'preflight-findings', runId] as const,
-  preflightEvidence: (runId: string) => ['relay', 'preflight-evidence', runId] as const,
   publication: (handoffId: string) => ['relay', 'publication', handoffId] as const,
   publicationItems: (publicationId: string) => ['relay', 'publication-items', publicationId] as const,
   sharedHandoff: (token: string) => ['relay', 'shared-handoff', token] as const,
   memoryRoles: ['relay', 'memory-roles'] as const,
   roleMemoryComparison: (roleId: string) => ['relay', 'role-memory-comparison', roleId] as const,
   roleMemoryChanges: (comparisonId: string) => ['relay', 'role-memory-changes', comparisonId] as const,
-  roleLessons: (roleId: string) => ['relay', 'role-lessons', roleId] as const,
 };
 
 function realtimeTopic(scope: string, id: string) {
@@ -377,79 +362,6 @@ export function useKnowledgeItem(id: string | undefined) {
   });
 }
 
-export function usePreflightRun(handoffId: string | undefined) {
-  const enabled = useCloudQueryEnabled(Boolean(handoffId));
-  const queryClient = useQueryClient();
-  useEffect(() => {
-    if (!enabled || !handoffId) return;
-    const client = requireSupabase();
-    const channel = client
-      .channel(`preflight-run:${handoffId}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'preflight_runs', filter: `handoff_id=eq.${handoffId}` },
-        (payload) => {
-          void Promise.all([
-            queryClient.invalidateQueries({ queryKey: relayKeys.preflightRun(handoffId) }),
-            queryClient.invalidateQueries({ queryKey: relayKeys.handoff(handoffId) }),
-          ]);
-          const newRow = payload.new as { id?: unknown };
-          const runId = typeof newRow.id === 'string' ? newRow.id : null;
-          if (runId) {
-            void Promise.all([
-              queryClient.invalidateQueries({ queryKey: relayKeys.preflightFindings(runId) }),
-              queryClient.invalidateQueries({ queryKey: relayKeys.preflightEvidence(runId) }),
-            ]);
-          }
-        },
-      )
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          void queryClient.invalidateQueries({ queryKey: relayKeys.preflightRun(handoffId) });
-        }
-      });
-    return () => { void client.removeChannel(channel); };
-  }, [enabled, handoffId, queryClient]);
-
-  return useQuery({
-    queryKey: relayKeys.preflightRun(handoffId ?? ''),
-    queryFn: () => getLatestPreflightRun(handoffId!),
-    enabled,
-  });
-}
-
-export function usePreflightFindings(runId: string | undefined) {
-  const enabled = useCloudQueryEnabled(Boolean(runId));
-  const queryClient = useQueryClient();
-  useEffect(() => {
-    if (!enabled || !runId) return;
-    const client = requireSupabase();
-    const channel = client
-      .channel(`preflight-findings:${runId}`)
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'preflight_findings', filter: `run_id=eq.${runId}` },
-        () => { void queryClient.invalidateQueries({ queryKey: relayKeys.preflightFindings(runId) }); },
-      )
-      .subscribe();
-    return () => { void client.removeChannel(channel); };
-  }, [enabled, queryClient, runId]);
-
-  return useQuery({
-    queryKey: relayKeys.preflightFindings(runId ?? ''),
-    queryFn: () => listPreflightFindings(runId!),
-    enabled,
-  });
-}
-
-export function usePreflightEvidence(runId: string | undefined) {
-  return useQuery({
-    queryKey: relayKeys.preflightEvidence(runId ?? ''),
-    queryFn: () => listPreflightEvidence(runId!),
-    enabled: useCloudQueryEnabled(Boolean(runId)),
-  });
-}
-
 export function useHandoffPublication(handoffId: string | undefined) {
   return useQuery({
     queryKey: relayKeys.publication(handoffId ?? ''),
@@ -496,14 +408,6 @@ export function useRoleMemoryChanges(comparisonId: string | undefined) {
     queryKey: relayKeys.roleMemoryChanges(comparisonId ?? ''),
     queryFn: () => listRoleMemoryChanges(comparisonId!),
     enabled: useCloudQueryEnabled(Boolean(comparisonId)),
-  });
-}
-
-export function useRoleLessons(roleId: string | undefined) {
-  return useQuery({
-    queryKey: relayKeys.roleLessons(roleId ?? ''),
-    queryFn: () => listRoleLessons(roleId!),
-    enabled: useCloudQueryEnabled(Boolean(roleId)),
   });
 }
 
@@ -567,33 +471,8 @@ export function useCreateCaptureDraft() {
   return useMutation({ mutationFn: (input: CaptureDraftInput) => createCaptureDraft(input) });
 }
 
-export function useGoogleDriveImport() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async ({ captureId, returnUrl }: { captureId: string; returnUrl: string; handoffId: string }) => {
-      const started = await startGoogleDriveImport(captureId, returnUrl);
-      return started;
-    },
-    onSettled: (_, __, variables) => Promise.all([
-      queryClient.invalidateQueries({ queryKey: relayKeys.handoffCaptures(variables.handoffId) }),
-      queryClient.invalidateQueries({ queryKey: relayKeys.handoffSources(variables.handoffId) }),
-    ]),
-  });
-}
-
 export function useDiscardCaptureDraft() {
   return useMutation({ mutationFn: (captureId: string) => discardCaptureDraft(captureId) });
-}
-
-export function useRollbackCaptureAttachment() {
-  return useMutation({
-    mutationFn: ({ captureId, sourceId }: { captureId: string; sourceId: string }) =>
-      rollbackCaptureAttachment(captureId, sourceId),
-  });
-}
-
-export async function refreshCaptureAttachments(captureId: string) {
-  return listCaptureAttachments(captureId);
 }
 
 export function useFindExactDocumentDuplicate() {
@@ -608,11 +487,58 @@ export function useTranscribeVoiceRecording() {
   });
 }
 
+// Organize hits rate-limited third-party document/model providers, so calls are
+// serialized (never run concurrently) instead of firing once per capture the
+// user has open. A transient failure gets a couple of automatic backoff
+// retries before it's surfaced as a real failure — except a rate limit
+// (OrganizeError#retryable === false), which is never auto-fired again: the
+// same request would just spend more of the same per-minute budget and fail
+// the same way. The server marks this explicitly; a bare Error without that
+// signal falls back to sniffing the message for "retry", for any error path
+// that predates the structured flag.
+const ORGANIZE_MAX_AUTO_RETRIES = 2;
+const ORGANIZE_RETRY_BACKOFF_MS = [3_000, 7_000];
+
+function isRetryableOrganizeError(error: unknown) {
+  if (error instanceof OrganizeError && typeof error.retryable === 'boolean') return error.retryable;
+  const message = error instanceof Error ? error.message : '';
+  return /retry/i.test(message);
+}
+
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+let organizeQueue: Promise<unknown> = Promise.resolve();
+
+async function runOrganizeWithRetry(captureId: string) {
+  let attempt = 0;
+  for (;;) {
+    try {
+      return await generateCaptureProposals(captureId);
+    } catch (error) {
+      if (attempt >= ORGANIZE_MAX_AUTO_RETRIES || !isRetryableOrganizeError(error)) throw error;
+      await wait(ORGANIZE_RETRY_BACKOFF_MS[attempt] ?? ORGANIZE_RETRY_BACKOFF_MS[ORGANIZE_RETRY_BACKOFF_MS.length - 1]);
+      attempt += 1;
+    }
+  }
+}
+
+function enqueueOrganize(captureId: string) {
+  const run = organizeQueue.then(
+    () => runOrganizeWithRetry(captureId),
+    () => runOrganizeWithRetry(captureId),
+  );
+  // Keep the queue alive for the next caller regardless of whether this run succeeded.
+  organizeQueue = run.then(() => undefined, () => undefined);
+  return run;
+}
+
 export function useGenerateCaptureProposals() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ captureId }: { captureId: string; handoffId: string }) =>
-      generateCaptureProposals(captureId),
+      enqueueOrganize(captureId),
     onSettled: (_, __, variables) => Promise.all([
       queryClient.invalidateQueries({ queryKey: relayKeys.handoffCaptures(variables.handoffId) }),
       queryClient.invalidateQueries({ queryKey: relayKeys.knowledgeItems(variables.handoffId) }),
@@ -693,56 +619,12 @@ export function useDecideKnowledgeProposal() {
   });
 }
 
-export function useRunPreflight() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ handoffId }: { handoffId: string }) => runPreflight(handoffId),
-    onSettled: (_, __, variables) => Promise.all([
-      queryClient.invalidateQueries({ queryKey: relayKeys.preflightRun(variables.handoffId) }),
-      queryClient.invalidateQueries({ queryKey: relayKeys.handoff(variables.handoffId) }),
-      queryClient.invalidateQueries({ queryKey: ['relay', 'preflight-findings'] }),
-      queryClient.invalidateQueries({ queryKey: ['relay', 'preflight-evidence'] }),
-    ]),
-  });
-}
-
-export function useDecidePreflightFinding() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, decision }: {
-      id: string;
-      runId: string;
-      decision: 'skipped' | 'unknown';
-    }) => decidePreflightFinding(id, decision),
-    onSuccess: (_, variables) =>
-      queryClient.invalidateQueries({ queryKey: relayKeys.preflightFindings(variables.runId) }),
-  });
-}
-
-export function useResolvePreflightFinding() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (input: PreflightResolutionInput & { runId: string }) => resolvePreflightFinding(input),
-    onSuccess: (_, input) => Promise.all([
-      queryClient.invalidateQueries({ queryKey: relayKeys.preflightFindings(input.runId) }),
-      queryClient.invalidateQueries({ queryKey: relayKeys.preflightRun(input.handoffId) }),
-      queryClient.invalidateQueries({ queryKey: relayKeys.knowledgeItems(input.handoffId) }),
-      queryClient.invalidateQueries({ queryKey: relayKeys.handoff(input.handoffId) }),
-    ]),
-  });
-}
-
 export function useAdvanceHandoffToPreview() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ handoffId, acknowledgeCritical }: {
-      handoffId: string;
-      acknowledgeCritical: boolean;
-    }) => advanceHandoffToPreview(handoffId, acknowledgeCritical),
-    onSuccess: (_, variables) => Promise.all([
+    mutationFn: ({ handoffId }: { handoffId: string }) => advanceHandoffToPreview(handoffId),
+    onSuccess: (_, variables) =>
       queryClient.invalidateQueries({ queryKey: relayKeys.handoff(variables.handoffId) }),
-      queryClient.invalidateQueries({ queryKey: relayKeys.preflightRun(variables.handoffId) }),
-    ]),
   });
 }
 
@@ -789,19 +671,5 @@ export function useCompareRoleHandoffs() {
       queryClient.invalidateQueries({ queryKey: ['relay', 'role-memory-changes'] }),
       queryClient.invalidateQueries({ queryKey: relayKeys.memoryRoles }),
     ]),
-  });
-}
-
-export function useConfirmMemoryChangeReason() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (input: {
-      changeId: string;
-      comparisonId: string;
-      reasonCategory: 'lesson_driven' | 'leadership_preference' | 'contact_resource' | 'unknown';
-      explanation: string;
-      lessonKnowledgeItemId?: string | null;
-    }) => confirmMemoryChangeReason(input),
-    onSuccess: (_, input) => queryClient.invalidateQueries({ queryKey: relayKeys.roleMemoryChanges(input.comparisonId) }),
   });
 }

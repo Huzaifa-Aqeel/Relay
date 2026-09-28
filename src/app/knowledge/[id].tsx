@@ -9,21 +9,17 @@ import { broadKnowledgeType } from '@/features/relay/types';
 import {
   useDeleteKnowledgeItem,
   useKnowledgeItem,
-  useResolvePreflightFinding,
   useUpdateKnowledgeItem,
 } from '@/features/relay/queries';
 
 export default function EditKnowledgeScreen() {
-  const { id, returnTo, findingId, runId } = useLocalSearchParams<{
+  const { id, returnTo } = useLocalSearchParams<{
     id: string;
     returnTo?: string;
-    findingId?: string;
-    runId?: string;
   }>();
   const itemQuery = useKnowledgeItem(id);
   const updateMutation = useUpdateKnowledgeItem();
   const deleteMutation = useDeleteKnowledgeItem();
-  const resolveMutation = useResolvePreflightFinding();
 
   if (itemQuery.isPending) return <Screen><LoadingState label="Opening knowledge…" /></Screen>;
   if (itemQuery.error || !itemQuery.data) {
@@ -41,21 +37,9 @@ export default function EditKnowledgeScreen() {
   const item = itemQuery.data;
   const destination = returnTo === 'review'
     ? (`/handoff-review?handoffId=${item.handoffId}`) as Href
-    : returnTo === 'preflight'
-      ? (`/handoff-preflight?handoffId=${item.handoffId}`) as Href
-      : (`/handoff/${item.handoffId}`) as Href;
+    : (`/handoff/${item.handoffId}`) as Href;
   async function submit(values: KnowledgeEditorValues) {
-    if (returnTo === 'preflight' && findingId && runId) {
-      await resolveMutation.mutateAsync({
-        findingId,
-        runId,
-        handoffId: item.handoffId,
-        knowledgeItemId: item.id,
-        ...values,
-      });
-    } else {
-      await updateMutation.mutateAsync({ id: item.id, handoffId: item.handoffId, input: values });
-    }
+    await updateMutation.mutateAsync({ id: item.id, handoffId: item.handoffId, input: values });
     router.replace(destination);
   }
   function confirmDelete() {
@@ -82,11 +66,11 @@ export default function EditKnowledgeScreen() {
       title="Edit knowledge"
       description="Keep the instruction accurate, actionable, and easy for a new leader to scan."
       defaultValues={{ knowledgeType: broadKnowledgeType(item.knowledgeType), title: item.title, content: item.content }}
-      error={updateMutation.error?.message ?? resolveMutation.error?.message ?? deleteMutation.error?.message}
-      isPending={updateMutation.isPending || resolveMutation.isPending}
+      error={updateMutation.error?.message ?? deleteMutation.error?.message}
+      isPending={updateMutation.isPending}
       isDeleting={deleteMutation.isPending}
       submitLabel="Save changes"
-      onDelete={item.origin === 'manual' && returnTo !== 'preflight' ? confirmDelete : undefined}
+      onDelete={item.origin === 'manual' ? confirmDelete : undefined}
       onSubmit={submit}
     />
   );

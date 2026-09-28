@@ -139,14 +139,17 @@ export type Database = {
           title: string; text_content: string | null; prompt_id: string | null;
           submitted_at: string | null; structuring_status: string;
           structuring_failure_reason: string | null; structured_at: string | null;
-          structured_proposal_count: number | null;
+          structured_proposal_count: number | null; structured_dropped_count: number | null;
+          organize_requested_at: string | null;
         },
         {
           id?: string; organization_id: string; handoff_id: string; created_by: string;
           title: string; text_content?: string | null; prompt_id?: string | null;
           submitted_at?: string | null; structuring_status?: string;
           structuring_failure_reason?: string | null; structured_at?: string | null;
-          structured_proposal_count?: number | null; created_at?: string; updated_at?: string;
+          structured_proposal_count?: number | null; structured_dropped_count?: number | null;
+          organize_requested_at?: string | null;
+          created_at?: string; updated_at?: string;
         }
       >;
       capture_sources: Table<
@@ -212,52 +215,6 @@ export type Database = {
           source_excerpt?: string | null; source_locator?: string | null; created_at?: string;
         }
       >;
-      preflight_runs: Table<
-        Timestamped & {
-          id: string; organization_id: string; handoff_id: string; created_by: string;
-          status: string; failure_reason: string | null; finding_count: number | null;
-          critical_acknowledged_at: string | null; critical_acknowledged_by: string | null;
-          started_at: string; completed_at: string | null;
-        },
-        {
-          id?: string; organization_id: string; handoff_id: string; created_by: string;
-          status?: string; failure_reason?: string | null; finding_count?: number | null;
-          critical_acknowledged_at?: string | null; critical_acknowledged_by?: string | null;
-          started_at?: string; completed_at?: string | null; created_at?: string; updated_at?: string;
-        }
-      >;
-      preflight_findings: Table<
-        Timestamped & {
-          id: string; run_id: string; organization_id: string; handoff_id: string;
-          finding_type: string; severity: string; title: string; question: string;
-          explanation: string; suggested_knowledge_type: string | null;
-          primary_knowledge_item_id: string | null; status: string;
-          resolution_knowledge_item_id: string | null; decided_by: string | null;
-          decided_at: string | null;
-        },
-        {
-          id?: string; run_id: string; organization_id: string; handoff_id: string;
-          finding_type: string; severity: string; title: string; question: string;
-          explanation: string; suggested_knowledge_type?: string | null;
-          primary_knowledge_item_id?: string | null; status?: string;
-          resolution_knowledge_item_id?: string | null; decided_by?: string | null;
-          decided_at?: string | null; created_at?: string; updated_at?: string;
-        }
-      >;
-      preflight_finding_evidence: Table<
-        {
-          id: string; finding_id: string; run_id: string; organization_id: string;
-          handoff_id: string; evidence_kind: string; knowledge_item_id: string | null;
-          source_id: string | null; label: string; excerpt: string; locator: string | null;
-          created_at: string;
-        },
-        {
-          id?: string; finding_id: string; run_id: string; organization_id: string;
-          handoff_id: string; evidence_kind: string; knowledge_item_id?: string | null;
-          source_id?: string | null; label: string; excerpt: string; locator?: string | null;
-          created_at?: string;
-        }
-      >;
       handoff_publications: Table<
         Timestamped & {
           id: string; organization_id: string; handoff_id: string; access_token: string;
@@ -281,27 +238,13 @@ export type Database = {
           id: string; publication_id: string; organization_id: string; handoff_id: string;
           source_knowledge_item_id: string; knowledge_type: string; title: string;
           content: string; sort_order: number; citation_sources: Json;
-          knowledge_lineage_id: string; created_at: string;
+          knowledge_lineage_id: string | null; created_at: string;
         },
         {
           id?: string; publication_id: string; organization_id: string; handoff_id: string;
           source_knowledge_item_id: string; knowledge_type: string; title: string;
           content: string; sort_order: number; citation_sources?: Json;
-          knowledge_lineage_id: string; created_at?: string;
-        }
-      >;
-      knowledge_relationships: Table<
-        {
-          id: string; organization_id: string; role_id: string;
-          from_knowledge_item_id: string; to_knowledge_item_id: string;
-          relationship_type: string; explanation: string; evidence_source_id: string | null;
-          confirmed_by: string | null; created_by: string; created_at: string;
-        },
-        {
-          id?: string; organization_id: string; role_id: string;
-          from_knowledge_item_id: string; to_knowledge_item_id: string;
-          relationship_type: string; explanation: string; evidence_source_id?: string | null;
-          confirmed_by?: string | null; created_by: string; created_at?: string;
+          knowledge_lineage_id: string | null; created_at?: string;
         }
       >;
       role_memory_comparisons: Table<
@@ -325,19 +268,17 @@ export type Database = {
           id: string; comparison_id: string; organization_id: string; role_id: string;
           change_type: string; title: string; summary: string;
           previous_publication_item_id: string | null; current_publication_item_id: string | null;
-          match_basis: string; reason_category: string; reason_explanation: string;
-          reason_evidence: Json; before_snapshot: Json | null; after_snapshot: Json | null;
-          supporting_provenance: Json; human_confirmed: boolean;
-          confirmed_by: string | null; confirmed_at: string | null; created_at: string;
+          match_basis: string; reason_statement: string | null;
+          before_snapshot: Json | null; after_snapshot: Json | null;
+          supporting_provenance: Json; created_at: string;
         },
         {
           id?: string; comparison_id: string; organization_id: string; role_id: string;
           change_type: string; title: string; summary: string;
           previous_publication_item_id?: string | null; current_publication_item_id?: string | null;
-          match_basis: string; reason_category: string; reason_explanation: string;
-          reason_evidence?: Json; before_snapshot?: Json | null; after_snapshot?: Json | null;
-          supporting_provenance?: Json; human_confirmed?: boolean;
-          confirmed_by?: string | null; confirmed_at?: string | null; created_at?: string;
+          match_basis: string; reason_statement?: string | null;
+          before_snapshot?: Json | null; after_snapshot?: Json | null;
+          supporting_provenance?: Json; created_at?: string;
         }
       >;
       organization_subscriptions: Table<
@@ -469,47 +410,21 @@ export type Database = {
         Returns: string | null;
       };
       replace_capture_knowledge_proposals: {
-        Args: { requested_capture_id: string; requested_proposals: Json };
+        Args: {
+          requested_capture_id: string;
+          requested_proposals: Json;
+          requested_dropped_count?: number | null;
+        };
         Returns: number;
       };
+      request_capture_organize: { Args: { requested_capture_id: string }; Returns: undefined };
+      sweep_stale_capture_processing: { Args: { target_handoff_id: string }; Returns: undefined };
       replace_source_knowledge_proposals: {
         Args: { requested_source_id: string; requested_proposals: Json };
         Returns: number;
       };
-      confirm_memory_change_reason: {
-        Args: { requested_change_id: string; requested_reason_category: string; requested_explanation: string };
-        Returns: undefined;
-      };
-      confirm_memory_change_reason_v13: {
-        Args: {
-          requested_change_id: string;
-          requested_reason_category: string;
-          requested_explanation: string;
-          requested_lesson_knowledge_item_id?: string | null;
-        };
-        Returns: undefined;
-      };
-      begin_preflight_run: { Args: { requested_handoff_id: string }; Returns: string };
-      complete_preflight_run: {
-        Args: { requested_run_id: string; requested_findings: Json };
-        Returns: number;
-      };
-      decide_preflight_finding: {
-        Args: { requested_finding_id: string; decision: 'skipped' | 'unknown' };
-        Returns: undefined;
-      };
-      resolve_preflight_finding: {
-        Args: {
-          requested_finding_id: string;
-          requested_knowledge_item_id: string | null;
-          requested_knowledge_type: string;
-          requested_title: string;
-          requested_content: string;
-        };
-        Returns: string;
-      };
       advance_handoff_to_preview: {
-        Args: { requested_handoff_id: string; acknowledge_critical?: boolean };
+        Args: { requested_handoff_id: string };
         Returns: undefined;
       };
       publish_handoff: { Args: { requested_handoff_id: string }; Returns: string };

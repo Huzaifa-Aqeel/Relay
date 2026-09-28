@@ -56,7 +56,7 @@ select throws_ok($$select public.create_role_assignment_invite(pg_temp.id('presi
 select set_config('test.replacement',public.create_role_assignment_invite(pg_temp.id('treasurer'),'2026–2027',true)->>'token',true);
 select throws_ok($$update public.organizations set created_by = auth.uid() where id = pg_temp.id('org')$$,'42501',null,'Direct ownership takeover denied');
 select throws_ok($$insert into public.organization_members(organization_id,user_id,member_role) values(pg_temp.id('org'),'a0000000-0000-4000-8000-000000000004','admin')$$,'42501',null,'Direct admin invitation denied');
-select throws_ok($$select public.mark_preflight_stale_for_handoff(pg_temp.id('president_handoff'))$$,'42501',null,'Internal helper cannot mutate another Role');
+select throws_ok($$select public.invalidate_handoff_preview(pg_temp.id('president_handoff'))$$,'42501',null,'Internal preview invalidation helper is not client-callable');
 insert into public.sources(id,organization_id,handoff_id,created_by,kind,title,text_content)
 values('b0000000-0000-4000-8000-000000000001',pg_temp.id('org'),pg_temp.id('treasurer_handoff'),auth.uid(),'typed_text','Private scratch','Private raw context');
 insert into public.knowledge_items(id,organization_id,handoff_id,created_by,knowledge_type,title,content,status,origin)
@@ -84,9 +84,7 @@ select throws_ok($$select public.begin_handoff_review(pg_temp.id('treasurer_hand
 
 select pg_temp.actor(3);
 select lives_ok($$select public.begin_handoff_review(pg_temp.id('treasurer_handoff'))$$,'Replacement can review inherited workspace');
-select set_config('test.run',public.begin_preflight_run(pg_temp.id('treasurer_handoff'))::text,true);
-select lives_ok($$select public.complete_preflight_run(pg_temp.id('run'),'[]')$$,'Assigned nonowner can finish Preflight');
-select lives_ok($$select public.advance_handoff_to_preview(pg_temp.id('treasurer_handoff'),false)$$,'Assigned nonowner can Preview');
+select lives_ok($$select public.advance_handoff_to_preview(pg_temp.id('treasurer_handoff'))$$,'Assigned nonowner can Preview after Review');
 select set_config('test.public_token',public.publish_handoff(pg_temp.id('treasurer_handoff')),true);
 select ok(public.get_shared_handoff(pg_temp.token('public_token')) is not null,'Assigned nonowner publishes public recipient snapshot');
 select lives_ok($$select public.reopen_handoff_for_revision(pg_temp.id('treasurer_handoff'))$$,'Published workspace can deliberately reopen');
@@ -168,7 +166,7 @@ select is(public.preview_role_assignment_invite(pg_temp.token('public_preview_in
 select is(public.preview_role_assignment_invite(pg_temp.token('public_preview_invite'))->>'roleTitle','President','Invite link safely identifies the Role before sign-in');
 select is(public.preview_role_assignment_invite(pg_temp.token('public_preview_invite'))->>'servicePeriod','2027–2028','Invite link safely identifies the service period before sign-in');
 select throws_ok($$select public.preview_role_assignment_invite('not-a-token')$$,'22023','Invite unavailable or expired','Malformed invite token discloses no context');
-select throws_ok($$select public.mark_preflight_stale_for_handoff(pg_temp.id('president_handoff'))$$,'42501',null,'Anonymous internal mutation denied');
+select throws_ok($$select public.invalidate_handoff_preview(pg_temp.id('president_handoff'))$$,'42501',null,'Anonymous internal preview invalidation denied');
 
 set local role postgres;
 update public.organization_subscriptions set status = 'inactive' where organization_id = pg_temp.id('org');
