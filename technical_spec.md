@@ -157,6 +157,7 @@ Google Drive attachment import was removed (2026-09-27) as unnecessary complexit
 - Only Supabase `handoff_publication_items` become answer evidence. Raw Astra document chunks, private source text, transcripts, rejected proposals, and unpublished knowledge are never included in the Ask prompt or response. If Astra is unavailable, BM25F remains the complete fallback.
 - Publication invokes authenticated snapshot indexing after the database publication transaction. Ask lazily repairs a missing index for older publications without changing their immutable snapshot.
 - Citation labels and locators are copied into `handoff_publication_items.citation_sources` during publication. Ask therefore returns immutable citation metadata rather than reading mutable private source metadata at request time.
+- The signed-in **Your handoffs** query derives the latest earlier published Handoff for each active assigned Role from authorized Handoff/publication rows. It renders a floating chat launcher only when at least one eligible target exists. This client discovery is convenience only; every submitted question is independently reauthorized by `claim_role_holder_ask_request` before retrieval.
 
 ### Answer contract
 

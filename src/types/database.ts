@@ -168,7 +168,7 @@ export type Database = {
         Timestamped & {
           id: string; organization_id: string; handoff_id: string; created_by: string;
           knowledge_type: string; title: string; content: string; status: string; origin: string;
-          uncertainty_note: string | null; sort_order: number; lineage_id: string;
+          uncertainty_note: string | null; is_start_here: boolean; sort_order: number; lineage_id: string;
           inherited_from_service_period: string | null;
           proposal_action: string; proposal_target_id: string | null;
           capture_id: string | null;
@@ -177,7 +177,7 @@ export type Database = {
         {
           id?: string; organization_id: string; handoff_id: string; created_by: string;
           knowledge_type: string; title: string; content: string; status: string; origin: string;
-          uncertainty_note?: string | null; sort_order?: number; lineage_id?: string;
+          uncertainty_note?: string | null; is_start_here?: boolean; sort_order?: number; lineage_id?: string;
           proposal_action?: string; proposal_target_id?: string | null;
           capture_id?: string | null;
           decided_by?: string | null; decided_at?: string | null;
@@ -237,13 +237,13 @@ export type Database = {
         {
           id: string; publication_id: string; organization_id: string; handoff_id: string;
           source_knowledge_item_id: string; knowledge_type: string; title: string;
-          content: string; sort_order: number; citation_sources: Json;
+          content: string; sort_order: number; is_start_here: boolean; citation_sources: Json;
           knowledge_lineage_id: string | null; created_at: string;
         },
         {
           id?: string; publication_id: string; organization_id: string; handoff_id: string;
           source_knowledge_item_id: string; knowledge_type: string; title: string;
-          content: string; sort_order: number; citation_sources?: Json;
+          content: string; sort_order: number; is_start_here?: boolean; citation_sources?: Json;
           knowledge_lineage_id: string | null; created_at?: string;
         }
       >;

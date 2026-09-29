@@ -298,18 +298,19 @@ Content: Sarah from Facilities handles Engineering Hall. Contact her early; the 
 | ID | Requirement | Priority |
 |---|---|---|
 | AI-01 | When the Role Holder explicitly chooses Organize, Relay organizes the complete current Capture into zero or more reviewable new Knowledge Item suggestions using the five broad knowledge categories. | P0 |
-| AI-02 | Relay tolerantly decodes common model response shapes and field aliases into a bounded internal suggestion record. Missing optional metadata, harmless JSON formatting, or citation formatting must not discard an otherwise useful suggestion. | P0 |
+| AI-02 | The Qwen-facing JSON contract requests both output arrays and complete category, title, content, uncertainty, and citation fields. Relay still tolerantly decodes common response shapes and aliases; missing metadata, harmless JSON formatting, or citation formatting must not discard an otherwise useful suggestion. | P0 |
 | AI-03 | Relay must not invent names, dates, contact details, policies, or procedures absent from evidence. | P0 |
 | AI-04 | Uncertain information is surfaced for human review instead of being silently guessed. | P0 |
 | AI-05 | User can correct approved knowledge manually. New approved items enter through reviewed evidence suggestions rather than a standalone AI-controlled approval path. | P0 |
 | AI-06 | Organize receives the actual Role title and description, service period, Capture title, complete Capture text, and extracted content and media type from every current attachment in one Capture-level model request. Role/Capture/file metadata focuses relevance but is not evidence. Approved Knowledge Items are not included, and Organize does not decide updates or retirements. | P0 |
-| AI-07 | Each suggestion may cite one or more current Capture Sources and internal span IDs. Relay resolves valid spans to literal private excerpts. Missing or malformed span hints never reject a suggestion: a valid Source reference remains as source-level provenance, while an unresolved citation simply leaves that suggestion without pinpointed provenance for human Review. | P0 |
+| AI-07 | Each suggestion may cite one or more current Capture Sources through short per-request aliases (`S1`, `S2`, …) and globally unique internal span IDs. Relay resolves aliases back to real Source IDs and valid spans to literal private excerpts. Missing or malformed span hints never reject a suggestion: a valid Source reference remains as source-level provenance, while an unresolved citation simply leaves that suggestion without pinpointed provenance for human Review. | P0 |
 | AI-08 | Actual Capture text and attachment content determine classification. Capture display labels and optional prompt guidance are context only, are not evidence, and may not force the Knowledge Item type. | P0 |
 | AI-09 | Suggestions produced by one Organize run retain their Capture relationship for grouped Review and may retain provenance from multiple supporting Sources. | P0 |
-| AI-10 | A Knowledge Item is one independently useful piece of operational knowledge. Coherent workflows keep their useful steps, requirements, contacts, warnings, and exceptions together; independently retrievable subjects remain separate; each item receives one primary broad category; and causality is never inferred from chronology or proximity. | P0 |
+| AI-10 | A Knowledge Item is one independently useful piece of operational knowledge. Coherent workflows keep their useful steps, requirements, contacts, warnings, and exceptions together; independently retrievable subjects remain separate; each item receives one primary broad category; and causality is never inferred from chronology or proximity. One response contains at most 30 items across both arrays; explicit immediate obligations are retained before the tolerant cap is applied. | P0 |
 | AI-11 | Organize uses the shared provider-neutral text-model client. The active Qwen configuration disables thinking and has no Relay output-token cap. One explicit Organize action makes one Capture-level model request, with no citation-repair request or automatic client retry. | P0 |
 | AI-12 | Model response formatting is normalized tolerantly. Citation precision may degrade to Source-level or unavailable provenance, but a citation or span formatting problem never rejects an otherwise useful suggestion. Every retained suggestion remains Proposed until human Review. | P0 |
-| AI-13 | Organize interprets source material by content rather than a rigid document-type taxonomy. It prioritizes durable or currently actionable successor knowledge and avoids incidental background, completed work, historical dates, or old results unless the evidence explicitly makes them applicable. | P0 |
+| AI-13 | Organize interprets source material by content rather than a rigid document-type taxonomy. It prioritizes durable or currently actionable successor knowledge and avoids incidental background, completed work, historical dates, or old results unless the evidence explicitly makes them applicable. Spreadsheet/table rows are evidence rather than automatic items; Relay extracts supported rules, thresholds, recurring patterns, reusable procedures, and explicitly unresolved obligations instead of routine transactions or old balances. | P0 |
+| AI-14 | Organize returns ordinary Knowledge Item suggestions and immediate transition obligations as separate arrays. An item belongs in the obligation array only when cited evidence explicitly establishes a concrete unresolved handover action, required setup/first step, or early milestone that the incoming Role Holder must handle. Each finding appears in exactly one array. Category, keywords, filenames, Role title, chronology, and the current date are not sufficient; uncertain cases remain ordinary suggestions. | P0 |
 
 ---
 
@@ -326,6 +327,7 @@ Review is the human truth boundary. Once every proposal is accepted, edited, or 
 | REV-03 | Preview renders the exact approved content intended for the recipient; it does not include raw Captures, Sources, proposals, or working document chunks. | P0 |
 | REV-04 | Changing approved knowledge or working source content after Preview returns the draft to Review and requires a fresh Preview. | P0 |
 | REV-05 | Relay does not show an AI completeness/readiness score or require an AI-generated finding workflow before publishing human-approved knowledge. | P0 |
+| REV-06 | Model-suggested immediate transition obligations appear in a separate Start Here Review section with the same Add, Edit, Don’t add, support, and provenance controls as other proposals. They become recipient-visible only when the outgoing active Role Holder adds them. | P0 |
 
 ---
 
@@ -356,7 +358,7 @@ Publication readiness is deliberately objective: Review is complete, approved kn
 | PUB-04 | Published handoff opens in a mobile browser without account creation. | P0 |
 | PUB-05 | The assigned Role Holder can revoke a published link without deleting the underlying handoff. | P0 |
 | PUB-06 | Draft-only source material is never automatically exposed to recipients. | P0 |
-| PUB-07 | A published Handoff snapshots approved knowledge, safe citation metadata, service period, and knowledge lineage without exposing raw Sources or proposals. | P0 |
+| PUB-07 | A published Handoff snapshots approved knowledge, its human-reviewed Start Here designation, safe citation metadata, service period, and knowledge lineage without exposing raw Sources or proposals. | P0 |
 | PUB-08 | Updating a working Source or approved Knowledge Item never silently changes a prior published snapshot. | P0 |
 
 ---
@@ -374,7 +376,7 @@ Default information order:
 7. Resources
 8. Lessons
 
-Ask Relay is not exposed on the public shared page. An authenticated successor opens it from the immediately previous Handoff in Role History.
+Ask Relay is not exposed on the public shared page. On **Your handoffs**, an eligible authenticated successor opens it from a floating chat button; Relay selects only the immediately previous published Handoff for the chosen assigned Role.
 
 ### Requirements
 
@@ -385,7 +387,7 @@ Ask Relay is not exposed on the public shared page. An authenticated successor o
 | REC-03 | Warnings are visually prominent. | P0 |
 | REC-04 | Recipient can browse the handoff without reading every item sequentially. | P0 |
 | REC-05 | Published approved content still renders if AI services are temporarily unavailable. | P0 |
-| REC-06 | Start Here surfaces immediate transition obligations already present in approved published knowledge, including registration/training, financial closeout, key introductions, upcoming deadlines, and account/tool access steps. It does not invent tasks or become a task manager. | P0 |
+| REC-06 | Start Here surfaces only Knowledge Items that Organize narrowly suggested as immediate transition obligations and the outgoing Role Holder explicitly added during Review. The published renderer never infers them from category or keywords. If none were reviewed and approved, the obligations subsection is omitted. Relay does not invent tasks or become a task manager. | P0 |
 
 ---
 
@@ -425,7 +427,7 @@ Unsupported question:
 | ASK-07 | Ask Relay never modifies approved knowledge. | P0 |
 | ASK-08 | If published Knowledge Items materially conflict about the recipient's question, Ask Relay identifies the conflict, explains the supported alternatives without choosing or inventing which is correct/newer, and cites every conflicting item. | P0 |
 | ASK-09 | Ask Relay requires an authenticated active Role Assignment in a later service period. Owners, public-link recipients, unrelated Roles, other Organizations, and outgoing holders do not gain Ask access without that assignment. | P0 |
-| ASK-10 | Ask Relay appears only in signed-in Published History when the viewed Handoff is the latest publication before the holder's current service period. Public shared Handoffs remain read-only. | P0 |
+| ASK-10 | Ask Relay appears as a round floating chatbot on the signed-in **Your handoffs** page only when at least one assigned Role has an immediately previous publication. The chat identifies the selected Role and period, supports Role selection when more than one is eligible, and presents questions, answers, citations, conflicts, and unsupported responses as a conversation. Public shared Handoffs and Published History remain read-only. | P0 |
 | ASK-11 | Daily allowance is scoped to the authenticated user and publication. A provider, validation, or internal failure releases its pending claim and does not consume successful-use quota. | P0 |
 
 Public internet search is out of scope for Ask Relay v1.3.

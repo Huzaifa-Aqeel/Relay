@@ -8,7 +8,6 @@ import {
   beginHandoffReview,
   advanceHandoffToPreview,
   askRelay,
-  canAskPreviousHandoff,
   createHandoff,
   createCaptureDraft,
   createOrganization,
@@ -92,7 +91,6 @@ export const relayKeys = {
   knowledgeProvenance: (handoffId: string) => ['relay', 'knowledge-provenance', handoffId] as const,
   publication: (handoffId: string) => ['relay', 'publication', handoffId] as const,
   publicationItems: (publicationId: string) => ['relay', 'publication-items', publicationId] as const,
-  canAskPreviousHandoff: (handoffId: string) => ['relay', 'can-ask-previous-handoff', handoffId] as const,
   sharedHandoff: (token: string) => ['relay', 'shared-handoff', token] as const,
   memoryRoles: ['relay', 'memory-roles'] as const,
   roleMemoryComparison: (roleId: string) => ['relay', 'role-memory-comparison', roleId] as const,
@@ -401,15 +399,6 @@ export function useHandoffPublicationItems(publicationId: string | undefined) {
     queryKey: relayKeys.publicationItems(publicationId ?? ''),
     queryFn: () => listHandoffPublicationItems(publicationId!),
     enabled: useCloudQueryEnabled(Boolean(publicationId)),
-  });
-}
-
-export function useCanAskPreviousHandoff(handoffId: string | undefined) {
-  return useQuery({
-    queryKey: relayKeys.canAskPreviousHandoff(handoffId ?? ''),
-    queryFn: () => canAskPreviousHandoff(handoffId!),
-    enabled: useCloudQueryEnabled(Boolean(handoffId)),
-    retry: false,
   });
 }
 

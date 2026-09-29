@@ -97,6 +97,7 @@ export default function HandoffPreviewScreen() {
       title: item.title,
       content: item.content,
       sortOrder: item.sortOrder,
+      isStartHere: item.isStartHere,
     }));
   const items = isPublished ? publicationItemsQuery.data ?? [] : draftItems;
   const documentData = publication && isPublished ? {

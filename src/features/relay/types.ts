@@ -100,6 +100,8 @@ export type AssignedRole = {
   title: string;
   description: string;
   servicePeriod: string;
+  previousHandoffId: string | null;
+  previousServicePeriod: string | null;
 };
 
 export type HandoffStage = 'capture' | 'review' | 'preview' | 'published';
@@ -228,6 +230,7 @@ export type KnowledgeItem = {
   status: KnowledgeStatus;
   origin: KnowledgeOrigin;
   uncertaintyNote: string | null;
+  isStartHere: boolean;
   sortOrder: number;
   lineageId: string;
   inheritedFromServicePeriod: string | null;
@@ -347,6 +350,7 @@ export type PublishedHandoffItem = {
   title: string;
   content: string;
   sortOrder: number;
+  isStartHere: boolean;
 };
 
 export type HandoffPublication = {

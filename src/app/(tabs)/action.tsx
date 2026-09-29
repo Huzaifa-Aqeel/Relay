@@ -6,6 +6,7 @@ import { Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 import { AppText } from '@/components/ui/app-text';
 import { LoadingState, MessageState } from '@/components/ui/async-state';
 import { Screen } from '@/components/ui/screen';
+import { AskRelayChatbot } from '@/features/relay/ask-relay-panel';
 import { useMyAssignedRoles } from '@/features/relay/queries';
 import { colors, radii, shadow, spacing } from '@/theme/tokens';
 
@@ -30,61 +31,75 @@ export default function HandoffActionScreen() {
   }
 
   const assignedRoles = roles.data ?? [];
+  const askTargets = assignedRoles.flatMap((role) => (
+    role.previousHandoffId && role.previousServicePeriod
+      ? [{
+          handoffId: role.previousHandoffId,
+          organizationName: role.organizationName,
+          roleTitle: role.title,
+          servicePeriod: role.previousServicePeriod,
+        }]
+      : []
+  ));
   return (
-    <Screen
-      safeTop
-      scrollProps={{
-        refreshControl: (
-          <RefreshControl
-            refreshing={roles.isRefetching}
-            tintColor={colors.moss}
-            onRefresh={() => void roles.refetch()}
-          />
-        ),
-      }}>
-      <View style={styles.heading}>
-        <AppText variant="display">Your handoffs</AppText>
-      </View>
-
-      {assignedRoles.length ? (
-        <View style={styles.roleList}>
-          {assignedRoles.map((role) => (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={`Open ${role.title}`}
-              key={role.roleId}
-              onPress={() => router.push(`/role/${role.roleId}` as Href)}
-              style={({ pressed }) => [styles.roleCard, pressed && styles.pressed]}>
-              <View style={styles.roleIcon}>
-                <MaterialCommunityIcons color={colors.moss} name="account-tie-outline" size={25} />
-              </View>
-              <View style={styles.roleCopy}>
-                <AppText variant="heading">{role.title}</AppText>
-                <AppText variant="caption" color={colors.inkMuted}>
-                  {role.organizationName} · {role.servicePeriod}
-                </AppText>
-                {role.description ? (
-                  <AppText variant="caption" color={colors.inkMuted} numberOfLines={2}>{role.description}</AppText>
-                ) : null}
-              </View>
-              <MaterialCommunityIcons color={colors.inkMuted} name="chevron-right" size={23} />
-            </Pressable>
-          ))}
+    <View style={styles.page}>
+      <Screen
+        safeTop
+        scrollProps={{
+          refreshControl: (
+            <RefreshControl
+              refreshing={roles.isRefetching}
+              tintColor={colors.moss}
+              onRefresh={() => void roles.refetch()}
+            />
+          ),
+        }}>
+        <View style={styles.heading}>
+          <AppText variant="display">Your handoffs</AppText>
         </View>
-      ) : (
-        <MessageState
-          icon="account-tie-outline"
-          title="No Role assigned"
-          body="A Role will appear here after its assignment invitation is accepted."
-          actionLabel="Open Organizations"
-          onAction={() => router.replace('/')}
-        />
-      )}
-    </Screen>
+
+        {assignedRoles.length ? (
+          <View style={styles.roleList}>
+            {assignedRoles.map((role) => (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Open ${role.title}`}
+                key={role.roleId}
+                onPress={() => router.push(`/role/${role.roleId}` as Href)}
+                style={({ pressed }) => [styles.roleCard, pressed && styles.pressed]}>
+                <View style={styles.roleIcon}>
+                  <MaterialCommunityIcons color={colors.moss} name="account-tie-outline" size={25} />
+                </View>
+                <View style={styles.roleCopy}>
+                  <AppText variant="heading">{role.title}</AppText>
+                  <AppText variant="caption" color={colors.inkMuted}>
+                    {role.organizationName} · {role.servicePeriod}
+                  </AppText>
+                  {role.description ? (
+                    <AppText variant="caption" color={colors.inkMuted} numberOfLines={2}>{role.description}</AppText>
+                  ) : null}
+                </View>
+                <MaterialCommunityIcons color={colors.inkMuted} name="chevron-right" size={23} />
+              </Pressable>
+            ))}
+          </View>
+        ) : (
+          <MessageState
+            icon="account-tie-outline"
+            title="No Role assigned"
+            body="A Role will appear here after its assignment invitation is accepted."
+            actionLabel="Open Organizations"
+            onAction={() => router.replace('/')}
+          />
+        )}
+      </Screen>
+      {askTargets.length ? <AskRelayChatbot targets={askTargets} /> : null}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  page: { flex: 1, backgroundColor: colors.canvas },
   heading: { gap: spacing.xs, marginBottom: spacing.xl },
   roleList: { gap: spacing.sm },
   roleCard: {

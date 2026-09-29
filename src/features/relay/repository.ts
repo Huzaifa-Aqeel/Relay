@@ -227,6 +227,7 @@ function mapKnowledgeItem(row: KnowledgeItemRow): KnowledgeItem {
     status: row.status as KnowledgeItem['status'],
     origin: row.origin as KnowledgeItem['origin'],
     uncertaintyNote: row.uncertainty_note,
+    isStartHere: row.is_start_here,
     sortOrder: row.sort_order,
     lineageId: row.lineage_id,
     inheritedFromServicePeriod: row.inherited_from_service_period,
@@ -264,6 +265,7 @@ function mapPublishedHandoffItem(row: HandoffPublicationItemRow) {
     title: row.title,
     content: row.content,
     sortOrder: row.sort_order,
+    isStartHere: row.is_start_here,
   };
 }
 
@@ -281,6 +283,7 @@ const sharedHandoffSchema = z.object({
     title: z.string().min(1).max(160),
     content: z.string().min(1).max(5000),
     sortOrder: z.number().int().nonnegative(),
+    isStartHere: z.boolean(),
   }).strict()).max(1000),
 }).strict();
 
@@ -645,6 +648,45 @@ export async function listMyAssignedRoles(): Promise<AssignedRole[]> {
   throwDataError(rolesError);
   throwDataError(organizationsError);
 
+  const { data: historyHandoffs, error: historyError } = await client
+    .from('handoffs')
+    .select('id, role_id, service_period, period_start_year, created_at')
+    .in('role_id', roleIds);
+  throwDataError(historyError);
+  const historyRows = historyHandoffs ?? [];
+  const publicationByHandoff = new Map<string, string>();
+  if (historyRows.length) {
+    const { data: publications, error: publicationsError } = await client
+      .from('handoff_publications')
+      .select('handoff_id, published_at')
+      .in('handoff_id', historyRows.map((handoff) => handoff.id));
+    throwDataError(publicationsError);
+    for (const publication of publications) {
+      publicationByHandoff.set(publication.handoff_id, publication.published_at);
+    }
+  }
+
+  function periodStart(servicePeriod: string) {
+    const match = servicePeriod.match(/^([0-9]{4})\s*[-–—/]\s*(?:[0-9]{2}|[0-9]{4})$/);
+    return match ? Number(match[1]) : null;
+  }
+
+  function previousPublication(roleId: string, currentServicePeriod: string) {
+    const currentStart = periodStart(currentServicePeriod);
+    if (currentStart === null) return null;
+    return historyRows
+      .filter((handoff) => handoff.role_id === roleId && publicationByHandoff.has(handoff.id))
+      .map((handoff) => ({
+        ...handoff,
+        start: handoff.period_start_year ?? periodStart(handoff.service_period),
+        publishedAt: publicationByHandoff.get(handoff.id)!,
+      }))
+      .filter((handoff) => handoff.start !== null && handoff.start < currentStart)
+      .sort((left, right) => (right.start! - left.start!)
+        || right.publishedAt.localeCompare(left.publishedAt)
+        || right.created_at.localeCompare(left.created_at))[0] ?? null;
+  }
+
   const rolesById = new Map(roles.map((role) => [role.id, role]));
   const organizationsById = new Map(organizations.map((organization) => [organization.id, organization]));
   const seen = new Set<string>();
@@ -653,6 +695,7 @@ export async function listMyAssignedRoles(): Promise<AssignedRole[]> {
     const role = rolesById.get(assignment.role_id);
     const organization = organizationsById.get(assignment.organization_id);
     if (!role || !organization) return [];
+    const previous = previousPublication(role.id, assignment.service_period);
     seen.add(assignment.role_id);
     return [{
       roleId: role.id,
@@ -661,6 +704,8 @@ export async function listMyAssignedRoles(): Promise<AssignedRole[]> {
       title: role.title,
       description: role.description,
       servicePeriod: assignment.service_period,
+      previousHandoffId: previous?.id ?? null,
+      previousServicePeriod: previous?.service_period ?? null,
     }];
   });
 }
@@ -1163,14 +1208,6 @@ export async function listHandoffPublicationItems(publicationId: string) {
     .order('created_at', { ascending: true });
   throwDataError(error);
   return data.map(mapPublishedHandoffItem);
-}
-
-export async function canAskPreviousHandoff(handoffId: string) {
-  const { data, error } = await requireSupabase().rpc('can_ask_previous_handoff', {
-    requested_handoff_id: handoffId,
-  });
-  throwDataError(error);
-  return data === true;
 }
 
 export async function listRolePublications(roleId: string) {

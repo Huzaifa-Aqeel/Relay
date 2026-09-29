@@ -43,14 +43,26 @@ function ProposalCard({
     ? 'Apply update'
     : item.proposalAction === 'retire'
       ? 'Retire from handoff'
-      : 'Add to handoff';
+      : item.isStartHere
+        ? 'Add to Start Here'
+        : 'Add to handoff';
   return (
     <View style={styles.proposalCard}>
       <View style={styles.proposalHeader}>
         <View style={styles.proposalBadge}>
-          <MaterialCommunityIcons color={colors.saffron} name="creation-outline" size={17} />
+          <MaterialCommunityIcons
+            color={colors.saffron}
+            name={item.isStartHere ? 'flag-checkered' : 'creation-outline'}
+            size={17}
+          />
           <AppText variant="caption" color={colors.ink}>
-            {item.proposalAction === 'update' ? 'UPDATE' : item.proposalAction === 'retire' ? 'RETIRE' : 'NEW'}
+            {item.isStartHere
+              ? 'START HERE'
+              : item.proposalAction === 'update'
+                ? 'UPDATE'
+                : item.proposalAction === 'retire'
+                  ? 'RETIRE'
+                  : 'NEW'}
           </AppText>
         </View>
         <View style={styles.typeLabel}>
@@ -157,10 +169,12 @@ export default function HandoffReviewScreen() {
   }
 
   const captureById = new Map(capturesQuery.data.map((capture) => [capture.id, capture]));
-  const proposalGroups = [...new Set(proposals.map((item) => item.captureId ?? 'legacy'))].map((captureId) => ({
+  const immediateProposals = proposals.filter((item) => item.isStartHere);
+  const standardProposals = proposals.filter((item) => !item.isStartHere);
+  const proposalGroups = [...new Set(standardProposals.map((item) => item.captureId ?? 'legacy'))].map((captureId) => ({
     captureId,
     title: captureId === 'legacy' ? 'Earlier capture' : captureById.get(captureId)?.title ?? 'Capture',
-    proposals: proposals.filter((item) => (item.captureId ?? 'legacy') === captureId),
+    proposals: standardProposals.filter((item) => (item.captureId ?? 'legacy') === captureId),
   }));
   const reviewDecisionValues = Object.values(reviewDecisions);
   const allReviewedSuggestionsRejected = proposals.length === 0
@@ -175,7 +189,9 @@ export default function HandoffReviewScreen() {
         onSuccess: () => {
           setReviewDecisions((current) => ({ ...current, [item.id]: decision }));
           setDecisionNotice(decision === 'approved'
-            ? item.proposalAction === 'update'
+            ? item.isStartHere
+              ? 'Added to Start Here for the incoming Role Holder.'
+              : item.proposalAction === 'update'
               ? 'Update applied to the handoff.'
               : item.proposalAction === 'retire'
                 ? 'Item retired from the current handoff.'
@@ -225,6 +241,37 @@ export default function HandoffReviewScreen() {
 
       {proposals.length ? (
         <View style={styles.section}>
+          {immediateProposals.length ? (
+            <View style={styles.immediateGroup}>
+              <View style={styles.immediateHeading}>
+                <View style={styles.immediateIcon}>
+                  <MaterialCommunityIcons color={colors.saffron} name="flag-checkered" size={23} />
+                </View>
+                <View style={styles.rowCopy}>
+                  <AppText variant="caption" color={colors.saffron} style={styles.eyebrow}>START HERE REVIEW</AppText>
+                  <AppText variant="heading">Immediate transition obligations</AppText>
+                  <AppText color={colors.inkMuted}>
+                    Relay found evidence of an early or unresolved action. Add it only if the incoming Role Holder genuinely needs to handle it at transition.
+                  </AppText>
+                </View>
+              </View>
+              <View style={styles.list}>
+                {immediateProposals.map((item) => (
+                  <ProposalCard
+                    item={item}
+                    key={item.id}
+                    pending={decisionMutation.isPending}
+                    provenance={provenanceQuery.data.filter((evidence) => evidence.knowledgeItemId === item.id)}
+                    existingItem={item.proposalTargetId
+                      ? approved.find((candidate) => candidate.id === item.proposalTargetId) ?? null
+                      : null}
+                    onAccept={() => decide(item, 'approved')}
+                    onReject={() => decide(item, 'rejected')}
+                  />
+                ))}
+              </View>
+            </View>
+          ) : null}
           {proposalGroups.map((group) => (
             <View key={group.captureId} style={styles.captureGroup}>
               <View style={styles.sectionHeading}>
@@ -339,6 +386,16 @@ const styles = StyleSheet.create({
     gap: spacing.md, padding: spacing.md,
     borderWidth: 1, borderColor: colors.line,
     borderRadius: radii.lg, backgroundColor: colors.canvas,
+  },
+  immediateGroup: {
+    gap: spacing.md, padding: spacing.md,
+    borderWidth: 1, borderColor: colors.saffron,
+    borderRadius: radii.lg, backgroundColor: colors.saffronSoft,
+  },
+  immediateHeading: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
+  immediateIcon: {
+    width: 44, height: 44, alignItems: 'center', justifyContent: 'center',
+    borderRadius: radii.pill, backgroundColor: colors.surface,
   },
   sectionHeading: { gap: spacing.xxs },
   list: { gap: spacing.sm },

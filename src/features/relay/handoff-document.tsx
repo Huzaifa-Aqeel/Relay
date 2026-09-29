@@ -86,11 +86,7 @@ export function HandoffDocument({
   const groups = useMemo(() => KNOWLEDGE_TYPES
     .map((type) => ({ type, items: items.filter((item) => broadKnowledgeType(item.knowledgeType) === type) }))
     .filter((group) => group.items.length), [items]);
-  const startItems = useMemo(() => items.filter((item) => {
-    const text = `${item.title} ${item.content}`.toLocaleLowerCase();
-    return broadKnowledgeType(item.knowledgeType) === 'rule_deadline'
-      || /\b(re-?registration|register|training|required training|closeout|reimbursement|financial handoff|introduc|advisor|faculty|vendor|account access|tool access|login|credential|deadline|due|before|first week|first month)\b/.test(text);
-  }).slice(0, 6), [items]);
+  const startItems = useMemo(() => items.filter((item) => item.isStartHere), [items]);
   const visibleGroups = selectedType === 'all'
     ? groups
     : groups.filter((group) => group.type === selectedType);
@@ -140,7 +136,7 @@ export function HandoffDocument({
               <MaterialCommunityIcons color={colors.saffron} name="lightning-bolt-outline" size={20} />
               <View style={styles.itemCopy}>
                 <AppText variant="label">Immediate transition obligations</AppText>
-                <AppText variant="caption" color={colors.inkMuted}>Pulled only from the approved published handoff.</AppText>
+                <AppText variant="caption" color={colors.inkMuted}>Reviewed and approved by the outgoing Role Holder.</AppText>
               </View>
             </View>
             <View style={styles.transitionList}>
