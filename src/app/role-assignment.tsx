@@ -149,7 +149,7 @@ export default function RoleAssignmentScreen() {
                 <AppText variant="heading">{currentAssignment ? `Invite next ${roleTitle}` : `Invite first ${roleTitle}`}</AppText>
                 <AppText color={colors.inkMuted}>
                   {currentAssignment
-                    ? 'Choose the next service period. The new workspace will start from the previous published handoff.'
+                    ? 'Choose the next service period. The new workspace starts empty; previous published handoffs remain in History.'
                     : 'Choose the service period this person will maintain.'}
                 </AppText>
               </View>

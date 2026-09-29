@@ -5,7 +5,6 @@ import { StyleSheet, View } from 'react-native';
 import { AppText } from '@/components/ui/app-text';
 import { LoadingState } from '@/components/ui/async-state';
 import { Screen } from '@/components/ui/screen';
-import { AskRelayPanel } from '@/features/relay/ask-relay-panel';
 import { HandoffDocument } from '@/features/relay/handoff-document';
 import { useSharedHandoff } from '@/features/relay/queries';
 import { colors, radii, spacing } from '@/theme/tokens';
@@ -48,7 +47,6 @@ export default function SharedHandoffScreen() {
         publishedAt={handoffQuery.data.publishedAt}
         items={handoffQuery.data.items}
       />
-      <AskRelayPanel token={token} />
     </Screen>
   );
 }

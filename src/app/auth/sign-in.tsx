@@ -54,7 +54,7 @@ export default function SignInScreen() {
     <AuthScaffold
       eyebrow="Welcome back"
       title="Continue your Relay"
-      intro="Sign in to keep organization knowledge current and safely connected to its role."
+      intro=""
       footer={
         <View style={authStyles.linkRow}>
           <AppText color={colors.inkMuted}>New to Relay?</AppText>

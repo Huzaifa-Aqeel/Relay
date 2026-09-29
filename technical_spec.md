@@ -132,7 +132,7 @@ Google Drive attachment import was removed (2026-09-27) as unnecessary complexit
 - The assignment token reveals no private workspace and grants no membership or edit access. The invitee must authenticate, inspect the preselected Organization/Role/service period, and explicitly accept before the atomic server transaction activates membership and the Role Assignment.
 - Email-confirmation callbacks may return only to a strictly validated `/assignment/{64-hex-token}` path. Arbitrary post-auth redirects are rejected.
 - Invite authority is checked at creation, authenticated preview, and acceptance. The current Owner remains authorized across all Roles; otherwise only the latest active holder of that same Role may invite a future holder or replace themselves in the current service period.
-- Each invite is bound to the exact outgoing assignment. Acceptance locks and rechecks that assignment, ends the Role's prior active assignments, activates the successor, and opens the workspace in one transaction; any workspace/entitlement failure rolls the assignment changes back. A same-period replacement receives the existing workspace, while a new-period successor receives a distinct workspace populated by the existing publication carry-forward logic.
+- Each invite is bound to the exact outgoing assignment. Acceptance locks and rechecks that assignment, ends the Role's prior active assignments, activates the successor, and opens the workspace in one transaction; any workspace/entitlement failure rolls the assignment changes back. A same-period replacement receives the existing workspace, while a new-period successor receives a distinct empty workspace. Previous publications remain available through authorized Role History.
 
 ### Server-only configuration
 
@@ -151,7 +151,7 @@ Google Drive attachment import was removed (2026-09-27) as unnecessary complexit
 
 ### Permission and evidence boundary
 
-- A valid active 64-hex publication token is the only public capability accepted by the `ask-relay` Edge Function. Publication and snapshot tables remain inaccessible directly.
+- `ask-relay` requires a valid authenticated Supabase session. The caller must be the active holder of the same Organization + Role in a later service period, and the requested Handoff must be the immediately previous published Handoff before that current period. A public publication token grants read-only shared-Handoff access and is never accepted by Ask Relay.
 - The server resolves the immutable publication snapshot first. Each snapshot item's normalized `title + content` is stored as an Astra Vectorize record with an exact `publication_id` and `record_kind=published_knowledge` boundary. Category is metadata only.
 - Ask runs semantic search only inside that exact publication, ranks the same Supabase snapshot rows with BM25F, then combines the two ranked lists with reciprocal-rank fusion using `k=60`. BM25F uses `k1=1.2`, title weight `1.0`, content weight `1.15`, and `b=0.75` for both fields.
 - Only Supabase `handoff_publication_items` become answer evidence. Raw Astra document chunks, private source text, transcripts, rejected proposals, and unpublished knowledge are never included in the Ask prompt or response. If Astra is unavailable, BM25F remains the complete fallback.
@@ -164,13 +164,8 @@ Google Drive attachment import was removed (2026-09-27) as unnecessary complexit
 - The model must return strict JSON with `answered`, `unsupported`, or `conflict`, a bounded answer, and up to five valid evidence references. The Edge Function validates exact keys, reference membership, uniqueness, citation presence, and the requirement that a conflict cite at least two relevant items before returning a factual answer.
 - An unsupported response is normalized server-side to: `This handoff does not contain a reliable answer to that question.` It has no citations.
 - Ask is read-only. It has no database path that writes approved knowledge, source material, or publication content.
-- Usage is claimed atomically before provider work. Defaults are 10 requests per published Handoff per UTC day for Free and 100 for Pro; both are server-configurable and Pro remains bounded to protect shared links from abuse.
+- Usage is claimed atomically per authenticated user + publication + UTC day before provider work. The allowance is 10 successful requests for Free and 100 for Pro and cannot be raised by a client request. Unsupported but successfully processed questions count, while provider, output-validation, and internal failures release the pending claim. Abandoned pending claims expire automatically.
 - Raw questions, source content, and generated answers are not logged by the function.
-
-### Server-only configuration
-
-- `ASK_RELAY_FREE_DAILY_LIMIT`
-- `ASK_RELAY_PRO_DAILY_LIMIT`
 
 Ask also uses the existing Astra retrieval and provider-neutral text-model configuration listed above. It does not use Groq speech settings.
 
@@ -184,7 +179,7 @@ Ask also uses the existing Astra retrieval and provider-neutral text-model confi
 
 ### Matching and materiality
 
-- Preserved carry-forward `knowledge_lineage_id` is the normal matching path. One prior and one current item with the same lineage form a Changed candidate; a current lineage with no predecessor is an Added candidate; and a prior lineage absent from current truth is a Retired candidate.
+- Existing publication `knowledge_lineage_id` is the normal matching path where that relationship is already present. New-period Drafts remain empty and publication does not manufacture a predecessor relationship. One prior and one current item with the same lineage form a Changed candidate; a current lineage with no predecessor is an Added candidate; and a prior lineage absent from current truth is a Retired candidate.
 - A deterministic normalization pass hides punctuation, formatting, word-order, and common grammatical-only rewrites before model review. The configured text model receives only the remaining server-approved candidates and may omit broader meaning-equivalent rewrites or non-material differences.
 - `strong_semantic` remains an internal legacy storage value only. The fallback can form a pair only when both immutable publication rows lack lineage, their broad knowledge types agree, and they are an unambiguous mutual-best match. Ambiguous legacy candidates are omitted rather than labeled Added/Retired or forced into a relationship.
 - Provider output cannot choose its own match basis or pair arbitrary references. Server validation maps output back to the precomputed candidate plan. Comparison writes only `role_memory_comparisons` and `role_memory_changes`; it never repairs or mutates canonical or published lineage.

@@ -158,10 +158,10 @@ Draft is not a one-time graduation form. It remains a usable working space throu
 | HAND-05 | A Draft Handoff can be reopened throughout the service period to add voice notes, typed notes, new or updated files, and maintain approved contacts, deadlines, processes, warnings, resources, responsibilities, and lessons. | P0 |
 | HAND-06 | Publishing creates an intentional immutable recipient snapshot; continued Draft work or source replacement must not silently change a published Handoff. | P0 |
 | HAND-07 | A Role Holder normally maintains a living Draft throughout the service period and publishes when preparing to transfer the Role. Earlier publication and deliberate republication are allowed for unexpected transitions; publication is never automatic. | P0 |
-| HAND-08 | A replacement in the same Role/service period continues the existing working Handoff, including its Captures, approved knowledge, current private role Sources, pending suggestions, Handoff-check state, and publication history. Earlier contributors retain attribution and the ended holder loses current private access. | P0 |
-| HAND-09 | A successor starting a new service period receives a separate working Handoff initialized from the latest preceding published Handoff for the same Organization and Role. It carries forward published Responsibilities, Deadlines, Contacts, Processes, Warnings, Resources, and Lessons. | P0 |
-| HAND-10 | Carry-forward includes only approved publication knowledge and safe lineage/citation metadata. Rejected/unresolved proposals, private scratch notes, raw private Sources, and knowledge retired or absent from the publication are not inherited as current truth. Inherited items visibly identify the prior period. | P0 |
-| HAND-11 | New-period changes never mutate the previous publication. Inherited items preserve cross-period lineage and original attribution; stale inherited facts are maintained through the existing human review/edit/retirement flow. | P0 |
+| HAND-08 | A replacement in the same Role/service period continues the existing working Handoff, including its Captures, approved knowledge, current private role Sources, pending suggestions, and publication history. Earlier contributors retain attribution and the ended holder loses current private access. | P0 |
+| HAND-09 | A successor starting a new service period receives a separate empty working Handoff for the same Organization and Role. Knowledge from a previous holder is not inserted into the successor's current Draft. | P0 |
+| HAND-10 | Previous immutable published Handoffs remain available in Role History. The active successor may use Ask Relay only on the immediately previous published Handoff for that same Organization and Role. | P0 |
+| HAND-11 | New-period work never mutates a previous Handoff or publication. A new-period Draft does not create or assume predecessor relationships with knowledge from History. | P0 |
 
 ---
 
@@ -262,7 +262,7 @@ Relay must distinguish **evidence** from **human-approved truth**.
 
 **Source knowledge** may be outdated, incomplete, or wrong.
 
-**Approved knowledge** is what the outgoing leader has explicitly accepted or inherited from an immutable prior publication.
+**Approved knowledge** is what the current Role Holder has explicitly accepted or created for the current Handoff.
 
 ### Requirements
 
@@ -271,7 +271,7 @@ Relay must distinguish **evidence** from **human-approved truth**.
 | KNOW-01 | AI-extracted knowledge starts as Proposed rather than Approved. | P0 |
 | KNOW-02 | Every proposal retains source provenance. | P0 |
 | KNOW-03 | User can Accept, Edit, or Reject each proposal. | P0 |
-| KNOW-04 | Only accepted proposals or inherited publication items appear as approved canonical knowledge. | P0 |
+| KNOW-04 | Only human-accepted proposals or human-created items appear as approved canonical knowledge in the current Handoff. A previous publication remains historical reference material rather than current Draft truth. | P0 |
 | KNOW-05 | Rejected proposals never appear in the published handoff. | P0 |
 | KNOW-06 | New voice/text/file evidence can propose an update to or retirement of an existing approved Knowledge Item instead of creating a duplicate when the intent is clearly the same. | P0 |
 | KNOW-07 | Update/retirement review shows the affected approved item, proposed result, and new evidence before the human decides. | P0 |
@@ -373,7 +373,8 @@ Default information order:
 6. Warnings
 7. Resources
 8. Lessons
-9. Ask Relay
+
+Ask Relay is not exposed on the public shared page. An authenticated successor opens it from the immediately previous Handoff in Role History.
 
 ### Requirements
 
@@ -390,7 +391,7 @@ Default information order:
 
 # 13. Ask Relay
 
-Ask Relay is scoped to the published handoff.
+Ask Relay lets the authenticated active Role Holder question the immediately previous published Handoff for the same Organization and Role. It is not available through the public recipient token.
 
 Example:
 
@@ -415,7 +416,7 @@ Unsupported question:
 
 | ID | Requirement | Priority |
 |---|---|---|
-| ASK-01 | Recipient can ask natural-language questions from the published handoff. | P0 |
+| ASK-01 | The active successor can ask natural-language questions from the immediately previous published Handoff for their exact Organization and Role. | P0 |
 | ASK-02 | Retrieval is permission-filtered before evidence is provided to the LLM. | P0 |
 | ASK-03 | Ask Relay searches only the immutable published Knowledge Item snapshot. It combines field-aware BM25F title/content ranking with Astra semantic ranking of embeddings derived from each published entry's title plus content, using deterministic reciprocal-rank fusion. Category and Source type are metadata rather than ranking boosts. Corpus IDF, term-frequency saturation, and field-length normalization preserve exact-term quality, while semantic retrieval supports meaning-equivalent wording. Supabase publication rows remain the answer evidence sent to the configured text model; raw/private Capture or document chunks never enter the Ask prompt. | P0 |
 | ASK-04 | Every factual organization-specific answer includes source references. | P0 |
@@ -423,6 +424,9 @@ Unsupported question:
 | ASK-06 | Relay must not fabricate organization-specific answers from general model knowledge. | P0 |
 | ASK-07 | Ask Relay never modifies approved knowledge. | P0 |
 | ASK-08 | If published Knowledge Items materially conflict about the recipient's question, Ask Relay identifies the conflict, explains the supported alternatives without choosing or inventing which is correct/newer, and cites every conflicting item. | P0 |
+| ASK-09 | Ask Relay requires an authenticated active Role Assignment in a later service period. Owners, public-link recipients, unrelated Roles, other Organizations, and outgoing holders do not gain Ask access without that assignment. | P0 |
+| ASK-10 | Ask Relay appears only in signed-in Published History when the viewed Handoff is the latest publication before the holder's current service period. Public shared Handoffs remain read-only. | P0 |
+| ASK-11 | Daily allowance is scoped to the authenticated user and publication. A provider, validation, or internal failure releases its pending claim and does not consume successful-use quota. | P0 |
 
 Public internet search is out of scope for Ask Relay v1.3.
 
@@ -445,7 +449,7 @@ Approved Knowledge Items and immutable published Handoffs are the authoritative 
 
 Material means the difference could affect how the successor performs the role, understands a risk, meets a deadline, contacts someone, uses a resource, or follows a process. Punctuation, formatting, reordered content, duplicated wording, and equivalent rewrites are noise.
 
-Existing carry-forward lineage is the normal matching path. A materially edited item with the same lineage is Changed; a new published item with no predecessor is Added; and a known prior lineage deliberately retired or no longer carried as current truth is Retired. Semantic matching is fallback-only for legacy/imported publication snapshots where lineage is missing. Uncertain fallback candidates are omitted and comparison never rewrites publication lineage.
+Where publication lineage already exists, it remains the normal matching path. A materially edited item with the same lineage is Changed; a new published item with no predecessor is Added; and a known prior lineage absent from current published truth is Retired. A new-period Draft does not copy prior knowledge or manufacture predecessor links. Semantic matching is fallback-only for legacy/imported publication snapshots where lineage is missing. Uncertain fallback candidates are omitted and comparison never rewrites publication lineage.
 
 A reason is optional supplementary context, not a classification. If approved published evidence explicitly establishes why a change happened, Relay may show one concise evidence-backed sentence. Otherwise it shows `Reason not documented.` Chronology is never treated as causality.
 
@@ -455,14 +459,14 @@ A reason is optional supplementary context, not a classification. If approved pu
 |---|---|---|
 | MEM-01 | Organization Memory compares only published Handoffs for the same Organization and same Role. | P0 |
 | MEM-02 | The default comparison uses the latest adjacent published service periods, ordered by structural academic-period start/end years rather than display-label text, and allows the owner to open preserved historical Handoffs. | P0 |
-| MEM-03 | Existing carry-forward lineage is the primary and normal cross-period matching basis. Same lineage plus a material content difference is Changed; materially equivalent same-lineage content is hidden. | P0 |
+| MEM-03 | Preserved publication lineage is the primary and normal cross-period matching basis. Same lineage plus a material content difference is Changed; materially equivalent same-lineage content is hidden. | P0 |
 | MEM-04 | Semantic matching is fallback-only when both legacy/imported publication items lack lineage. Uncertain fallback candidates are omitted rather than forced or presented for confirmation. | P0 |
 | MEM-05 | The What Changed view normally shows only material Added, Changed, and Retired items and suppresses unchanged/noisy differences. | P0 |
 | MEM-06 | Every displayed change allows inspection of the before/after approved knowledge and safe source provenance from the immutable publications. | P0 |
 | MEM-07 | When approved published evidence explicitly establishes why a change occurred, Relay may show one concise evidence-backed explanation. Otherwise it displays `Reason not documented.` A reason is not required for a valid change. | P0 |
 | MEM-08 | Relay never invents a reason or infers causality from chronology, proximity, service-period order, or an unsupported model assertion. | P0 |
 | MEM-09 | The UI and comparison path do not classify policy/lesson/preference/contact-resource reason categories or support manual reason confirmation. The obsolete causal taxonomy, confirmation RPCs, and Warning/Lesson-to-Process relationship storage are removed. | P0 |
-| MEM-10 | Comparison is read-only with respect to canonical Knowledge Items, carry-forward lineage, and immutable publication snapshots. Semantic fallback metadata never repairs or mutates lineage. | P0 |
+| MEM-10 | Comparison is read-only with respect to canonical Knowledge Items, publication lineage, and immutable publication snapshots. Semantic fallback metadata never repairs or mutates lineage. | P0 |
 | MEM-11 | Comparison input contains only approved Knowledge Items already captured in the two immutable publications. Raw Captures, Sources, working state, files, and Astra chunks are excluded. | P0 |
 | MEM-12 | Owner and active Role Holder access remains server-authorized and Role-scoped; ordinary membership alone does not expose Organization Memory. | P0 |
 | MEM-13 | Organization Memory does not rank leaders/years, claim improvement without supplied factual metrics, or expose health, quality, completeness, or performance scores. | P0 |
@@ -564,7 +568,7 @@ Relay should feel like a calm transition tool, not an AI dashboard.
 | UI-05 | AI failure never prevents further source capture, editing or publishing already-approved content, or reading a published handoff. | P0 |
 | UI-06 | Organization Memory emphasizes material changes, human decisions, and inspectable published provenance rather than scores, activity noise, or AI confidence theater. | P0 |
 | UI-07 | Publish is framed as a leadership-transition action. Routine year-round edits save to the working Handoff without publication pressure; reopening a published workspace retains the existing snapshot until deliberate Review, Preview, and republication. | P0 |
-| UI-08 | The Handoff page uses a compact Capture launcher and a focused unified composer. It presents Captures rather than internal Sources as the primary history and shows approved Knowledge Items under **What the next leader should know**. | P0 |
+| UI-08 | The Handoff page uses a compact Capture launcher and a focused unified composer. It presents Captures rather than internal Sources as the primary history and shows only this service period's approved items under **Current handoff knowledge**. Previous published knowledge remains in History. | P0 |
 | UI-09 | Ordinary Members see only the Organization tab. Owners and active designated Role Holders retain Organizations, Handoff, Institutional Memory, Settings, and the rest of their existing authorized experience. Hidden tabs do not grant route or data access. | P0 |
 | UI-10 | The Handoff tab lists only Roles with an active Role Assignment for the signed-in user. Selecting an assigned Role opens the existing Role page and its Start/Continue Handoff flow; unrelated Organization Roles are not shown there. | P0 |
 | UI-11 | Manage Plan presents a compact Free/Plus selector and one focused plan card using Relay's existing visual system. It shows the real current Organization plan, truthful plan capabilities, and the live price/currency returned by the native RevenueCat annual offering without duplicating price configuration in Relay or introducing a monthly plan or second entitlement. | P0 |
@@ -664,7 +668,7 @@ The demo should tell one complete story.
 - Document ingestion is real.
 - Exact duplicate files avoid reprocessing; different bytes are handled as different current attachments without inferred version lineage.
 - Organization Memory compares only immutable published approved Knowledge Items for the same Role across adjacent published periods.
-- Existing carry-forward lineage is the normal matching path; semantic fallback is limited to missing-lineage legacy data and uncertain candidates are omitted.
+- Preserved publication lineage is the normal matching path; semantic fallback is limited to missing-lineage legacy data and uncertain candidates are omitted.
 - Change reasons are backed by explicit approved published evidence or shown as not documented.
 - Recipient needs no account.
 - RevenueCat gates a logical Organization feature without gating Alex's recipient path.
@@ -701,13 +705,13 @@ The Shipaton build is not complete unless these work:
 24. active-attachment working retrieval without removed-file evidence
 25. multiple preserved published Handoffs for the same Role
 26. adjacent-period Organization Memory from immutable published Knowledge Items with material Added/Changed/Retired results
-27. carry-forward lineage as the normal match path with missing-lineage semantic fallback only
+27. existing publication lineage as the normal Memory match path, with missing-lineage semantic fallback only
 28. optional explicit evidence-backed reason text with `Reason not documented.` fallback
 29. recipient Start Here obligations derived only from approved publication content
 30. independent Organization membership and one active Role Holder per Role/service period
 31. authenticated, explicit, single-use assignment invite acceptance and deliberate replacement
 32. Owner continuity oversight with private raw-source boundaries
-33. same-period workspace inheritance and publication-only new-period carry-forward
+33. same-period workspace continuation and an empty new-period Draft with previous publications retained in History
 34. explicit Organization ownership offer/acceptance preserving purchaser identity and Organization Pro
 35. independent server-side authorization and Organization entitlement checks
 

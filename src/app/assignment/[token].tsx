@@ -222,7 +222,7 @@ export default function AssignmentInviteScreen() {
                     ? `You’ll become the ${invitation.roleTitle} for ${invitation.servicePeriod}. The assignment takes effect now; the preserved workspace opens when plan access returns.`
                     : invitation.replacement
                     ? `You’ll continue the existing ${invitation.roleTitle} handoff for ${invitation.servicePeriod}. The current holder’s access ends after you accept.`
-                    : `You’ll open the ${invitation.roleTitle} handoff for ${invitation.servicePeriod}. Approved published knowledge is carried forward when available.`}
+                    : `You’ll open a new ${invitation.roleTitle} handoff for ${invitation.servicePeriod}. Previous published handoffs remain available in History.`}
                 </AppText>
               </View>
               <View style={styles.signedInRow}>

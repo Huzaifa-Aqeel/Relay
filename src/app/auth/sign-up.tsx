@@ -53,9 +53,9 @@ export default function SignUpScreen() {
 
   return (
     <AuthScaffold
-      eyebrow="Your knowledge workspace"
+      eyebrow=""
       title="Create your account"
-      intro="Draft sources stay private. Recipients see only the approved content you publish."
+      intro=""
       footer={
         <View style={authStyles.linkRow}>
           <AppText color={colors.inkMuted}>Already have an account?</AppText>

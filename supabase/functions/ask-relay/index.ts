@@ -24,15 +24,14 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const TOKEN_PATTERN = /^[0-9a-f]{64}$/;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MAX_QUESTION_CHARS = 500;
 
 type ServerConfig = AstraPublicationConfig & {
   supabaseUrl: string;
+  anonKey: string;
   serviceRoleKey: string;
   textLlm: TextLlmConfig;
-  freeDailyLimit: number;
-  proDailyLimit: number;
 };
 
 class AskError extends Error {
@@ -51,28 +50,16 @@ function requiredEnv(name: string) {
   return value;
 }
 
-function integerEnv(name: string, fallback: number) {
-  const raw = Deno.env.get(name)?.trim();
-  if (!raw) return fallback;
-  const value = Number(raw);
-  if (!Number.isInteger(value) || value < 1) throw new Error(`Invalid server configuration: ${name}`);
-  return value;
-}
-
 function readConfig(): ServerConfig {
-  const freeDailyLimit = integerEnv('ASK_RELAY_FREE_DAILY_LIMIT', 10);
-  const proDailyLimit = integerEnv('ASK_RELAY_PRO_DAILY_LIMIT', 100);
-  if (proDailyLimit < freeDailyLimit) throw new Error('ASK_RELAY_PRO_DAILY_LIMIT must not be below the free limit.');
   return {
     supabaseUrl: requiredEnv('SUPABASE_URL').replace(/\/$/, ''),
+    anonKey: requiredEnv('SUPABASE_ANON_KEY'),
     serviceRoleKey: requiredEnv('SUPABASE_SERVICE_ROLE_KEY'),
     textLlm: readTextLlmConfig((name) => Deno.env.get(name)),
     astraEndpoint: requiredEnv('ASTRA_DB_API_ENDPOINT').replace(/\/$/, ''),
     astraToken: requiredEnv('ASTRA_DB_APPLICATION_TOKEN'),
     astraKeyspace: requiredEnv('ASTRA_DB_KEYSPACE'),
     astraCollection: requiredEnv('ASTRA_DB_COLLECTION'),
-    freeDailyLimit,
-    proDailyLimit,
   };
 }
 
@@ -154,45 +141,73 @@ Deno.serve(async (request) => {
     return json({ error: 'Ask Relay is not configured yet.' }, 503);
   }
 
-  let token = '';
+  const authorization = request.headers.get('Authorization')?.trim();
+  if (!authorization?.startsWith('Bearer ')) {
+    return json({ error: 'Sign in to ask the previous handoff.' }, 401);
+  }
+  const authenticated = createClient(config.supabaseUrl, config.anonKey, {
+    auth: { persistSession: false },
+    global: { headers: { Authorization: authorization } },
+  });
+
+  let handoffId = '';
   let question = '';
   try {
     const body = await request.json();
-    token = typeof body?.token === 'string' ? body.token.trim() : '';
+    handoffId = typeof body?.handoffId === 'string' ? body.handoffId.trim() : '';
     question = typeof body?.question === 'string' ? body.question.trim() : '';
   } catch {
     return json({ error: 'Enter a question to ask Relay.' }, 400);
   }
-  if (!TOKEN_PATTERN.test(token)) return json({ error: 'This published handoff is unavailable.' }, 404);
+  if (!UUID_PATTERN.test(handoffId)) return json({ error: 'The previous handoff is unavailable.' }, 404);
   if (!question || question.length > MAX_QUESTION_CHARS) {
     return json({ error: `Enter a question between 1 and ${MAX_QUESTION_CHARS} characters.` }, 400);
   }
 
   const admin = createClient(config.supabaseUrl, config.serviceRoleKey, { auth: { persistSession: false } });
+  let claimId: string | null = null;
+  let claimCompleted = false;
+
+  async function completeClaim(succeeded: boolean) {
+    if (!claimId || claimCompleted) return null;
+    const { data, error } = await authenticated.rpc('complete_role_holder_ask_request', {
+      requested_claim_id: claimId,
+      requested_succeeded: succeeded,
+    });
+    if (error) throw new AskError('Ask Relay is temporarily unavailable. The published handoff is still available above.', 503);
+    claimCompleted = true;
+    return typeof data === 'number' ? data : null;
+  }
+
   try {
-    const { data: claimRows, error: claimError } = await admin.rpc('claim_public_ask_request', {
-      requested_token: token,
-      requested_free_limit: config.freeDailyLimit,
-      requested_pro_limit: config.proDailyLimit,
+    const { data: claimRows, error: claimError } = await authenticated.rpc('claim_role_holder_ask_request', {
+      requested_handoff_id: handoffId,
     });
     if (claimError) {
       if (claimError.message.includes('ASK_LIMIT_REACHED')) {
-        throw new AskError('This handoff has reached its Ask Relay limit for today. The published information is still available above.', 429);
+        throw new AskError('You have reached today\'s Ask Relay limit for this handoff. The published information is still available above.', 429);
       }
-      if (claimError.code === 'P0002') throw new AskError('This published handoff is unavailable.', 404);
+      if (claimError.code === 'P0002') {
+        throw new AskError('Ask Relay is available to the active Role Holder on the immediately previous published handoff.', 403);
+      }
       throw new AskError('Ask Relay is temporarily unavailable. The published handoff is still available above.', 503);
     }
     const claim = Array.isArray(claimRows) ? claimRows[0] : claimRows;
-    if (!claim?.publication_id || !claim?.organization_id || !claim?.handoff_id) {
-      throw new AskError('This published handoff is unavailable.', 404);
+    if (!claim?.claim_id || !claim?.publication_id || !claim?.organization_id || !claim?.handoff_id) {
+      throw new AskError('The previous handoff is unavailable.', 404);
     }
+    claimId = claim.claim_id;
 
     const { data: itemRows, error: itemError } = await admin
       .from('handoff_publication_items')
       .select('id, source_knowledge_item_id, knowledge_type, title, content, sort_order, citation_sources')
       .eq('publication_id', claim.publication_id)
       .order('sort_order', { ascending: true });
-    if (itemError || !itemRows?.length) throw new AskError('This published handoff does not contain answerable information.', 422);
+    if (itemError) throw new AskError('Ask Relay is temporarily unavailable. The published handoff is still available above.', 503);
+    if (!itemRows?.length) {
+      const remaining = await completeClaim(true);
+      return json({ status: 'unsupported', answer: UNSUPPORTED_ANSWER, citations: [], remaining: remaining ?? claim.remaining });
+    }
     const items = itemRows as PublicationItem[];
     let vectorRankedItemIds: string[] = [];
     try {
@@ -223,7 +238,10 @@ Deno.serve(async (request) => {
       console.error('Ask Relay vector retrieval unavailable', error instanceof Error ? error.message : 'unknown error');
     }
     const evidence = selectEvidence(question, items, vectorRankedItemIds);
-    if (!evidence.length) return json({ status: 'unsupported', answer: UNSUPPORTED_ANSWER, citations: [], remaining: claim.remaining });
+    if (!evidence.length) {
+      const remaining = await completeClaim(true);
+      return json({ status: 'unsupported', answer: UNSUPPORTED_ANSWER, citations: [], remaining: remaining ?? claim.remaining });
+    }
     const result = await answerWithTextLlm(config, question, evidence);
     const evidenceByRef = new Map(evidence.map((item) => [item.ref, item]));
     const citations = result.citationRefs.map((ref) => {
@@ -235,13 +253,21 @@ Deno.serve(async (request) => {
         sources: item.sources.length ? item.sources : [{ label: 'Published handoff', locator: null }],
       };
     });
+    const remaining = await completeClaim(true);
     return json({
       status: result.status,
       answer: result.answer,
       citations,
-      remaining: claim.remaining,
+      remaining: remaining ?? claim.remaining,
     });
   } catch (error) {
+    if (claimId && !claimCompleted) {
+      try {
+        await completeClaim(false);
+      } catch {
+        // A stale pending claim is released automatically by the claim RPC.
+      }
+    }
     const askError = error instanceof AskError
       ? error
       : new AskError('Ask Relay is temporarily unavailable. The published handoff is still available above.', 503);

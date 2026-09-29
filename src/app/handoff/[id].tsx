@@ -357,7 +357,10 @@ export default function HandoffScreen() {
 
       <View style={styles.contentSection}>
         <View style={styles.sectionTitle}>
-          <AppText variant="heading">What the next leader should know</AppText>
+          <AppText variant="heading">Current handoff knowledge</AppText>
+          <AppText color={colors.inkMuted}>
+            Only knowledge approved during this service period appears here. Previous published handoffs remain in History.
+          </AppText>
         </View>
         {approvedItems.length ? (
           <View style={styles.list}>

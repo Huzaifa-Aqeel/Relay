@@ -8,6 +8,7 @@ import {
   beginHandoffReview,
   advanceHandoffToPreview,
   askRelay,
+  canAskPreviousHandoff,
   createHandoff,
   createCaptureDraft,
   createOrganization,
@@ -91,6 +92,7 @@ export const relayKeys = {
   knowledgeProvenance: (handoffId: string) => ['relay', 'knowledge-provenance', handoffId] as const,
   publication: (handoffId: string) => ['relay', 'publication', handoffId] as const,
   publicationItems: (publicationId: string) => ['relay', 'publication-items', publicationId] as const,
+  canAskPreviousHandoff: (handoffId: string) => ['relay', 'can-ask-previous-handoff', handoffId] as const,
   sharedHandoff: (token: string) => ['relay', 'shared-handoff', token] as const,
   memoryRoles: ['relay', 'memory-roles'] as const,
   roleMemoryComparison: (roleId: string) => ['relay', 'role-memory-comparison', roleId] as const,
@@ -402,6 +404,15 @@ export function useHandoffPublicationItems(publicationId: string | undefined) {
   });
 }
 
+export function useCanAskPreviousHandoff(handoffId: string | undefined) {
+  return useQuery({
+    queryKey: relayKeys.canAskPreviousHandoff(handoffId ?? ''),
+    queryFn: () => canAskPreviousHandoff(handoffId!),
+    enabled: useCloudQueryEnabled(Boolean(handoffId)),
+    retry: false,
+  });
+}
+
 export function useSharedHandoff(token: string | undefined) {
   return useQuery({
     queryKey: relayKeys.sharedHandoff(token ?? ''),
@@ -437,7 +448,7 @@ export function useRoleMemoryChanges(comparisonId: string | undefined) {
 
 export function useAskRelay() {
   return useMutation({
-    mutationFn: ({ token, question }: { token: string; question: string }) => askRelay(token, question),
+    mutationFn: ({ handoffId, question }: { handoffId: string; question: string }) => askRelay(handoffId, question),
   });
 }
 

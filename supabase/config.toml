@@ -56,7 +56,7 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.ask-relay]
-verify_jwt = false
+verify_jwt = true
 
 [functions.index-publication-knowledge]
 verify_jwt = true

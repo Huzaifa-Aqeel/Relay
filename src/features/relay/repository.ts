@@ -1165,6 +1165,14 @@ export async function listHandoffPublicationItems(publicationId: string) {
   return data.map(mapPublishedHandoffItem);
 }
 
+export async function canAskPreviousHandoff(handoffId: string) {
+  const { data, error } = await requireSupabase().rpc('can_ask_previous_handoff', {
+    requested_handoff_id: handoffId,
+  });
+  throwDataError(error);
+  return data === true;
+}
+
 export async function listRolePublications(roleId: string) {
   const handoffs = await listRoleHandoffs(roleId);
   if (!handoffs.length) return [];
@@ -1353,9 +1361,9 @@ export async function compareRoleHandoffs(roleId: string) {
   return String(result.data?.comparisonId ?? '');
 }
 
-export async function askRelay(token: string, question: string): Promise<AskRelayAnswer> {
+export async function askRelay(handoffId: string, question: string): Promise<AskRelayAnswer> {
   const result = await requireSupabase().functions.invoke('ask-relay', {
-    body: { token, question: question.trim() },
+    body: { handoffId, question: question.trim() },
   });
   if (result.error) {
     let message = 'Ask Relay is temporarily unavailable. The published handoff is still available above.';

@@ -873,40 +873,44 @@ select is(
   'publication snapshots safe citation labels for grounded recipient answers'
 );
 
+select ok(
+  public.can_ask_previous_handoff('66666666-6666-4666-8666-666666666666'),
+  'the active later-period holder may Ask the immediately previous same-Role publication'
+);
 select set_config(
-  'relay.test_old_token',
-  (select access_token from public.handoff_publications where handoff_id = '66666666-6666-4666-8666-666666666666'),
+  'relay.test_ask_claim',
+  (select claim_id::text from public.claim_role_holder_ask_request('66666666-6666-4666-8666-666666666666')),
   true
 );
-
-select throws_ok(
-  $$select * from public.claim_public_ask_request(current_setting('relay.test_old_token'), 1, 2)$$,
-  '42501',
-  null,
-  'clients cannot increment or bypass public Ask usage directly'
-);
-
-set local role service_role;
-select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 select is(
-  (select remaining from public.claim_public_ask_request(current_setting('relay.test_old_token'), 1, 2)),
-  1,
-  'a Pro handoff receives its larger server-claimed Ask allowance'
+  public.complete_role_holder_ask_request(current_setting('relay.test_ask_claim')::uuid, false),
+  100,
+  'a failed Ask request releases its allowance'
+);
+select set_config(
+  'relay.test_ask_claim',
+  (select claim_id::text from public.claim_role_holder_ask_request('66666666-6666-4666-8666-666666666666')),
+  true
 );
 select is(
-  (select remaining from public.claim_public_ask_request(current_setting('relay.test_old_token'), 1, 2)),
-  0,
-  'Ask usage is incremented atomically'
+  public.complete_role_holder_ask_request(current_setting('relay.test_ask_claim')::uuid, true),
+  99,
+  'a successful Ask request consumes one Pro allowance'
 );
-select throws_ok(
-  $$select * from public.claim_public_ask_request(current_setting('relay.test_old_token'), 1, 2)$$,
-  'P0001',
-  'ASK_LIMIT_REACHED',
-  'the public Ask limit is enforced before another provider call'
+select set_config(
+  'relay.test_ask_claim',
+  (select claim_id::text from public.claim_role_holder_ask_request('66666666-6666-4666-8666-666666666666')),
+  true
 );
-select is((select request_count from public.ask_usage_daily), 2, 'failed Ask claims do not over-increment usage');
-
+select is(
+  public.complete_role_holder_ask_request(current_setting('relay.test_ask_claim')::uuid, true),
+  98,
+  'successful requests decrement the authenticated user-publication allowance'
+);
 set local role postgres;
+select is((select count(*) from public.ask_role_usage_claims where status = 'succeeded'), 2::bigint, 'only successful Ask claims consume quota');
+select is((select count(*) from public.ask_role_usage_claims where status = 'failed'), 1::bigint, 'failed Ask claims remain auditable without consuming quota');
+
 update public.organization_subscriptions
 set status = 'inactive', expires_at = now() - interval '1 minute', revenuecat_checked_at = now()
 where purchaser_user_id = '33333333-3333-4333-8333-333333333333';

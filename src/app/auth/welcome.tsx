@@ -13,14 +13,10 @@ export default function AuthWelcomeScreen() {
 
   return (
     <AuthScaffold
-      eyebrow="Knowledge that carries forward"
+      eyebrow=""
       title="Leadership knowledge should outlast the leader"
       intro="Capture how a role actually works, resolve what is unclear, and publish a handoff a successor can trust."
-      footer={
-        <AppText variant="caption" color={colors.inkMuted} style={styles.center}>
-          Published handoffs never require a recipient account.
-        </AppText>
-      }>
+>
       <View style={styles.promiseList}>
         {[
           ['microphone-outline', 'Capture voice, text, and documents'],

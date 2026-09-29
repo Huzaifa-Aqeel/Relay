@@ -183,7 +183,7 @@ function groupByLineage(items: MemoryEvidenceItem[]) {
 }
 
 /**
- * Existing carry-forward lineage is the normal matcher. The lexical semantic
+ * Existing publication lineage is the normal matcher. The lexical semantic
  * matcher runs only for legacy rows where both publications lack lineage, and
  * accepts only an unambiguous mutual-best pair. Ambiguous legacy candidates
  * are omitted instead of being mislabeled Added/Retired.

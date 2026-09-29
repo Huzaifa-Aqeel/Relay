@@ -306,6 +306,18 @@ export type Database = {
           request_count?: number; updated_at?: string;
         }
       >;
+      ask_role_usage_claims: Table<
+        {
+          id: string; publication_id: string; user_id: string; usage_date: string;
+          effective_limit: number; status: 'pending' | 'succeeded' | 'failed';
+          created_at: string; completed_at: string | null;
+        },
+        {
+          id?: string; publication_id: string; user_id: string; usage_date?: string;
+          effective_limit: number; status?: 'pending' | 'succeeded' | 'failed';
+          created_at?: string; completed_at?: string | null;
+        }
+      >;
     };
     Views: Record<string, never>;
     Functions: {
@@ -358,9 +370,20 @@ export type Database = {
       organization_role_is_entitled: { Args: { requested_organization_id: string; requested_role_id: string }; Returns: boolean };
       purchaser_has_active_relay_pro: { Args: { requested_user_id: string }; Returns: boolean };
       get_organization_plan: { Args: { requested_organization_id: string }; Returns: Json };
-      claim_public_ask_request: {
-        Args: { requested_token: string; requested_free_limit: number; requested_pro_limit: number };
-        Returns: { publication_id: string; organization_id: string; handoff_id: string; remaining: number }[];
+      can_ask_previous_handoff: {
+        Args: { requested_handoff_id: string };
+        Returns: boolean;
+      };
+      claim_role_holder_ask_request: {
+        Args: { requested_handoff_id: string };
+        Returns: {
+          claim_id: string; publication_id: string; organization_id: string;
+          handoff_id: string; remaining: number;
+        }[];
+      };
+      complete_role_holder_ask_request: {
+        Args: { requested_claim_id: string; requested_succeeded: boolean };
+        Returns: number;
       };
       is_organization_member: { Args: { requested_organization_id: string }; Returns: boolean };
       is_organization_admin: { Args: { requested_organization_id: string }; Returns: boolean };

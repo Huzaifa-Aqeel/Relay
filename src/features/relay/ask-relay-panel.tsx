@@ -8,7 +8,7 @@ import { FormInput } from '@/components/ui/form-controls';
 import { useAskRelay } from '@/features/relay/queries';
 import { colors, radii, spacing } from '@/theme/tokens';
 
-export function AskRelayPanel({ token }: { token: string }) {
+export function AskRelayPanel({ handoffId }: { handoffId: string }) {
   const [question, setQuestion] = useState('');
   const [lastQuestion, setLastQuestion] = useState('');
   const mutation = useAskRelay();
@@ -17,7 +17,7 @@ export function AskRelayPanel({ token }: { token: string }) {
     const trimmed = question.trim();
     if (!trimmed || mutation.isPending) return;
     try {
-      await mutation.mutateAsync({ token, question: trimmed });
+      await mutation.mutateAsync({ handoffId, question: trimmed });
       setLastQuestion(trimmed);
     } catch {
       // The mutation exposes the safe, recipient-facing error below.
@@ -31,9 +31,9 @@ export function AskRelayPanel({ token }: { token: string }) {
           <MaterialCommunityIcons color={colors.moss} name="message-question-outline" size={24} />
         </View>
         <View style={styles.headingCopy}>
-          <AppText variant="heading" accessibilityRole="header">Ask this handoff</AppText>
+          <AppText variant="heading" accessibilityRole="header">Ask the previous handoff</AppText>
           <AppText color={colors.inkMuted}>
-            Get a concise answer using only the information the owner published here.
+            Get a concise answer using only approved knowledge published by the previous Role Holder.
           </AppText>
         </View>
       </View>
@@ -105,7 +105,7 @@ export function AskRelayPanel({ token }: { token: string }) {
             </View>
           ) : null}
           <AppText variant="caption" color={colors.inkMuted}>
-            {mutation.data.remaining} Ask {mutation.data.remaining === 1 ? 'request' : 'requests'} remaining today for this link.
+            {mutation.data.remaining} Ask {mutation.data.remaining === 1 ? 'request' : 'requests'} remaining today for this handoff.
           </AppText>
         </View>
       ) : null}
