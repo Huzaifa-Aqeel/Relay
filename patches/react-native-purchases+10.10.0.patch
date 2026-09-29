@@ -1,0 +1,24 @@
+diff --git a/node_modules/react-native-purchases/android/src/main/java/com/revenuecat/purchases/react/RNPurchasesModule.java b/node_modules/react-native-purchases/android/src/main/java/com/revenuecat/purchases/react/RNPurchasesModule.java
+index 4e2cb6a..58f43b8 100644
+--- a/node_modules/react-native-purchases/android/src/main/java/com/revenuecat/purchases/react/RNPurchasesModule.java
++++ b/node_modules/react-native-purchases/android/src/main/java/com/revenuecat/purchases/react/RNPurchasesModule.java
+@@ -104,6 +104,10 @@ public class RNPurchasesModule extends ReactContextBaseJavaModule implements Upd
+         } else if (useAmazon) {
+             store = Store.AMAZON;
+         }
++        DangerousSettings dangerousSettings = new DangerousSettings();
++        if (apiKey.startsWith("test_")) {
++            dangerousSettings.forceAllowTestStoreInReleaseBuilds();
++        }
+         CommonKt.configure(
+             reactContext,
+             apiKey,
+@@ -111,7 +115,7 @@ public class RNPurchasesModule extends ReactContextBaseJavaModule implements Upd
+             purchasesAreCompletedBy,
+             platformInfo,
+             store,
+-            new DangerousSettings(),
++            dangerousSettings,
+             shouldShowInAppMessagesAutomatically,
+             entitlementVerificationMode,
+             pendingTransactionsForPrepaidPlansEnabled,
