@@ -139,9 +139,8 @@ export function broadMemoryKnowledgeType(type: string) {
 }
 
 function words(text: string, stopWords: Set<string>) {
-  return text.normalize('NFKD').toLocaleLowerCase()
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, ' ')
+  return text.normalize('NFKC').toLocaleLowerCase()
+    .replace(/[^\p{L}\p{N}\p{M}]+/gu, ' ')
     .trim()
     .split(/\s+/)
     .filter(Boolean)
@@ -150,7 +149,7 @@ function words(text: string, stopWords: Set<string>) {
 }
 
 function materialFingerprint(text: string) {
-  return words(text, STOP_WORDS).sort().join(' ');
+  return text.normalize('NFKC').toLocaleLowerCase().replace(/\s+/gu, ' ').trim().replace(/[.!?。]+$/u, '');
 }
 
 function explicitModality(text: string) {
@@ -193,7 +192,7 @@ function jaccard(left: Set<string>, right: Set<string>) {
   return shared / union.size;
 }
 
-function legacySemanticScore(before: MemoryEvidenceItem, after: MemoryEvidenceItem) {
+export function legacySemanticScore(before: Pick<MemoryEvidenceItem, 'knowledge_type' | 'title' | 'content'>, after: Pick<MemoryEvidenceItem, 'knowledge_type' | 'title' | 'content'>) {
   if (broadMemoryKnowledgeType(before.knowledge_type) !== broadMemoryKnowledgeType(after.knowledge_type)) return 0;
   const beforeAll = semanticTokens(before);
   const afterAll = semanticTokens(after);
@@ -320,12 +319,19 @@ export function isRoutineAnnualInstanceChange(
   const beforeText = `${before.title} ${before.content} ${before.comparison_value ?? ''}`;
   const afterText = `${after.title} ${after.content} ${after.comparison_value ?? ''}`;
   if (EXPLICIT_TEMPORAL_CHANGE_PATTERN.test(afterText)) return false;
+  // A changed lead time, threshold, or other number is never a calendar rollover.
+  const quantities = (text: string) => (text.replace(/\b20\d{2}\b/g, '').match(/\b\d+(?:\.\d+)?\s*(?:days?|weeks?|months?|hours?|percent|%)/gi) ?? []).join('|').toLowerCase();
+  if (quantities(beforeText) !== quantities(afterText)) return false;
   if (!TEMPORAL_TOPIC_PATTERN.test(`${before.title} ${after.title}`)
     && (!MONTH_PATTERN.test(beforeText) || !MONTH_PATTERN.test(afterText))) return false;
   const beforeYears = [...beforeText.matchAll(/\b(20\d{2})\b/g)].map((match) => Number(match[1]));
   const afterYears = [...afterText.matchAll(/\b(20\d{2})\b/g)].map((match) => Number(match[1]));
   if (!beforeYears.length || !afterYears.length) return false;
-  return beforeYears.some((year) => afterYears.includes(year + 1));
+  const withoutDates = (text: string) => materialFingerprint(text
+    .replace(/\b(?:january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)\s+\d{1,2}(?:st|nd|rd|th)?[,]?\s+20\d{2}\b/gi, 'DATE')
+    .replace(/\b20\d{2}-\d{2}-\d{2}\b/g, 'DATE')
+    .replace(/\b20\d{2}\b/g, 'YEAR'));
+  return beforeYears.some((year) => afterYears.includes(year + 1)) && withoutDates(beforeText) === withoutDates(afterText);
 }
 
 export function isGenericResourceScopeChange(
@@ -370,7 +376,7 @@ export function memoryCandidates(plan: MemoryMatchingPlan): MemoryEvaluationCand
       afterRef: ref,
       basis: 'not_applicable' as const,
     })),
-  ].slice(0, 100).map((candidate, index) => ({ ...candidate, id: `K${index + 1}` }));
+  ].map((candidate, index) => ({ ...candidate, id: `K${index + 1}` }));
 }
 
 export function memoryCandidatePrompt(plan: MemoryMatchingPlan) {

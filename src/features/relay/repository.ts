@@ -217,6 +217,7 @@ function mapCapture(row: CaptureRow, attachments: HandoffSource[]): HandoffCaptu
 
 function mapKnowledgeItem(row: KnowledgeItemRow): KnowledgeItem {
   return {
+    similarToTitle: row.similar_to_title,
     id: row.id,
     organizationId: row.organization_id,
     handoffId: row.handoff_id,
@@ -292,6 +293,7 @@ const askRelayAnswerSchema = z.object({
   status: z.enum(['answered', 'unsupported', 'conflict']),
   answer: z.string().min(1).max(1600),
   citations: z.array(z.object({
+    itemId: z.string().uuid(),
     ref: z.string().regex(/^E\d+$/),
     title: z.string().min(1).max(160),
     knowledgeType: z.enum(ALL_KNOWLEDGE_TYPES),
@@ -1267,6 +1269,12 @@ export async function getSharedHandoff(token: string): Promise<SharedHandoff | n
 
 function mapMemoryComparison(row: RoleMemoryComparisonRow): RoleMemoryComparison {
   return {
+    pipelineVersion: row.pipeline_version,
+    runStatus: row.run_status === 'processing' && Date.parse(row.lease_expires_at ?? '') <= Date.now() ? 'failed' : row.run_status,
+    leaseExpiresAt: row.lease_expires_at,
+    coveredItemCount: row.covered_item_count,
+    totalItemCount: row.total_item_count,
+    omittedChangeCount: row.omitted_change_count,
     id: row.id,
     organizationId: row.organization_id,
     roleId: row.role_id,
@@ -1411,9 +1419,9 @@ export async function compareRoleHandoffs(roleId: string) {
   return String(result.data?.comparisonId ?? '');
 }
 
-export async function askRelay(handoffId: string, question: string): Promise<AskRelayAnswer> {
+export async function askRelay(handoffId: string, question: string, history: { question: string; answer: string; itemIds: string[] }[] = []): Promise<AskRelayAnswer> {
   const result = await requireSupabase().functions.invoke('ask-relay', {
-    body: { handoffId, question: question.trim() },
+    body: { handoffId, question: question.trim(), history: history.slice(-3) },
   });
   if (result.error) {
     let message = 'Ask Relay is temporarily unavailable. The published handoff is still available above.';

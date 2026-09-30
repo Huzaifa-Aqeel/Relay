@@ -423,21 +423,23 @@ export function useRoleMemoryComparison(roleId: string | undefined) {
   return useQuery({
     queryKey: relayKeys.roleMemoryComparison(roleId ?? ''),
     queryFn: () => getLatestRoleMemoryComparison(roleId!),
+    refetchInterval: (query) => query.state.data?.runStatus === 'processing' ? 2000 : false,
     enabled: useCloudQueryEnabled(Boolean(roleId)),
   });
 }
 
-export function useRoleMemoryChanges(comparisonId: string | undefined) {
+export function useRoleMemoryChanges(comparisonId: string | undefined, processing = false, completedAt?: string | null) {
   return useQuery({
-    queryKey: relayKeys.roleMemoryChanges(comparisonId ?? ''),
+    queryKey: [...relayKeys.roleMemoryChanges(comparisonId ?? ''), completedAt],
     queryFn: () => listRoleMemoryChanges(comparisonId!),
+    refetchInterval: processing ? 3000 : false,
     enabled: useCloudQueryEnabled(Boolean(comparisonId)),
   });
 }
 
 export function useAskRelay() {
   return useMutation({
-    mutationFn: ({ handoffId, question }: { handoffId: string; question: string }) => askRelay(handoffId, question),
+    mutationFn: ({ handoffId, question, history }: { handoffId: string; question: string; history?: { question: string; answer: string; itemIds: string[] }[] }) => askRelay(handoffId, question, history),
   });
 }
 

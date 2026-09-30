@@ -1,4 +1,4 @@
-import { createClient } from 'npm:@supabase/supabase-js@2.116.0';
+import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2.116.0';
 
 import {
   MEMORY_CLAIM_INDEX_VERSION,
@@ -36,6 +36,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+const PIPELINE_VERSION = 2;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const ORGANIZATION_MEMORY_MATERIALITY_PROMPT = `You evaluate already-linked atomic operational claims from two adjacent, immutable, human-approved Handoffs for the same Organization and Role.
@@ -152,7 +153,7 @@ function claimSources(
 }
 
 async function loadPriorTopics(
-  admin: ReturnType<typeof createClient>,
+  admin: SupabaseClient,
   previousPublicationId: string,
 ): Promise<PriorMemoryTopic[]> {
   const { data: claims, error: claimError } = await admin
@@ -195,8 +196,10 @@ async function ensureClaimIndexes({
   previous,
   current,
   publicationItems,
+  deadline,
+  run,
 }: {
-  admin: ReturnType<typeof createClient>;
+  admin: SupabaseClient;
   config: ServerConfig;
   actorId: string;
   organizationId: string;
@@ -205,81 +208,66 @@ async function ensureClaimIndexes({
   previous: Publication;
   current: Publication;
   publicationItems: PublicationItemRow[];
+  deadline: number;
+  run: { comparisonId: string; runId: string };
 }) {
-  const { data: indexes, error: indexError } = await admin
-    .from('publication_memory_indexes')
-    .select('publication_id, status, index_version')
-    .in('publication_id', [previous.id, current.id]);
-  if (indexError) throw indexError;
-  const ready = new Set((indexes ?? [])
-    .filter((index) => index.status === 'ready' && index.index_version === MEMORY_CLAIM_INDEX_VERSION)
-    .map((index) => index.publication_id));
-  if (ready.has(previous.id) && ready.has(current.id)) return;
-
-  const previousItems = publicationItems.filter((item) => item.publication_id === previous.id);
-  const currentItems = publicationItems.filter((item) => item.publication_id === current.id);
-  if (!previousItems.length || !currentItems.length) {
-    throw new MemoryError('Both published Handoffs need approved knowledge before Relay can compare them.', 409);
-  }
-
-  const incremental = ready.has(previous.id) && !ready.has(current.id);
-  const priorTopics = incremental ? await loadPriorTopics(admin, previous.id) : [];
-  // An empty prior index cannot establish continuity safely, so rebuild the
-  // adjacent pair together rather than treating every current claim as new.
-  const rebuildPair = !incremental || !priorTopics.length;
-  const sources = claimSources(previousItems, currentItems, rebuildPair);
-  let decoded: unknown;
-  try {
-    decoded = await requestTextLlmJson({
-      config: config.textLlm,
-      schema: organizationMemoryClaimSchema,
-      timeoutMs: Math.min(config.textLlm.requestTimeoutMs, 110_000),
-      messages: [
-        { role: 'system', content: ORGANIZATION_MEMORY_CLAIM_SYSTEM_PROMPT },
-        {
-          role: 'user',
-          content: memoryClaimPrompt({
-            roleTitle,
-            previousPeriod: previous.service_period,
-            currentPeriod: current.service_period,
-            sources,
-            priorTopics: rebuildPair ? [] : priorTopics,
-          }),
-        },
-      ],
+  let previousRebuilt = false;
+  for (const publication of [previous, current]) {
+    const items = publicationItems.filter((item) => item.publication_id === publication.id);
+    const { data: existing } = await admin.from('publication_memory_indexes').select('status,index_version').eq('publication_id', publication.id).maybeSingle();
+    if (existing?.status === 'ready' && existing.index_version === MEMORY_CLAIM_INDEX_VERSION && !previousRebuilt) continue;
+    if (publication.id === previous.id) previousRebuilt = true;
+    const priorTopics = publication.id === current.id ? await loadPriorTopics(admin, previous.id) : [];
+    const sources = items.map((item, i) => ({ ...item, ref: `S${i + 1}`, period: publication.id === previous.id ? 'previous' as const : 'current' as const }));
+    const rawClaims: unknown[] = [];
+    if (existing?.index_version === MEMORY_CLAIM_INDEX_VERSION && !(publication.id === current.id && previousRebuilt)) {
+      const { data: saved, error: savedError } = await admin.from('publication_memory_claims').select('*').eq('publication_id', publication.id);
+      if (savedError) throw savedError;
+      const topics = await loadPriorTopics(admin, publication.id);
+      for (const claim of saved ?? []) {
+        const topic = topics.find((entry) => entry.topicId === claim.topic_id);
+        rawClaims.push({ publication: publication.id === previous.id ? 'previous' : 'current', topic_key: topic?.canonicalKey,
+          prior_topic_ref: priorTopics.find((entry) => entry.topicId === claim.topic_id)?.ref ?? null,
+          knowledge_type: claim.knowledge_type, title: claim.title, content: claim.content,
+          comparison_value: claim.comparison_value, claim_state: claim.claim_state,
+          source_refs: sources.filter((source) => claim.source_publication_item_ids.includes(source.id)).map((source) => source.ref) });
+      }
+    }
+    // Limit concurrency and cap each call within the shared invocation budget.
+    async function extract(batch: ClaimSourceItem[]) {
+      if (deadline - Date.now() < 20_000) return;
+      try {
+        const value = await requestTextLlmJson({
+          config: config.textLlm, schema: organizationMemoryClaimSchema,
+          timeoutMs: Math.min(35_000, deadline - Date.now() - 10_000),
+          messages: [
+            { role: 'system', content: ORGANIZATION_MEMORY_CLAIM_SYSTEM_PROMPT + '\nReference every supplied item in at least one claim. Do not invent facts to meet coverage.' },
+            { role: 'user', content: memoryClaimPrompt({ roleTitle, previousPeriod: previous.service_period, currentPeriod: current.service_period, sources: batch, priorTopics }) },
+          ],
+        }) as { claims?: unknown[] };
+        if (Array.isArray(value?.claims)) rawClaims.push(...value.claims);
+      } catch (error) {
+        console.warn('Memory batch incomplete', error instanceof Error ? error.message : 'unknown');
+      }
+    }
+    const normalize = () => normalizeMemoryClaimOutput({ value: { claims: rawClaims }, sources, publicationIds: { previous: previous.id, current: current.id }, priorTopics });
+    const alreadyCovered = new Set(normalize().flatMap((claim) => claim.sourcePublicationItemIds));
+    const remainingSources = sources.filter((source) => !alreadyCovered.has(source.id));
+    for (let offset = 0; offset < remainingSources.length; offset += 75) {
+      await Promise.all([0,25,50].map((shift) => remainingSources.slice(offset+shift, offset+shift+25)).filter((batch) => batch.length).map(extract));
+    }
+    let claims = normalize();
+    const covered = new Set(claims.flatMap((claim) => claim.sourcePublicationItemIds));
+    const missing = sources.filter((source) => !covered.has(source.id));
+    for (let offset=0; offset<missing.length; offset+=25) await extract(missing.slice(offset,offset+25));
+    claims = normalize();
+    const finalCoverage = new Set(claims.flatMap((claim) => claim.sourcePublicationItemIds));
+    const { error } = await admin.rpc('commit_memory_run_index', {
+      comparison: run.comparisonId, token: run.runId, publication_ids: [publication.id],
+      version: MEMORY_CLAIM_INDEX_VERSION, claims, complete: items.every((item) => finalCoverage.has(item.id)),
     });
-  } catch (error) {
-    if (error instanceof TextLlmError && error.status === 429) {
-      throw new MemoryError('Organization Memory is busy right now. Wait a moment and retry.', 429);
-    }
-    if (error instanceof TextLlmError && error.kind === 'output') {
-      throw new MemoryError('Relay could not prepare a reliable Memory index from these Handoffs.', 502);
-    }
-    throw new MemoryError('Relay could not prepare Organization Memory right now.', 503);
+    if (error) throw error;
   }
-
-  const claims = normalizeMemoryClaimOutput({
-    value: decoded,
-    sources,
-    publicationIds: { previous: previous.id, current: current.id },
-    priorTopics: rebuildPair ? [] : priorTopics,
-  });
-  const targetPublicationIds = rebuildPair ? [previous.id, current.id] : [current.id];
-  if (!claims.length || targetPublicationIds.some((publicationId) => (
-    !claims.some((claim) => claim.publicationId === publicationId)
-  ))) {
-    throw new MemoryError('Relay could not ground enough approved knowledge to prepare Organization Memory.', 502);
-  }
-
-  const { error: commitError } = await admin.rpc('commit_publication_memory_claim_indexes', {
-    requested_organization_id: organizationId,
-    requested_role_id: roleId,
-    requested_publication_ids: targetPublicationIds,
-    requested_created_by: actorId,
-    requested_index_version: MEMORY_CLAIM_INDEX_VERSION,
-    requested_claims: claims,
-  });
-  if (commitError) throw commitError;
 }
 
 async function evaluateMaterialPairs({
@@ -290,6 +278,7 @@ async function evaluateMaterialPairs({
   evidence,
   evidenceByRef,
   pairPlan,
+  deadline,
 }: {
   config: ServerConfig;
   roleTitle: string;
@@ -298,9 +287,10 @@ async function evaluateMaterialPairs({
   evidence: MemoryEvidenceItem[];
   evidenceByRef: Map<string, MemoryEvidenceItem>;
   pairPlan: MemoryMatchingPlan;
+  deadline: number;
 }) {
   const fallback = deterministicMemoryChanges(evidenceByRef, pairPlan);
-  if (!pairPlan.pairs.length) return fallback;
+  if (!pairPlan.pairs.length || deadline - Date.now() < 15_000) return fallback;
   const candidateRefs = new Set(pairPlan.pairs.flatMap((pair) => [pair.beforeRef, pair.afterRef]));
   const evidenceBlock = evidence.filter((item) => candidateRefs.has(item.ref)).map((item) => [
     `[${item.ref}]`,
@@ -315,7 +305,7 @@ async function evaluateMaterialPairs({
     const decoded = await requestTextLlmJson({
       config: config.textLlm,
       schema: organizationMemorySchema,
-      timeoutMs: Math.min(config.textLlm.requestTimeoutMs, 45_000),
+      timeoutMs: Math.min(45_000, deadline - Date.now() - 10_000),
       messages: [
         { role: 'system', content: ORGANIZATION_MEMORY_MATERIALITY_PROMPT },
         {
@@ -344,6 +334,13 @@ async function evaluateMaterialPairs({
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (request.method !== 'POST') return json({ error: 'Method not allowed.' }, 405);
+  const deadline = Date.now() + 140_000;
+  const boundedFetch: typeof fetch = (input, init) => fetch(input, {
+    ...init, signal: AbortSignal.any([
+      ...(init?.signal ? [init.signal] : []),
+      AbortSignal.timeout(Math.max(1, Math.min(8_000, deadline - Date.now()))),
+    ]),
+  });
 
   let config: ServerConfig;
   try {
@@ -354,10 +351,10 @@ Deno.serve(async (request) => {
   const authorization = request.headers.get('Authorization');
   if (!authorization) return json({ error: 'Authentication required.' }, 401);
   const client = createClient(config.supabaseUrl, config.anonKey, {
-    global: { headers: { Authorization: authorization } },
+    global: { headers: { Authorization: authorization }, fetch: boundedFetch },
     auth: { persistSession: false },
   });
-  const admin = createClient(config.supabaseUrl, config.serviceRoleKey, { auth: { persistSession: false } });
+  const admin = createClient(config.supabaseUrl, config.serviceRoleKey, { auth: { persistSession: false }, global: { fetch: boundedFetch } });
   const { data: userData, error: userError } = await client.auth.getUser();
   if (userError || !userData.user) return json({ error: 'Your session is no longer valid.' }, 401);
 
@@ -414,6 +411,14 @@ Deno.serve(async (request) => {
     .eq('current_publication_id', current.id)
     .maybeSingle();
   if (comparisonError) return json({ error: 'Relay could not start the comparison.' }, 500);
+  const { data: run, error: runError } = await admin.rpc('claim_memory_run', {
+    org: role.organization_id, role: role.id, previous_id: previous.id, current_id: current.id,
+    previous_period: previous.service_period, current_period: current.service_period,
+    actor: userData.user.id, version: PIPELINE_VERSION,
+  });
+  if (runError || !run) return json({ error: 'Relay could not claim this comparison.' }, 500);
+  if (!run.runId) return json(run, run.ready ? 200 : 202);
+  const work = async () => {
 
   try {
     const { data: itemRows, error: itemError } = await admin
@@ -435,6 +440,8 @@ Deno.serve(async (request) => {
       previous,
       current,
       publicationItems,
+      deadline,
+      run,
     });
 
     const { data: claimRows, error: claimError } = await admin
@@ -459,13 +466,21 @@ Deno.serve(async (request) => {
       evidence,
       evidenceByRef,
       pairPlan,
+      deadline,
     });
+    const coveredIds = new Set((claimRows ?? []).flatMap((claim) => claim.source_publication_item_ids as string[]));
+    const covered = publicationItems.filter((item) => coveredIds.has(item.id)).length;
+    const complete = covered === publicationItems.length;
     const standaloneChanges = deterministicMemoryChanges(evidenceByRef, {
       pairs: [],
-      addedRefs: matchingPlan.addedRefs,
+      addedRefs: complete ? matchingPlan.addedRefs : [],
       omittedRefs: matchingPlan.omittedRefs,
     });
-    const changes = [...pairChanges, ...standaloneChanges];
+    const allChanges = [...pairChanges, ...standaloneChanges].sort((a,b) => {
+      const priority = (change: typeof a) => (change.changeType === 'changed' ? 4 : change.changeType === 'resolved' || change.changeType === 'retired' ? 3 : 1) + ((change.after ?? change.before)?.knowledge_type === 'rule_deadline' ? 2 : 0);
+      return priority(b)-priority(a) || a.title.localeCompare(b.title);
+    });
+    const changes = allChanges.slice(0, 100);
 
     const persistedChanges = changes.map((change) => {
       const provenance = [
@@ -489,19 +504,10 @@ Deno.serve(async (request) => {
         reasonProvenance: citations(change.reasonEvidence?.citation_sources),
       };
     });
-    const { data: comparisonId, error: commitError } = await admin.rpc(
-      'commit_role_memory_comparison',
-      {
-        requested_organization_id: role.organization_id,
-        requested_role_id: role.id,
-        requested_previous_publication_id: previous.id,
-        requested_current_publication_id: current.id,
-        requested_previous_service_period: previous.service_period,
-        requested_current_service_period: current.service_period,
-        requested_created_by: userData.user.id,
-        requested_changes: persistedChanges,
-      },
-    );
+    const { data: comparisonId, error: commitError } = await admin.rpc('finish_memory_run', {
+      comparison: run.comparisonId, token: run.runId, changes: persistedChanges,
+      covered, total: publicationItems.length, omitted: allChanges.length - changes.length, version: PIPELINE_VERSION,
+    });
     if (commitError || !comparisonId) throw commitError ?? new Error('Comparison commit failed.');
     return json({ ready: true, comparisonId, materialChangeCount: changes.length });
   } catch (error) {
@@ -509,23 +515,18 @@ Deno.serve(async (request) => {
     const message = error instanceof MemoryError
       ? error.publicMessage
       : 'Relay could not compare these Handoffs safely. Your published Handoffs are unchanged.';
-    let comparisonId = existingComparison?.id ?? null;
-    if (existingComparison?.status !== 'ready') {
-      const { data: failedComparison } = await admin.from('role_memory_comparisons').upsert({
-        organization_id: role.organization_id,
-        role_id: role.id,
-        previous_publication_id: previous.id,
-        current_publication_id: current.id,
-        previous_service_period: previous.service_period,
-        current_service_period: current.service_period,
-        status: 'failed',
-        failure_reason: message.slice(0, 500),
-        material_change_count: null,
-        created_by: userData.user.id,
-        completed_at: null,
-      }, { onConflict: 'role_id,previous_publication_id,current_publication_id' }).select('id').single();
-      comparisonId = failedComparison?.id ?? comparisonId;
-    }
-    return json({ error: message, comparisonId }, error instanceof MemoryError ? error.status : 500);
+    await admin.from('role_memory_comparisons').update({
+      run_status: 'failed', failure_reason: message.slice(0, 500), lease_expires_at: null,
+      ...(existingComparison?.status !== 'ready' ? { status: 'failed' } : {}),
+    }).eq('id', run.comparisonId).eq('run_id', run.runId);
+    return json({ error: message, comparisonId: run.comparisonId }, error instanceof MemoryError ? error.status : 500);
   }
+  }
+  const task = work();
+  const runtime = (globalThis as typeof globalThis & { EdgeRuntime?: { waitUntil(promise: Promise<unknown>): void } }).EdgeRuntime;
+  if (runtime?.waitUntil) {
+    runtime.waitUntil(task);
+    return json({ accepted: true, comparisonId: run.comparisonId }, 202);
+  }
+  return await task;
 });

@@ -415,7 +415,12 @@ export function UnifiedCaptureComposer({
                 key={prompt.id}
                 onPress={() => openComposer(prompt)}
                 style={({ pressed }) => [styles.promptChip, selected && styles.promptChipSelected, pressed && styles.pressed]}>
-                <AppText variant="caption" color={selected ? colors.white : colors.moss}>{prompt.title}</AppText>
+                <AppText
+                  color={selected ? colors.white : colors.moss}
+                  numberOfLines={1}
+                  variant="caption">
+                  {prompt.chipLabel}
+                </AppText>
               </Pressable>
             );
           })}
@@ -586,8 +591,9 @@ const styles = StyleSheet.create({
   },
   addSomething: { minHeight: 82, justifyContent: 'center', paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
   prompts: { gap: spacing.xs },
-  promptList: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
+  promptList: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.xs },
   promptChip: {
+    flexShrink: 0,
     minHeight: 38,
     justifyContent: 'center',
     paddingHorizontal: spacing.sm,

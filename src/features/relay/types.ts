@@ -220,6 +220,7 @@ export type KnowledgeOrigin = 'manual' | 'ai' | 'inherited';
 export type KnowledgeProposalAction = 'create' | 'update' | 'retire';
 
 export type KnowledgeItem = {
+  similarToTitle?: string | null;
   id: string;
   organizationId: string;
   handoffId: string;
@@ -399,6 +400,12 @@ export type MemorySnapshot = {
 };
 
 export type RoleMemoryComparison = {
+  pipelineVersion: number;
+  runStatus: string;
+  leaseExpiresAt: string | null;
+  coveredItemCount: number;
+  totalItemCount: number;
+  omittedChangeCount: number;
   id: string;
   organizationId: string;
   roleId: string;
@@ -427,6 +434,7 @@ export type RoleMemoryChange = {
 };
 
 export type AskRelayCitation = {
+  itemId: string;
   ref: string;
   title: string;
   knowledgeType: KnowledgeType;

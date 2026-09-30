@@ -1,4 +1,5 @@
-import { createClient } from 'npm:@supabase/supabase-js@2.116.0';
+import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2.116.0';
+import { astraDeleteAll } from '../_shared/publication-vectors.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -6,7 +7,7 @@ const corsHeaders = {
 };
 
 async function listFiles(
-  admin: ReturnType<typeof createClient>,
+  admin: SupabaseClient,
   bucket: string,
   prefix: string,
 ): Promise<string[]> {
@@ -79,6 +80,9 @@ Deno.serve(async (request) => {
     }
 
     for (const organization of organizations) {
+      const values = ['ASTRA_DB_API_ENDPOINT', 'ASTRA_DB_APPLICATION_TOKEN', 'ASTRA_DB_KEYSPACE', 'ASTRA_DB_COLLECTION'].map((name) => Deno.env.get(name)?.trim());
+      if (values.some((value) => !value)) throw new Error('Astra cleanup configuration is missing.');
+      await astraDeleteAll({ astraEndpoint: values[0]!, astraToken: values[1]!, astraKeyspace: values[2]!, astraCollection: values[3]! }, { organization_id: organization.id });
       const paths = await listFiles(admin, 'organization-logos', organization.id);
       if (paths.length > 0) {
         const { error } = await admin.storage.from('organization-logos').remove(paths);

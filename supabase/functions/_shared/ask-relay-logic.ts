@@ -51,7 +51,7 @@ export function parseCitationSources(value: unknown): CitationSource[] {
 
 function words(value: string) {
   return value.toLocaleLowerCase()
-    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/[^\p{L}\p{N}\p{M}\s]/gu, ' ')
     .split(/\s+/)
     .filter(Boolean);
 }

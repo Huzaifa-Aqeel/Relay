@@ -22,7 +22,7 @@ function broadMemoryKnowledgeType(type: string) {
   return type;
 }
 
-export const MEMORY_CLAIM_INDEX_VERSION = 1;
+export const MEMORY_CLAIM_INDEX_VERSION = 2;
 
 export type ClaimSourceItem = PublicationMemoryItem & {
   publication_id: string;
@@ -248,10 +248,7 @@ function topicKey(value: unknown) {
 }
 
 function comparisonFingerprint(value: string) {
-  return value.normalize('NFKD').toLocaleLowerCase()
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
+  return value.normalize('NFKC').toLocaleLowerCase().replace(/\s+/gu, ' ').trim();
 }
 
 function safeCitations(value: unknown) {
@@ -303,7 +300,7 @@ export function normalizeMemoryClaimOutput({
   const incremental = priorTopics.length > 0;
   const normalized: NormalizedClaim[] = [];
 
-  for (const raw of rawClaims.slice(0, 160)) {
+  for (const raw of rawClaims) {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
     const claim = raw as Record<string, unknown>;
     const period = claim.publication === 'previous' || claim.publication === 'current'
@@ -330,7 +327,7 @@ export function normalizeMemoryClaimOutput({
     const broadType = broadMemoryKnowledgeType(stringValue(claim.knowledge_type, 40));
     const knowledgeType = ['process', 'contact', 'rule_deadline', 'access_resource', 'warning_lesson']
       .includes(broadType) ? broadType as MemoryClaimCommit['knowledgeType'] : null;
-    const claimState = ['active', 'pending', 'resolved', 'retired'].includes(String(claim.claim_state))
+    const claimState = ['active', 'pending', 'resolved', 'retired', 'uncertain'].includes(String(claim.claim_state))
       ? claim.claim_state as MemoryClaimCommit['claimState'] : 'active';
     if (!key || !title || !content || !comparisonValue || !knowledgeType) continue;
 

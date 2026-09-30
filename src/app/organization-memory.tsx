@@ -133,7 +133,7 @@ export default function OrganizationMemoryScreen() {
   const handoffsQuery = useRolePublications(roleId);
   const plan = useOrganizationPlan(roleQuery.data?.organizationId);
   const comparisonQuery = useRoleMemoryComparison(roleId);
-  const changesQuery = useRoleMemoryChanges(comparisonQuery.data?.id);
+  const changesQuery = useRoleMemoryChanges(comparisonQuery.data?.id, comparisonQuery.data?.runStatus === 'processing', comparisonQuery.data?.completedAt);
   const compareMutation = useCompareRoleHandoffs();
   const changesEnabled = Boolean(comparisonQuery.data?.id);
   const pending = roleQuery.isPending || handoffsQuery.isPending || comparisonQuery.isPending
@@ -143,7 +143,7 @@ export default function OrganizationMemoryScreen() {
     ?? comparisonQuery.error ?? (changesEnabled ? changesQuery.error : null);
   const published = handoffsQuery.data ?? [];
   const comparison = comparisonQuery.data;
-  const changes = changesQuery.data ?? [];
+  const changes = useMemo(() => changesQuery.data ?? [], [changesQuery.data]);
   const filterOptions = useMemo(() => {
     const order: RoleMemoryChange['changeType'][] = [
       'changed', 'added', 'resolved', 'retired',
@@ -262,10 +262,13 @@ export default function OrganizationMemoryScreen() {
             </>
           ) : comparison.status === 'ready' ? (
             <View style={styles.noChanges}>
-              <AppText variant="label">{NO_MATERIAL_MEMORY_CHANGES}</AppText>
+              <AppText variant="label">{comparison.coveredItemCount < comparison.totalItemCount ? 'No verified changes in the compared portion.' : NO_MATERIAL_MEMORY_CHANGES}</AppText>
             </View>
           ) : null}
-          <Button disabled={compareMutation.isPending || plan.data?.plan !== 'pro'} icon="refresh" label={compareMutation.isPending ? 'Comparing…' : 'Re-run latest comparison'} tone="secondary" onPress={() => compareMutation.mutate({ roleId })} />
+          {comparison.runStatus === 'processing' ? <AppText>Comparing published knowledge…</AppText> : null}
+          {comparison.status === 'ready' && comparison.coveredItemCount < comparison.totalItemCount ? <AppText>Partial comparison: compared {comparison.coveredItemCount} of {comparison.totalItemCount} items. New topics are hidden until coverage is complete.</AppText> : null}
+          {comparison.omittedChangeCount > 0 ? <AppText>+{comparison.omittedChangeCount} more changes. Showing the 100 highest-priority changes.</AppText> : null}
+          {(comparison.runStatus === 'failed' || comparison.pipelineVersion !== 2 || comparison.coveredItemCount < comparison.totalItemCount) ? <Button disabled={compareMutation.isPending || comparison.runStatus === 'processing' || plan.data?.plan !== 'pro'} icon="refresh" label="Retry comparison" tone="secondary" onPress={() => compareMutation.mutate({ roleId })} /> : null}
         </View>
       )}
 

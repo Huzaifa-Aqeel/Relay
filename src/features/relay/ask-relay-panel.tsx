@@ -57,7 +57,13 @@ export function AskRelayChatbot({ targets }: { targets: AskRelayTarget[] }) {
     setQuestion('');
     mutation.reset();
     try {
-      const answer = await mutation.mutateAsync({ handoffId: target.handoffId, question: trimmed });
+      const history = messages.flatMap((message, index) => {
+        const previous = messages[index - 1];
+        return message.sender === 'relay' && previous?.sender === 'user'
+          ? [{ question: previous.text.slice(0, 500), answer: message.answer.answer.slice(0, 1600), itemIds: message.answer.citations.map((citation) => citation.itemId) }]
+          : [];
+      }).slice(-3);
+      const answer = await mutation.mutateAsync({ handoffId: target.handoffId, question: trimmed, history });
       setMessages((current) => [...current, {
         id: nextMessageId.current++,
         sender: 'relay',

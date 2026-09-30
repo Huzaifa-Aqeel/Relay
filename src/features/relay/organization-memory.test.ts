@@ -84,18 +84,18 @@ describe('Organization Memory lineage-first matching', () => {
     expect(memoryCandidates(plan)).toEqual([]);
   });
 
-  it('hides wording-only rewrites', () => {
+  it('leaves wording and modality rewrites for materiality review', () => {
     expect(isClearlyEquivalentMemoryContent(
       { content: 'Submit the report by Friday.' },
       { content: 'The report must be submitted by Friday.' },
-    )).toBe(true);
+    )).toBe(false);
   });
 
-  it('hides punctuation, formatting, and reordered text', () => {
+  it('does not treat reordered text as proof of equivalence', () => {
     expect(isClearlyEquivalentMemoryContent(
       { content: 'Keys, badges, and forms.' },
       { content: 'Forms\nkeys; badges!' },
-    )).toBe(true);
+    )).toBe(false);
   });
 
   it('hides a routine corresponding-year calendar rollover', () => {

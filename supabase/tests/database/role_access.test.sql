@@ -181,7 +181,7 @@ select is(public.preview_role_assignment_invite(pg_temp.token('locked_invite'))-
 update public.roles set title = 'Finance Steward' where id = pg_temp.id('treasurer');
 select is((select title from public.roles where id = pg_temp.id('treasurer')),'Finance Steward','Owner can edit a locked Role after plan expiry');
 select pg_temp.actor(3);
-select throws_ok($$select public.create_role_assignment_invite(pg_temp.id('treasurer'),'2030–2031')$$,'P0001','RELAY_PRO_REQUIRED:role_access','Locked Role Holder cannot bypass the workspace plan through succession');
+select throws_ok($$select public.create_role_assignment_invite(pg_temp.id('treasurer'),'2030–2031')$$,'42501','Only the Organization Owner or current Role Holder can invite for this Role','Locked Role Holder cannot bypass the workspace plan through succession');
 select pg_temp.actor(2);
 select set_config('test.locked_handoff',public.accept_role_assignment_invite(pg_temp.token('locked_invite'))::text,true);
 select is((select status from public.role_assignments where role_id = pg_temp.id('treasurer') and service_period = '2027–2028'),'ended','Locked-Role acceptance atomically ends the outgoing assignment');

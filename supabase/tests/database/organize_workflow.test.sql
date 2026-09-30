@@ -203,5 +203,24 @@ select ok(
   'stale recovery clears the completed explicit-request marker'
 );
 
+set local role postgres;
+insert into public.knowledge_items(id,organization_id,handoff_id,created_by,knowledge_type,title,content,status,origin)
+select 'a1000000-0000-4000-8000-000000000099',organization_id,id,'a1000000-0000-4000-8000-000000000001','process','Roster deadline','Submit the roster Wednesday.','approved','manual'
+from public.handoffs where service_period='2032–2033';
+update public.captures set structuring_status='processing',structuring_failure_reason=null,structured_at=null,structured_proposal_count=null,structured_dropped_count=null where title='Explicit Organize intent';
+set local role authenticated;
+select lives_ok($$select public.replace_capture_knowledge_proposals(
+ (select id from public.captures where title='Explicit Organize intent'),
+ '[{"proposal_action":"update","proposal_target_id":"a1000000-0000-4000-8000-000000000099","knowledge_type":"process","title":"Roster deadline","content":"Submit the roster Friday.","citations":[]}]',2)$$,'Organize stores an update against an approved item');
+select is((select structured_dropped_count from public.captures where title='Explicit Organize intent'),2,'dedupe count is retained');
+select lives_ok($$select public.decide_knowledge_proposal((select id from public.knowledge_items where proposal_target_id='a1000000-0000-4000-8000-000000000099' and status='proposed'),'approved')$$,'reviewer can accept a reconciled update');
+select is((select content from public.knowledge_items where id='a1000000-0000-4000-8000-000000000099'),'Submit the roster Friday.','acceptance updates the existing approved item');
+select is((select content from public.knowledge_item_revisions where knowledge_item_id='a1000000-0000-4000-8000-000000000099'),'Submit the roster Wednesday.','acceptance preserves the old content in revisions');
+set local role postgres;
+update public.captures set structuring_status='processing',structuring_failure_reason=null,structured_at=null,structured_proposal_count=null,structured_dropped_count=null where title='Explicit Organize intent';
+set local role authenticated;
+select throws_ok($$select public.replace_capture_knowledge_proposals(
+ (select id from public.captures where title='Explicit Organize intent'),
+ '[{"proposal_action":"update","proposal_target_id":"a1000000-0000-4000-8000-000000000098","knowledge_type":"process","title":"Invalid target","content":"Invalid"}]',0)$$,'P0001','Proposal target is not approved in this handoff','an unavailable target is rejected atomically');
 select * from finish();
 rollback;

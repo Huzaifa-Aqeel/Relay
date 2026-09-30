@@ -71,6 +71,7 @@ function ProposalCard({
         </View>
       </View>
       <AppText variant="heading">{item.title}</AppText>
+      {item.similarToTitle ? <AppText variant="caption" color={colors.moss}>Similar to: {item.similarToTitle}</AppText> : null}
       {existingItem ? (
         <View style={styles.changeComparison}>
           <View style={styles.changeBlock}>

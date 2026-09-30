@@ -166,6 +166,7 @@ export type Database = {
       >;
       knowledge_items: Table<
         Timestamped & {
+          similar_to_title: string | null;
           id: string; organization_id: string; handoff_id: string; created_by: string;
           knowledge_type: string; title: string; content: string; status: string; origin: string;
           uncertainty_note: string | null; is_start_here: boolean; sort_order: number; lineage_id: string;
@@ -249,6 +250,8 @@ export type Database = {
       >;
       role_memory_comparisons: Table<
         Timestamped & {
+          pipeline_version: number; run_status: string; lease_expires_at: string | null;
+          covered_item_count: number; total_item_count: number; omitted_change_count: number;
           id: string; organization_id: string; role_id: string;
           previous_publication_id: string; current_publication_id: string;
           previous_service_period: string; current_service_period: string;

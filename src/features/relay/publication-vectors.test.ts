@@ -51,7 +51,7 @@ describe('published Knowledge Item vector records', () => {
     const requestBodies: Record<string, unknown>[] = [];
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
       requestBodies.push(JSON.parse(String(init?.body)));
-      return new Response(JSON.stringify({ status: { insertedIds: ['item-1'] } }), { status: 200 });
+      return new Response(JSON.stringify({ status: { deletedCount: 0, insertedIds: ['item-1'] } }), { status: 200 });
     });
 
     await replacePublicationKnowledgeIndex({

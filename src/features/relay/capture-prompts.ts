@@ -1,46 +1,55 @@
 export const CAPTURE_PROMPTS = [
   {
     id: 'role-responsibilities',
+    chipLabel: 'Responsibilities',
     title: 'Role responsibilities',
     question: 'What are the main responsibilities of this role? Include the work you do regularly, ongoing projects, important relationships, and anything the role title does not make obvious.',
   },
   {
     id: 'annual-registration-training',
+    chipLabel: 'Registration',
     title: 'Annual registration or training',
     question: 'What annual registration, re-registration, training, onboarding, or compliance steps does the next leader need to complete? Include when they happen and anything that must be prepared beforehand.',
   },
   {
     id: 'finances-budget',
+    chipLabel: 'Finances',
     title: 'Finances or budget handoff',
     question: 'What does the next leader need to know about the budget and finances? Include funding, bookkeeping, reimbursements, grants, signatories, and any financial work that still needs to be completed.',
   },
   {
     id: 'recurring-events',
+    chipLabel: 'Events',
     title: 'Recurring events',
     question: 'What events happen regularly, and how should the next leader prepare for them? Include when planning should begin, space or vendor arrangements, important dates, and anything that usually causes problems.',
   },
   {
     id: 'advisor-vendor-contacts',
+    chipLabel: 'Contacts',
     title: 'Advisor or vendor contacts',
     question: 'Who does the next leader need to know? Include advisors, sponsors, vendors, coaches, staff, venue contacts, or other important people—and what each person helps with.',
   },
   {
     id: 'account-tool-access',
+    chipLabel: 'Accounts & tools',
     title: 'Account and tool access',
     question: 'What accounts, files, systems, or tools does the next leader need access to? Include email, shared drives, messaging tools, websites, social accounts, software, and any training needed to use them.',
   },
   {
     id: 'calendars-deadlines',
+    chipLabel: 'Deadlines',
     title: 'Calendars and deadlines',
     question: "What dates should already be on the next leader's calendar? Include meetings, events, planning deadlines, recruitment, elections, training, registration, and leadership-transition dates.",
   },
   {
     id: 'constitution-policies',
+    chipLabel: 'Policies',
     title: 'Constitution or policies',
     question: 'What constitution, policies, procedures, or governing rules does the next leader need to understand? Include anything that affects how the role, elections, events, finances, or organization must operate.',
   },
   {
     id: 'lessons-common-mistakes',
+    chipLabel: 'Lessons',
     title: 'Lessons and common mistakes',
     question: 'What do you wish you had known when you started? What was hardest, what mistakes should the next leader avoid, what worked well, and what would you do differently next time?',
   },

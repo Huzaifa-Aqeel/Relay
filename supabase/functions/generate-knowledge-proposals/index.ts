@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2.116.0';
+import { reconcileProposals } from '../_shared/organize-matching.ts';
 import type { Database } from '../../../src/types/database.ts';
 import {
   buildCaptureProposalMessages,
@@ -170,10 +171,13 @@ async function completeClaimedCapture(
     // Organize is one Capture-level model call. Qwen sees the note and all
     // readable attachments together, and returns create-only suggestions.
     const proposals = await requestCaptureProposals(config, promptContext, evidence);
+    const { data: approved, error: approvedError } = await client.from('knowledge_items').select('id,knowledge_type,title,content').eq('handoff_id', capture.handoff_id).eq('status', 'approved');
+    if (approvedError) throw approvedError;
+    const reconciled = reconcileProposals(proposals, approved ?? []);
     const { data: count, error: storeError } = await client.rpc('replace_capture_knowledge_proposals', {
       requested_capture_id: capture.id,
-      requested_proposals: proposals,
-      requested_dropped_count: 0,
+      requested_proposals: reconciled.proposals,
+      requested_dropped_count: reconciled.dropped,
     });
     if (storeError) throw storeError;
     return { ok: true, proposalCount: typeof count === 'number' ? count : proposals.length };

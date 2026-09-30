@@ -564,5 +564,25 @@ select is(
   'a failed rerun preserves the last complete ready comparison'
 );
 
+select set_config('relay.memory_run', public.claim_memory_run(
+ 'a2000000-0000-4000-8000-000000000002','a2000000-0000-4000-8000-000000000003',
+ 'a2000000-0000-4000-8000-000000000031','a2000000-0000-4000-8000-000000000032',
+ '2027–2028','2028–2029','a2000000-0000-4000-8000-000000000001',2)::text,true);
+select ok((current_setting('relay.memory_run')::jsonb ? 'runId'),'a stale comparison gets an exclusive run lease');
+select is(public.claim_memory_run(
+ 'a2000000-0000-4000-8000-000000000002','a2000000-0000-4000-8000-000000000003',
+ 'a2000000-0000-4000-8000-000000000031','a2000000-0000-4000-8000-000000000032',
+ '2027–2028','2028–2029','a2000000-0000-4000-8000-000000000001',2)->>'joined','true','concurrent callers join the active lease');
+select throws_ok($$select public.finish_memory_run(
+ (current_setting('relay.memory_run')::jsonb->>'comparisonId')::uuid,
+ gen_random_uuid(),'[]',4,4,0,2)$$,'P0001','Memory run lease expired','a stale worker cannot commit');
+select lives_ok($$select public.finish_memory_run(
+ (current_setting('relay.memory_run')::jsonb->>'comparisonId')::uuid,
+ (current_setting('relay.memory_run')::jsonb->>'runId')::uuid,'[]',4,4,0,2)$$,'the lease owner commits a complete result');
+select is(public.claim_memory_run(
+ 'a2000000-0000-4000-8000-000000000002','a2000000-0000-4000-8000-000000000003',
+ 'a2000000-0000-4000-8000-000000000031','a2000000-0000-4000-8000-000000000032',
+ '2027–2028','2028–2029','a2000000-0000-4000-8000-000000000001',2)->>'ready','true','unchanged inputs reuse a complete versioned result');
+select ok(not has_function_privilege('authenticated','public.claim_memory_run(uuid,uuid,uuid,uuid,text,text,uuid,integer)','execute'),'clients cannot bypass authorization to claim runs');
 select * from finish();
 rollback;

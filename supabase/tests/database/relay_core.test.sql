@@ -826,7 +826,7 @@ select lives_ok(
 );
 
 select is(
-  char_length(public.publish_handoff('66666666-6666-4666-8666-666666666666')),
+  char_length(set_config('relay.test_old_token', public.publish_handoff('66666666-6666-4666-8666-666666666666'), true)),
   64,
   'publishing creates a 256-bit-style opaque access token'
 );
@@ -1685,20 +1685,20 @@ select lives_ok(
         'knowledge_type', 'process', 'title', 'Update the event budget weekly',
         'content', 'Update the event budget spreadsheet every Friday.',
         'uncertainty_note', null,
-        'evidence_source_id', (select source_id from public.capture_sources
+        'citations', jsonb_build_array(jsonb_build_object('source_id', (select source_id from public.capture_sources
           where capture_id = (select id from public.captures where title = 'Constitution or policies')
             and relationship = 'text'),
         'source_excerpt', 'Every Friday, update the event budget spreadsheet in the shared drive.',
-        'source_locator', null
+        'source_locator', null))
       ),
       jsonb_build_object(
         'proposal_action', 'create', 'target_knowledge_item_id', null,
         'knowledge_type', 'rule_deadline', 'title', 'Send the updated budget to the advisor',
         'content', 'Send the updated budget to the faculty advisor.',
         'uncertainty_note', null,
-        'evidence_source_id', '17171717-1010-4010-8010-101010101010',
+        'citations', jsonb_build_array(jsonb_build_object('source_id', '17171717-1010-4010-8010-101010101010',
         'source_excerpt', 'Send the budget to the faculty advisor after updating it.',
-        'source_locator', null
+        'source_locator', null))
       )
     )
   )$$,

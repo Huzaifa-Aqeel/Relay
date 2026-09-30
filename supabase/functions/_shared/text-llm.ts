@@ -226,6 +226,7 @@ export async function requestTextLlmJson({
   if (config.maxOutputTokens) requestBody.max_tokens = config.maxOutputTokens;
 
   let response: Response;
+  let body: unknown;
   const controller = new AbortController();
   const effectiveTimeoutMs = Math.max(1, Math.min(timeoutMs ?? config.requestTimeoutMs, config.requestTimeoutMs));
   const timeout = setTimeout(() => controller.abort(), effectiveTimeoutMs);
@@ -239,6 +240,7 @@ export async function requestTextLlmJson({
       body: JSON.stringify(requestBody),
       signal: controller.signal,
     });
+    body = await response.json();
   } catch (error) {
     if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) {
       throw new TextLlmError('The text model exceeded Relay\'s request window.', 'provider', 504, false, 'request_timeout');
@@ -248,7 +250,6 @@ export async function requestTextLlmJson({
     clearTimeout(timeout);
   }
 
-  const body = await response.json().catch(() => ({}));
   if (!response.ok) {
     const retryable = response.status === 408 || response.status >= 500;
     throw new TextLlmError(

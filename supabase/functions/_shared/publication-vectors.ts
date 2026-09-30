@@ -16,13 +16,14 @@ export type PublicationVectorItem = {
   content: string;
 };
 
-async function astraCommand(config: AstraPublicationConfig, command: Record<string, unknown>) {
+export async function astraCommand(config: AstraPublicationConfig, command: Record<string, unknown>) {
   const response = await fetch(
     `${config.astraEndpoint}/api/json/v1/${encodeURIComponent(config.astraKeyspace)}/${encodeURIComponent(config.astraCollection)}`,
     {
       method: 'POST',
       headers: { Token: config.astraToken, 'Content-Type': 'application/json' },
       body: JSON.stringify(command),
+      signal: AbortSignal.timeout(20_000),
     },
   );
   const body = await response.json().catch(() => ({}));
@@ -30,6 +31,18 @@ async function astraCommand(config: AstraPublicationConfig, command: Record<stri
     throw new Error('Astra publication knowledge request failed.');
   }
   return body;
+}
+
+export async function astraDeleteAll(config: AstraPublicationConfig, filter: Record<string, unknown>) {
+  if (!Object.keys(filter).length) throw new Error('An explicit deletion filter is required.');
+  let deleted = 0;
+  for (;;) {
+    const result = await astraCommand(config, { deleteMany: { filter } });
+    if (typeof result.status?.deletedCount !== 'number') throw new Error('Invalid Astra deletion response.');
+    deleted += result.status.deletedCount;
+    if (!result.status.moreData) return deleted;
+    if (!result.status.deletedCount) throw new Error('Astra deletion made no progress.');
+  }
 }
 
 export function publicationVectorText(item: Pick<PublicationVectorItem, 'title' | 'content'>) {
@@ -75,11 +88,7 @@ export async function replacePublicationKnowledgeIndex({
   handoffId: string;
   items: PublicationVectorItem[];
 }) {
-  await astraCommand(config, {
-    deleteMany: {
-      filter: { record_kind: PUBLICATION_VECTOR_KIND, publication_id: publicationId },
-    },
-  });
+  await astraDeleteAll(config, { record_kind: PUBLICATION_VECTOR_KIND, publication_id: publicationId });
   const documents = items.map((item) => publicationVectorDocument({
     publicationId, organizationId, handoffId, item,
   }));
