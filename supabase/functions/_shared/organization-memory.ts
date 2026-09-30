@@ -5,6 +5,7 @@ export type PublicationMemoryItem = {
   knowledge_type: string;
   title: string;
   content: string;
+  comparison_value?: string;
   citation_sources: unknown;
 };
 
@@ -24,12 +25,24 @@ export type MemoryCandidatePair = {
 export type MemoryMatchingPlan = {
   pairs: MemoryCandidatePair[];
   addedRefs: string[];
-  retiredRefs: string[];
   omittedRefs: string[];
 };
 
+const MONTH_PATTERN = /\b(?:january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)\b/i;
+const EXPLICIT_TEMPORAL_CHANGE_PATTERN = /\b(?:because|due to|changed from|moved from|moved to|increased|decreased|shortened|extended|new requirement|now required|no longer)\b/i;
+const TEMPORAL_TOPIC_PATTERN = /\b(?:date|deadline|schedule|scheduled|milestone|rehearsal|submit|submission|confirm|confirmation|due)\b/i;
+const GENERIC_RESOURCE_SCOPE_PATTERN = /\b(?:scope|use\s+.+\s+(?:procedure|guide|manual)\s+to\s+(?:control|govern|cover)|(?:procedure|guide|manual)\s+(?:controls|governs|covers))\b/i;
+
+export type MemoryEvaluationCandidate = {
+  id: string;
+  type: 'changed' | 'added';
+  beforeRef: string | null;
+  afterRef: string | null;
+  basis: MemoryMatchBasis | 'not_applicable';
+};
+
 export type ValidatedMemoryChange = {
-  changeType: 'added' | 'changed' | 'retired';
+  changeType: 'added' | 'changed' | 'retired' | 'resolved';
   before: MemoryEvidenceItem | null;
   after: MemoryEvidenceItem | null;
   title: string;
@@ -51,32 +64,35 @@ export function isMemoryScope(
 export const organizationMemorySchema = {
   type: 'object',
   properties: {
-    changes: {
+    results: {
       type: 'array',
       maxItems: 100,
       items: {
         type: 'object',
         properties: {
-          change_type: { type: 'string', enum: ['added', 'changed', 'retired'] },
-          previous_ref: { type: ['string', 'null'] },
-          current_ref: { type: ['string', 'null'] },
+          candidate_id: { type: 'string', pattern: '^K[1-9][0-9]*$' },
+          include: { type: 'boolean' },
+          change_type: {
+            type: ['string', 'null'],
+            enum: ['added', 'changed', 'retired', 'resolved', null],
+          },
           reason_statement: {
             type: ['string', 'null'],
             description: 'A concise reason only when an approved published item explicitly states the cause. Null otherwise.',
           },
-          reason_evidence_ref: {
+          reason_support_ref: {
             type: ['string', 'null'],
-            description: 'The approved published item that explicitly states the cause. Null when reason_statement is null.',
+            description: 'The previous or current item in this exact candidate that explicitly states the cause. Null when reason_statement is null.',
           },
         },
         required: [
-          'change_type', 'previous_ref', 'current_ref', 'reason_statement', 'reason_evidence_ref',
+          'candidate_id', 'include', 'change_type', 'reason_statement', 'reason_support_ref',
         ],
         additionalProperties: false,
       },
     },
   },
-  required: ['changes'],
+  required: ['results'],
   additionalProperties: false,
 };
 
@@ -110,6 +126,8 @@ const TOKEN_EQUIVALENTS: Record<string, string> = {
   payments: 'payment',
   forms: 'form',
   reports: 'report',
+  examinations: 'examination',
+  policies: 'policy',
 };
 
 export function broadMemoryKnowledgeType(type: string) {
@@ -135,16 +153,31 @@ function materialFingerprint(text: string) {
   return words(text, STOP_WORDS).sort().join(' ');
 }
 
+function explicitModality(text: string) {
+  const normalized = text.toLocaleLowerCase();
+  const modality = new Set<string>();
+  if (/\b(must not|shall not|prohibited|forbidden|do not)\b/.test(normalized)) modality.add('prohibited');
+  if (/\b(must|required|requires|shall|mandatory)\b/.test(normalized)) modality.add('mandatory');
+  if (/\b(should|recommended|recommendation|advised)\b/.test(normalized)) modality.add('advisory');
+  if (/\b(may|optional|permitted|allowed)\b/.test(normalized)) modality.add('optional');
+  return [...modality].sort().join(':');
+}
+
 /**
  * A deliberately narrow, deterministic noise filter. Broader paraphrases are
  * left to the conservative materiality review, but punctuation, formatting,
  * word order, and common grammatical rewrites never become changes.
  */
 export function isClearlyEquivalentMemoryContent(
-  before: Pick<PublicationMemoryItem, 'content'>,
-  after: Pick<PublicationMemoryItem, 'content'>,
+  before: Pick<PublicationMemoryItem, 'content' | 'comparison_value'>,
+  after: Pick<PublicationMemoryItem, 'content' | 'comparison_value'>,
 ) {
-  return materialFingerprint(before.content) === materialFingerprint(after.content);
+  const beforeValue = before.comparison_value?.trim() || before.content;
+  const afterValue = after.comparison_value?.trim() || after.content;
+  const beforeModality = explicitModality(beforeValue);
+  const afterModality = explicitModality(afterValue);
+  if (beforeModality && afterModality && beforeModality !== afterModality) return false;
+  return materialFingerprint(beforeValue) === materialFingerprint(afterValue);
 }
 
 function semanticTokens(item: Pick<PublicationMemoryItem, 'title' | 'content'>) {
@@ -185,8 +218,9 @@ function groupByLineage(items: MemoryEvidenceItem[]) {
 /**
  * Existing publication lineage is the normal matcher. The lexical semantic
  * matcher runs only for legacy rows where both publications lack lineage, and
- * accepts only an unambiguous mutual-best pair. Ambiguous legacy candidates
- * are omitted instead of being mislabeled Added/Retired.
+ * accepts only an unambiguous mutual-best pair. When legacy continuity cannot
+ * be established, the prior fact is omitted and any unmatched current fact
+ * remains eligible as Added.
  */
 export function createMemoryMatchingPlan(evidence: MemoryEvidenceItem[]): MemoryMatchingPlan {
   const previous = evidence.filter((item) => item.period === 'previous');
@@ -195,7 +229,6 @@ export function createMemoryMatchingPlan(evidence: MemoryEvidenceItem[]): Memory
   const currentByLineage = groupByLineage(current);
   const pairs: MemoryCandidatePair[] = [];
   const addedRefs: string[] = [];
-  const retiredRefs: string[] = [];
   const omittedRefs = new Set<string>();
 
   const lineages = new Set([...previousByLineage.keys(), ...currentByLineage.keys()]);
@@ -212,7 +245,7 @@ export function createMemoryMatchingPlan(evidence: MemoryEvidenceItem[]): Memory
     } else if (before.length === 0 && after.length === 1) {
       addedRefs.push(after[0].ref);
     } else if (before.length === 1 && after.length === 0) {
-      retiredRefs.push(before[0].ref);
+      omittedRefs.add(before[0].ref);
     } else {
       before.forEach((item) => omittedRefs.add(item.ref));
       after.forEach((item) => omittedRefs.add(item.ref));
@@ -268,23 +301,188 @@ export function createMemoryMatchingPlan(evidence: MemoryEvidenceItem[]): Memory
   }
   for (const after of legacyCurrent) {
     if (pairedCurrent.has(after.ref)) continue;
-    omittedRefs.add(after.ref);
+    addedRefs.push(after.ref);
   }
 
-  return { pairs, addedRefs, retiredRefs, omittedRefs: [...omittedRefs] };
+  return { pairs, addedRefs, omittedRefs: [...omittedRefs] };
+}
+
+/**
+ * A corresponding-year calendar instance is not itself an institutional
+ * change. When both claims merely move the same recurring task into the next
+ * service year, omit the pair unless approved wording explicitly says the
+ * schedule or requirement changed.
+ */
+export function isRoutineAnnualInstanceChange(
+  before: MemoryEvidenceItem,
+  after: MemoryEvidenceItem,
+) {
+  const beforeText = `${before.title} ${before.content} ${before.comparison_value ?? ''}`;
+  const afterText = `${after.title} ${after.content} ${after.comparison_value ?? ''}`;
+  if (EXPLICIT_TEMPORAL_CHANGE_PATTERN.test(afterText)) return false;
+  if (!TEMPORAL_TOPIC_PATTERN.test(`${before.title} ${after.title}`)
+    && (!MONTH_PATTERN.test(beforeText) || !MONTH_PATTERN.test(afterText))) return false;
+  const beforeYears = [...beforeText.matchAll(/\b(20\d{2})\b/g)].map((match) => Number(match[1]));
+  const afterYears = [...afterText.matchAll(/\b(20\d{2})\b/g)].map((match) => Number(match[1]));
+  if (!beforeYears.length || !afterYears.length) return false;
+  return beforeYears.some((year) => afterYears.includes(year + 1));
+}
+
+export function isGenericResourceScopeChange(
+  before: MemoryEvidenceItem,
+  after: MemoryEvidenceItem,
+) {
+  if (broadMemoryKnowledgeType(before.knowledge_type) !== 'access_resource'
+    && broadMemoryKnowledgeType(after.knowledge_type) !== 'access_resource') return false;
+  return GENERIC_RESOURCE_SCOPE_PATTERN.test(`${before.title} ${before.content}`)
+    || GENERIC_RESOURCE_SCOPE_PATTERN.test(`${after.title} ${after.content}`);
+}
+
+export function materialMemoryPairPlan(
+  plan: MemoryMatchingPlan,
+  evidenceByRef: Map<string, MemoryEvidenceItem>,
+): MemoryMatchingPlan {
+  const pairs = plan.pairs.filter((pair) => {
+    const before = evidenceByRef.get(pair.beforeRef);
+    const after = evidenceByRef.get(pair.afterRef);
+    if (!before || !after) return false;
+    return !isRoutineAnnualInstanceChange(before, after)
+      && !isGenericResourceScopeChange(before, after);
+  });
+  return {
+    pairs,
+    addedRefs: [],
+    omittedRefs: plan.omittedRefs,
+  };
+}
+
+export function memoryCandidates(plan: MemoryMatchingPlan): MemoryEvaluationCandidate[] {
+  return [
+    ...plan.pairs.map((pair) => ({
+      type: 'changed' as const,
+      beforeRef: pair.beforeRef,
+      afterRef: pair.afterRef,
+      basis: pair.basis,
+    })),
+    ...plan.addedRefs.map((ref) => ({
+      type: 'added' as const,
+      beforeRef: null,
+      afterRef: ref,
+      basis: 'not_applicable' as const,
+    })),
+  ].slice(0, 100).map((candidate, index) => ({ ...candidate, id: `K${index + 1}` }));
 }
 
 export function memoryCandidatePrompt(plan: MemoryMatchingPlan) {
-  return [
-    ...plan.pairs.map((pair) => (
-      `CHANGED_CANDIDATE ${pair.beforeRef} -> ${pair.afterRef} (${pair.basis === 'same_lineage' ? 'preserved lineage' : 'legacy fallback: lineage missing'})`
-    )),
-    ...plan.addedRefs.map((ref) => `ADDED_CANDIDATE ${ref}`),
-    ...plan.retiredRefs.map((ref) => `RETIRED_CANDIDATE ${ref}`),
-  ].join('\n');
+  return memoryCandidates(plan).map((candidate) => {
+    if (candidate.type === 'changed') {
+      return [
+        `[${candidate.id}]`,
+        'Type: CHANGED_CANDIDATE',
+        `Previous: ${candidate.beforeRef}`,
+        `Current: ${candidate.afterRef}`,
+        `Relationship basis: ${candidate.basis === 'same_lineage' ? 'preserved lineage' : 'legacy fallback: lineage missing'}`,
+      ].join('\n');
+    }
+    if (candidate.type === 'added') {
+      return `[${candidate.id}]\nType: ADDED_CANDIDATE\nCurrent: ${candidate.afterRef}`;
+    }
+  }).join('\n\n');
+}
+
+const EXPLICIT_RETIREMENT_PATTERN = /\b(no longer (?:used|accepted|available|applicable|required)|discontinued|retired|replaced (?:by|with)|superseded|obsolete|do not use)\b/i;
+const EXPLICIT_PENDING_PATTERN = /\b(pending|outstanding|awaiting|unresolved|not yet|(?:has|had) not been|remains? to be|still needs?)\b/i;
+const EXPLICIT_RESOLUTION_PATTERN = /\b(resolved|completed|closed|settled|finalized|has been approved|was approved|has been confirmed|was confirmed)\b/i;
+
+function evidenceBacksRetirement(after: MemoryEvidenceItem | null) {
+  return Boolean(after && EXPLICIT_RETIREMENT_PATTERN.test(`${after.title} ${after.content}`));
+}
+
+function evidenceBacksResolution(before: MemoryEvidenceItem | null, after: MemoryEvidenceItem | null) {
+  return Boolean(
+    before
+    && after
+    && EXPLICIT_PENDING_PATTERN.test(`${before.title} ${before.content}`)
+    && EXPLICIT_RESOLUTION_PATTERN.test(`${after.title} ${after.content}`),
+  );
 }
 
 const EXPLICIT_CAUSE_PATTERN = /\b(because|due to|as a result of|in response to|prompted by|caused by|to comply with|required by|mandated by)\b/i;
+
+function explicitCausalPassage(text: string) {
+  const sentences = text.split(/(?<=[.!?])\s+|[\r\n]+/).map((sentence) => sentence.trim()).filter(Boolean);
+  for (const sentence of sentences) {
+    const match = EXPLICIT_CAUSE_PATTERN.exec(sentence);
+    if (!match || match.index === undefined) continue;
+    const passage = sentence.slice(match.index).trim();
+    if (!passage) continue;
+    return passage[0].toLocaleUpperCase() + passage.slice(1);
+  }
+  return null;
+}
+
+function safeEvidenceReason(passage: string | null) {
+  if (!passage) return null;
+  const normalized = passage.replace(/\s+/g, ' ').trim();
+  if (!normalized || normalized.length > MAX_REASON_STATEMENT_CHARS) return null;
+  return /[.!?]$/.test(normalized) ? normalized : `${normalized}.`;
+}
+
+export function explicitMemoryReason(item: MemoryEvidenceItem | null) {
+  if (!item) return { statement: null, evidence: null };
+  const passage = explicitCausalPassage(item.content) ?? explicitCausalPassage(item.title);
+  const statement = safeEvidenceReason(passage);
+  return statement ? { statement, evidence: item } : { statement: null, evidence: null };
+}
+
+function memorySummary(changeType: ValidatedMemoryChange['changeType']) {
+  return changeType === 'changed'
+    ? 'Material content changed between the published handoffs.'
+    : changeType === 'added'
+      ? 'This approved knowledge was added in the current published handoff.'
+      : changeType === 'retired'
+        ? 'Approved current evidence explicitly says this knowledge was retired or replaced.'
+        : 'Approved current evidence explicitly says this outstanding obligation was resolved.';
+}
+
+/**
+ * Atomic claim indexes already establish identity and material value. Normal
+ * comparison therefore needs no second model call: it compares topic lineage,
+ * hides equivalent values, and uses only explicit published wording for the
+ * exceptional Resolved, Retired, and reason fields.
+ */
+export function deterministicMemoryChanges(
+  evidenceByRef: Map<string, MemoryEvidenceItem>,
+  plan: MemoryMatchingPlan,
+): ValidatedMemoryChange[] {
+  const changes: ValidatedMemoryChange[] = [];
+  for (const candidate of memoryCandidates(plan)) {
+    const before = candidate.beforeRef ? evidenceByRef.get(candidate.beforeRef) ?? null : null;
+    const after = candidate.afterRef ? evidenceByRef.get(candidate.afterRef) ?? null : null;
+    if ((candidate.beforeRef && !before) || (candidate.afterRef && !after)) continue;
+
+    let changeType: ValidatedMemoryChange['changeType'];
+    if (candidate.type === 'added') changeType = 'added';
+    else if (evidenceBacksResolution(before, after)) changeType = 'resolved';
+    else if (evidenceBacksRetirement(after)) changeType = 'retired';
+    else changeType = 'changed';
+
+    const reason = explicitMemoryReason(after).statement
+      ? explicitMemoryReason(after)
+      : explicitMemoryReason(before);
+    changes.push({
+      changeType,
+      before,
+      after,
+      title: (after ?? before)!.title,
+      summary: memorySummary(changeType),
+      matchBasis: candidate.basis,
+      reasonStatement: reason.statement,
+      reasonEvidence: reason.evidence,
+    });
+  }
+  return changes;
+}
 
 export function groundedMemoryReason(
   statement: unknown,
@@ -296,19 +494,24 @@ export function groundedMemoryReason(
   if (typeof statement !== 'string' || typeof evidenceRef !== 'string') return { statement: null, evidence: null };
   const trimmed = statement.trim();
   const evidence = evidenceByRef.get(evidenceRef) ?? null;
-  if (!trimmed || trimmed.length > MAX_REASON_STATEMENT_CHARS || !evidence) return { statement: null, evidence: null };
+  if (!trimmed || !evidence) return { statement: null, evidence: null };
   const evidenceText = `${evidence.title} ${evidence.content}`;
   if (!EXPLICIT_CAUSE_PATTERN.test(evidenceText)) return { statement: null, evidence: null };
+  const causalPassage = explicitCausalPassage(evidence.content) ?? explicitCausalPassage(evidence.title);
+  const evidenceFallback = safeEvidenceReason(causalPassage);
   const reasonTokens = new Set(words(trimmed, SEMANTIC_STOP_WORDS).filter((token) => token.length >= 3));
   const evidenceTokens = semanticTokens(evidence);
-  const shared = [...reasonTokens].filter((token) => evidenceTokens.has(token));
-  if (shared.length < Math.min(2, reasonTokens.size)) return { statement: null, evidence: null };
   if (changeEvidence.length && !changeEvidence.some((item) => item.id === evidence.id)) {
     const changedTokens = new Set(changeEvidence.flatMap((item) => [...semanticTokens(item)]));
     const changeOverlap = [...evidenceTokens].filter((token) => changedTokens.has(token));
     if (changeOverlap.length < 2) return { statement: null, evidence: null };
   }
-  return { statement: trimmed, evidence };
+  const causalTokens = new Set(words(causalPassage ?? '', SEMANTIC_STOP_WORDS).filter((token) => token.length >= 3));
+  const sharedCause = [...reasonTokens].filter((token) => causalTokens.has(token));
+  if (trimmed.length <= MAX_REASON_STATEMENT_CHARS && sharedCause.length >= 1) {
+    return { statement: trimmed, evidence };
+  }
+  return evidenceFallback ? { statement: evidenceFallback, evidence } : { statement: null, evidence: null };
 }
 
 export function validateMemoryChanges(
@@ -318,65 +521,83 @@ export function validateMemoryChanges(
 ): ValidatedMemoryChange[] {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid handoff comparison.');
   const record = value as Record<string, unknown>;
-  if (Object.keys(record).length !== 1 || !Array.isArray(record.changes) || record.changes.length > 100) {
+  if (Object.keys(record).length !== 1 || !Array.isArray(record.results) || record.results.length > 100) {
     throw new Error('Invalid handoff comparison.');
   }
-  const pairByRefs = new Map(plan.pairs.map((pair) => [`${pair.beforeRef}:${pair.afterRef}`, pair]));
-  const allowedAdded = new Set(plan.addedRefs);
-  const allowedRetired = new Set(plan.retiredRefs);
-  const usedPrevious = new Set<string>();
-  const usedCurrent = new Set<string>();
+  const expectedCandidates = memoryCandidates(plan);
+  if (record.results.length !== expectedCandidates.length) throw new Error('Incomplete handoff comparison.');
+  const candidateById = new Map(expectedCandidates.map((candidate) => [candidate.id, candidate]));
+  const seenCandidates = new Set<string>();
+  const results: ValidatedMemoryChange[] = [];
 
-  return record.changes.map((raw) => {
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Invalid material change.');
-    const change = raw as Record<string, unknown>;
+  for (const raw of record.results) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Invalid material-change decision.');
+    const decision = raw as Record<string, unknown>;
     const expected = [
-      'change_type', 'current_ref', 'previous_ref', 'reason_evidence_ref',
-      'reason_statement',
+      'candidate_id', 'change_type', 'include', 'reason_statement', 'reason_support_ref',
     ];
-    const keys = Object.keys(change).sort();
-    if (keys.length !== expected.length || keys.some((key, index) => key !== expected[index])
-      || !['added', 'changed', 'retired'].includes(String(change.change_type))) {
-      throw new Error('Invalid material change.');
+    const keys = Object.keys(decision).sort();
+    if (keys.length !== expected.length || keys.some((key, index) => key !== expected[index])) {
+      throw new Error('Invalid material-change decision.');
     }
-    const before = typeof change.previous_ref === 'string' ? evidenceByRef.get(change.previous_ref) ?? null : null;
-    const after = typeof change.current_ref === 'string' ? evidenceByRef.get(change.current_ref) ?? null : null;
-    let matchBasis: ValidatedMemoryChange['matchBasis'] = 'not_applicable';
-    if (change.change_type === 'changed') {
-      if (!before || !after) throw new Error('Changed knowledge needs both snapshots.');
-      const pair = pairByRefs.get(`${before.ref}:${after.ref}`);
-      if (!pair) throw new Error('Changed knowledge is outside the verified matching plan.');
-      matchBasis = pair.basis;
-    } else if (change.change_type === 'added') {
-      if (before || !after || !allowedAdded.has(after.ref)) throw new Error('Added knowledge is outside the verified matching plan.');
-    } else if (!before || after || !allowedRetired.has(before.ref)) {
-      throw new Error('Retired knowledge is outside the verified matching plan.');
+    if (typeof decision.candidate_id !== 'string' || seenCandidates.has(decision.candidate_id)) {
+      throw new Error('Invalid or duplicated candidate decision.');
     }
-    if (before && usedPrevious.has(before.ref)) throw new Error('Prior knowledge was duplicated.');
-    if (after && usedCurrent.has(after.ref)) throw new Error('Current knowledge was duplicated.');
-    if (before) usedPrevious.add(before.ref);
-    if (after) usedCurrent.add(after.ref);
+    const candidate = candidateById.get(decision.candidate_id);
+    if (!candidate || typeof decision.include !== 'boolean') {
+      throw new Error('Unknown candidate decision.');
+    }
+    seenCandidates.add(candidate.id);
+    if (!decision.include) {
+      if (decision.change_type !== null || decision.reason_statement !== null || decision.reason_support_ref !== null) {
+        throw new Error('Excluded candidates must not contain a classification or reason.');
+      }
+      continue;
+    }
+
+    const before = candidate.beforeRef ? evidenceByRef.get(candidate.beforeRef) ?? null : null;
+    const after = candidate.afterRef ? evidenceByRef.get(candidate.afterRef) ?? null : null;
+    if ((candidate.beforeRef && !before) || (candidate.afterRef && !after)) {
+      throw new Error('Candidate evidence is unavailable.');
+    }
+
+    let changeType: ValidatedMemoryChange['changeType'];
+    if (candidate.type === 'changed') {
+      if (!['changed', 'retired', 'resolved'].includes(String(decision.change_type))) {
+        throw new Error('Changed candidate has an invalid classification.');
+      }
+      changeType = decision.change_type as 'changed' | 'retired' | 'resolved';
+      if (changeType === 'retired' && !evidenceBacksRetirement(after)) changeType = 'changed';
+      if (changeType === 'resolved' && !evidenceBacksResolution(before, after)) changeType = 'changed';
+    } else {
+      if (decision.change_type !== 'added') throw new Error('Added candidate has an invalid classification.');
+      changeType = 'added';
+    }
+
+    const allowedReasonRefs = new Set([candidate.beforeRef, candidate.afterRef].filter(Boolean));
+    if (decision.reason_support_ref !== null
+      && (typeof decision.reason_support_ref !== 'string' || !allowedReasonRefs.has(decision.reason_support_ref))) {
+      throw new Error('Reason support is outside its candidate.');
+    }
     const reason = groundedMemoryReason(
-      change.reason_statement,
-      change.reason_evidence_ref,
+      decision.reason_statement,
+      decision.reason_support_ref,
       evidenceByRef,
       [before, after].filter((item): item is MemoryEvidenceItem => Boolean(item)),
     );
     const authoritativeTitle = (after ?? before)!.title;
-    const summary = change.change_type === 'changed'
-      ? 'Material content changed between the published handoffs.'
-      : change.change_type === 'added'
-        ? 'This approved knowledge was added in the current published handoff.'
-        : 'This approved knowledge is no longer current in the latest published handoff.';
-    return {
-      changeType: change.change_type as ValidatedMemoryChange['changeType'],
+    const summary = memorySummary(changeType);
+    results.push({
+      changeType,
       before,
       after,
       title: authoritativeTitle,
       summary,
-      matchBasis,
+      matchBasis: candidate.basis,
       reasonStatement: reason.statement,
       reasonEvidence: reason.evidence,
-    };
-  });
+    });
+  }
+  if (seenCandidates.size !== expectedCandidates.length) throw new Error('Incomplete handoff comparison.');
+  return results;
 }

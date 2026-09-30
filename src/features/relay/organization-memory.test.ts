@@ -3,12 +3,22 @@ import { describe, expect, it } from 'vitest';
 import {
   createMemoryMatchingPlan,
   groundedMemoryReason,
+  isGenericResourceScopeChange,
   isClearlyEquivalentMemoryContent,
   isMemoryScope,
+  isRoutineAnnualInstanceChange,
+  materialMemoryPairPlan,
+  memoryCandidatePrompt,
+  memoryCandidates,
+  organizationMemorySchema,
   validateMemoryChanges,
   type MemoryEvidenceItem,
 } from '../../../supabase/functions/_shared/organization-memory';
-import { NO_MATERIAL_MEMORY_CHANGES, organizationMemoryCardModel } from './organization-memory-display';
+import {
+  NO_MATERIAL_MEMORY_CHANGES,
+  NO_VERIFIED_MEMORY_REASON,
+  organizationMemoryCardModel,
+} from './organization-memory-display';
 
 function evidence(overrides: Partial<MemoryEvidenceItem> & Pick<MemoryEvidenceItem, 'ref' | 'period'>): MemoryEvidenceItem {
   return {
@@ -23,13 +33,13 @@ function evidence(overrides: Partial<MemoryEvidenceItem> & Pick<MemoryEvidenceIt
   };
 }
 
-function modelChange(overrides: Record<string, unknown> = {}) {
+function modelDecision(overrides: Record<string, unknown> = {}) {
   return {
+    candidate_id: 'K1',
+    include: true,
     change_type: 'changed',
-    previous_ref: 'P1',
-    current_ref: 'C1',
     reason_statement: null,
-    reason_evidence_ref: null,
+    reason_support_ref: null,
     ...overrides,
   };
 }
@@ -51,7 +61,7 @@ describe('Organization Memory lineage-first matching', () => {
     ];
     const plan = createMemoryMatchingPlan(items);
     expect(plan.pairs).toEqual([{ beforeRef: 'P1', afterRef: 'C1', basis: 'same_lineage' }]);
-    const changes = validateMemoryChanges({ changes: [modelChange()] }, new Map(items.map((item) => [item.ref, item])), plan);
+    const changes = validateMemoryChanges({ results: [modelDecision()] }, new Map(items.map((item) => [item.ref, item])), plan);
     expect(changes[0]).toMatchObject({ changeType: 'changed', matchBasis: 'same_lineage' });
   });
 
@@ -60,19 +70,18 @@ describe('Organization Memory lineage-first matching', () => {
     const plan = createMemoryMatchingPlan([item]);
     expect(plan.addedRefs).toEqual(['C1']);
     const changes = validateMemoryChanges({
-      changes: [modelChange({ change_type: 'added', previous_ref: null })],
+      results: [modelDecision({ change_type: 'added' })],
     }, new Map([[item.ref, item]]), plan);
     expect(changes[0].changeType).toBe('added');
   });
 
-  it('classifies a prior lineage missing from current truth as Retired', () => {
+  it('omits a prior lineage missing from the current handoff', () => {
     const item = evidence({ ref: 'P1', period: 'previous', knowledge_lineage_id: 'retired-lineage' });
     const plan = createMemoryMatchingPlan([item]);
-    expect(plan.retiredRefs).toEqual(['P1']);
-    const changes = validateMemoryChanges({
-      changes: [modelChange({ change_type: 'retired', current_ref: null })],
-    }, new Map([[item.ref, item]]), plan);
-    expect(changes[0].changeType).toBe('retired');
+    expect(plan.addedRefs).toEqual([]);
+    expect(plan.pairs).toEqual([]);
+    expect(plan.omittedRefs).toEqual(['P1']);
+    expect(memoryCandidates(plan)).toEqual([]);
   });
 
   it('hides wording-only rewrites', () => {
@@ -87,6 +96,49 @@ describe('Organization Memory lineage-first matching', () => {
       { content: 'Keys, badges, and forms.' },
       { content: 'Forms\nkeys; badges!' },
     )).toBe(true);
+  });
+
+  it('hides a routine corresponding-year calendar rollover', () => {
+    const before = evidence({
+      ref: 'P1', period: 'previous', title: 'Annual rehearsal date',
+      content: 'Hold the rehearsal on April 12, 2028.',
+      comparison_value: 'Hold the rehearsal on April 12, 2028.',
+    });
+    const after = evidence({
+      ref: 'C1', period: 'current', title: 'Annual rehearsal date',
+      content: 'Hold the rehearsal on April 11, 2029.',
+      comparison_value: 'Hold the rehearsal on April 11, 2029.',
+    });
+    expect(isRoutineAnnualInstanceChange(before, after)).toBe(true);
+    const evidenceByRef = new Map([before, after].map((item) => [item.ref, item]));
+    const plan = createMemoryMatchingPlan([before, after]);
+    expect(materialMemoryPairPlan(plan, evidenceByRef).pairs).toEqual([]);
+  });
+
+  it('keeps an explicitly documented scheduling change', () => {
+    const before = evidence({
+      ref: 'P1', period: 'previous', title: 'Annual activity date',
+      content: 'The activity is scheduled for April 12, 2028.',
+    });
+    const after = evidence({
+      ref: 'C1', period: 'current', title: 'Annual activity date',
+      content: 'The activity moved to April 8, 2029 because examinations begin April 10.',
+    });
+    expect(isRoutineAnnualInstanceChange(before, after)).toBe(false);
+  });
+
+  it('hides a generic resource-scope restatement', () => {
+    const before = evidence({
+      ref: 'P1', period: 'previous', knowledge_type: 'access_resource',
+      title: 'Operations guide scope',
+      content: 'Use the operations guide to control safety and accessibility requirements.',
+    });
+    const after = evidence({
+      ref: 'C1', period: 'current', knowledge_type: 'access_resource',
+      title: 'Operations guide scope',
+      content: 'Use the operations guide to control safety, accessibility, and insurance requirements.',
+    });
+    expect(isGenericResourceScopeChange(before, after)).toBe(true);
   });
 
   it('uses semantic fallback only when both publication items lack lineage', () => {
@@ -109,11 +161,11 @@ describe('Organization Memory lineage-first matching', () => {
     const currentData = legacy.map((item, index) => ({ ...item, knowledge_lineage_id: `lineage-${index}` }));
     const currentPlan = createMemoryMatchingPlan(currentData);
     expect(currentPlan.pairs).toEqual([]);
-    expect(currentPlan.retiredRefs).toEqual(['P1']);
     expect(currentPlan.addedRefs).toEqual(['C1']);
+    expect(currentPlan.omittedRefs).toContain('P1');
   });
 
-  it('omits uncertain legacy semantic candidates instead of forcing a relationship', () => {
+  it('does not force Changed when legacy semantic continuity is uncertain', () => {
     const items = [
       evidence({ ref: 'P1', period: 'previous', knowledge_lineage_id: null, title: 'Reserve event venue', content: 'Reserve the main event venue with Facilities.' }),
       evidence({ ref: 'C1', period: 'current', knowledge_lineage_id: null, title: 'Reserve event venue', content: 'Reserve the main event venue with the campus office.' }),
@@ -121,18 +173,139 @@ describe('Organization Memory lineage-first matching', () => {
     ];
     const plan = createMemoryMatchingPlan(items);
     expect(plan.pairs).toEqual([]);
-    expect(plan.addedRefs).toEqual([]);
-    expect(plan.retiredRefs).toEqual([]);
-    expect(plan.omittedRefs).toEqual(expect.arrayContaining(['P1', 'C1', 'C2']));
+    expect(plan.addedRefs).toEqual(['C1', 'C2']);
+    expect(plan.omittedRefs).toEqual(['P1']);
   });
 
-  it('does not guess Added or Retired for an unmatched missing-lineage snapshot', () => {
+  it('omits an unmatched previous snapshot with missing lineage', () => {
     const plan = createMemoryMatchingPlan([
       evidence({ ref: 'P1', period: 'previous', knowledge_lineage_id: null, title: 'Legacy note' }),
     ]);
     expect(plan.addedRefs).toEqual([]);
-    expect(plan.retiredRefs).toEqual([]);
     expect(plan.omittedRefs).toEqual(['P1']);
+  });
+
+  it('keeps an unmatched missing-lineage snapshot eligible as Added', () => {
+    const plan = createMemoryMatchingPlan([
+      evidence({ ref: 'C1', period: 'current', knowledge_lineage_id: null, title: 'Imported operational note' }),
+    ]);
+    expect(plan.addedRefs).toEqual(['C1']);
+    expect(plan.omittedRefs).toEqual([]);
+  });
+
+  it('keeps unfinished obligations eligible for the normal lineage comparison', () => {
+    const plan = createMemoryMatchingPlan([
+      evidence({
+        ref: 'P1', period: 'previous', knowledge_lineage_id: 'pending-obligation',
+        title: 'Confirm pending venue booking',
+        content: 'Confirm the pending venue booking by September 12.',
+      }),
+      evidence({
+        ref: 'C1', period: 'current', knowledge_lineage_id: 'pending-obligation',
+        title: 'Confirm pending venue booking',
+        content: 'Confirm the pending venue booking by September 5.',
+      }),
+    ]);
+    expect(plan.pairs).toEqual([
+      { beforeRef: 'P1', afterRef: 'C1', basis: 'same_lineage' },
+    ]);
+    expect(memoryCandidates(plan)).toEqual([{
+      id: 'K1', type: 'changed', beforeRef: 'P1', afterRef: 'C1', basis: 'same_lineage',
+    }]);
+    expect(memoryCandidatePrompt(plan)).toContain('[K1]\nType: CHANGED_CANDIDATE');
+  });
+
+  it('requires one explicit include or exclude decision for every candidate', () => {
+    const items = [
+      evidence({ ref: 'C1', period: 'current', knowledge_lineage_id: 'current-only' }),
+      evidence({ ref: 'C2', period: 'current', knowledge_lineage_id: 'another-current-only' }),
+    ];
+    const plan = createMemoryMatchingPlan(items);
+    expect(() => validateMemoryChanges({
+      results: [modelDecision({ candidate_id: 'K1', change_type: 'added' })],
+    }, new Map(items.map((item) => [item.ref, item])), plan)).toThrow('Incomplete handoff comparison.');
+  });
+
+  it('honors include=false without generating a Memory change', () => {
+    const item = evidence({ ref: 'C1', period: 'current', knowledge_lineage_id: 'current-only' });
+    const plan = createMemoryMatchingPlan([item]);
+    expect(validateMemoryChanges({
+      results: [modelDecision({
+        include: false, change_type: null, reason_statement: null, reason_support_ref: null,
+      })],
+    }, new Map([[item.ref, item]]), plan)).toEqual([]);
+  });
+
+  it('does not let an Added candidate become another change type', () => {
+    const item = evidence({ ref: 'C1', period: 'current', knowledge_lineage_id: 'current-only' });
+    const plan = createMemoryMatchingPlan([item]);
+    expect(() => validateMemoryChanges({
+      results: [modelDecision({ change_type: 'changed' })],
+    }, new Map([[item.ref, item]]), plan)).toThrow('Added candidate has an invalid classification.');
+  });
+
+  it('uses the candidate-result JSON contract', () => {
+    expect(organizationMemorySchema.required).toEqual(['results']);
+    expect(organizationMemorySchema.properties.results.items.required).toEqual([
+      'candidate_id', 'include', 'change_type', 'reason_statement', 'reason_support_ref',
+    ]);
+  });
+
+  it('keeps an unmatched current fact as Added and omits the previous-only fact', () => {
+    const items = [
+      evidence({
+        ref: 'P1', period: 'previous', knowledge_lineage_id: 'previous-lineage',
+        title: 'Venue operating procedure', content: 'Use the east entrance for vendor load-in.',
+      }),
+      evidence({
+        ref: 'C1', period: 'current', knowledge_lineage_id: 'current-lineage',
+        title: 'Vendor entrance instructions', content: 'Use the north entrance for vendor load-in.',
+      }),
+    ];
+    const plan = createMemoryMatchingPlan(items);
+    const changes = validateMemoryChanges({
+      results: [modelDecision({ candidate_id: 'K1', change_type: 'added' })],
+    }, new Map(items.map((item) => [item.ref, item])), plan);
+
+    expect(changes.map((change) => change.changeType)).toEqual(['added']);
+    expect(plan.omittedRefs).toContain('P1');
+    expect(changes.some((change) => change.changeType === 'changed')).toBe(false);
+  });
+
+  it('uses Retired only when current approved evidence explicitly retires a same-lineage practice', () => {
+    const items = [
+      evidence({ ref: 'P1', period: 'previous', content: 'Submit the paper form to the office.' }),
+      evidence({ ref: 'C1', period: 'current', content: 'The paper form is no longer accepted; use the online portal.' }),
+    ];
+    const plan = createMemoryMatchingPlan(items);
+    const changes = validateMemoryChanges({
+      results: [modelDecision({ change_type: 'retired' })],
+    }, new Map(items.map((item) => [item.ref, item])), plan);
+    expect(changes[0].changeType).toBe('retired');
+  });
+
+  it('downgrades unsupported Retired to Changed', () => {
+    const items = [
+      evidence({ ref: 'P1', period: 'previous', content: 'Submit the form within 30 days.' }),
+      evidence({ ref: 'C1', period: 'current', content: 'Submit the form within 10 days.' }),
+    ];
+    const plan = createMemoryMatchingPlan(items);
+    const changes = validateMemoryChanges({
+      results: [modelDecision({ change_type: 'retired' })],
+    }, new Map(items.map((item) => [item.ref, item])), plan);
+    expect(changes[0].changeType).toBe('changed');
+  });
+
+  it('shows a pending obligation as Resolved only with explicit current closure', () => {
+    const items = [
+      evidence({ ref: 'P1', period: 'previous', content: 'The venue approval remains pending.' }),
+      evidence({ ref: 'C1', period: 'current', content: 'The venue approval was approved and closed.' }),
+    ];
+    const plan = createMemoryMatchingPlan(items);
+    const changes = validateMemoryChanges({
+      results: [modelDecision({ change_type: 'resolved' })],
+    }, new Map(items.map((item) => [item.ref, item])), plan);
+    expect(changes[0].changeType).toBe('resolved');
   });
 
   it('never mutates publication lineage while planning or validating', () => {
@@ -142,7 +315,7 @@ describe('Organization Memory lineage-first matching', () => {
     ];
     const original = structuredClone(items);
     const plan = createMemoryMatchingPlan(items);
-    validateMemoryChanges({ changes: [modelChange()] }, new Map(items.map((item) => [item.ref, item])), plan);
+    validateMemoryChanges({ results: [modelDecision()] }, new Map(items.map((item) => [item.ref, item])), plan);
     expect(items).toEqual(original);
   });
 });
@@ -168,6 +341,36 @@ describe('Organization Memory scope and reasons', () => {
     );
     expect(result.statement).toBe('The governing policy shortened the filing deadline.');
     expect(result.evidence?.ref).toBe('C1');
+  });
+
+  it('accepts the prompt example when a faithful paraphrase shares the explicit causal clause', () => {
+    const item = evidence({
+      ref: 'C1',
+      period: 'current',
+      content: 'The planning window increased to 16 weeks because university examinations begin April 16.',
+    });
+    const result = groundedMemoryReason(
+      'Campus scheduling required the event to occur before the examination period.',
+      'C1',
+      new Map([[item.ref, item]]),
+      [item],
+    );
+    expect(result.statement).toBe('Campus scheduling required the event to occur before the examination period.');
+  });
+
+  it('falls back to the approved causal clause when a model paraphrase introduces unsupported wording', () => {
+    const item = evidence({
+      ref: 'C1',
+      period: 'current',
+      content: 'The planning window increased to 16 weeks because university examinations begin April 16.',
+    });
+    const result = groundedMemoryReason(
+      'A new government policy forced the schedule change.',
+      'C1',
+      new Map([[item.ref, item]]),
+      [item],
+    );
+    expect(result.statement).toBe('Because university examinations begin April 16.');
   });
 
   it('turns an unsupported proposed reason into not documented', () => {
@@ -215,9 +418,13 @@ describe('Organization Memory scope and reasons', () => {
       beforeSnapshot: null,
       afterSnapshot: null,
       supportingProvenance: [],
+      reasonProvenance: [],
     }, { previous: 'Period A', current: 'Period B' });
-    expect(Object.keys(card).sort()).toEqual(['after', 'before', 'changeType', 'reasonText', 'sources', 'title']);
-    expect(card.reasonText).toBe('Reason not documented.');
+    expect(Object.keys(card).sort()).toEqual([
+      'after', 'afterSources', 'before', 'beforeSources', 'changeType', 'reasonSources', 'reasonText', 'title',
+    ]);
+    expect(card.reasonText).toBe(NO_VERIFIED_MEMORY_REASON);
+    expect(NO_VERIFIED_MEMORY_REASON).toBe('No explicit reason was verified in the published handoffs.');
     expect(NO_MATERIAL_MEMORY_CHANGES).toBe('No material changes were found between these published handoffs.');
   });
 });

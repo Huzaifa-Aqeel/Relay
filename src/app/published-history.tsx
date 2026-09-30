@@ -12,7 +12,7 @@ export default function PublishedHistoryScreen() {
   return (
     <Screen>
       <AppText variant="heading">Published history · {publication.data.servicePeriod}</AppText>
-      <HandoffDocument {...publication.data} items={items.data} />
+      <HandoffDocument {...publication.data} items={items.data} showProvenance />
     </Screen>
   );
 }

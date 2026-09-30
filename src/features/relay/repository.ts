@@ -266,6 +266,7 @@ function mapPublishedHandoffItem(row: HandoffPublicationItemRow) {
     content: row.content,
     sortOrder: row.sort_order,
     isStartHere: row.is_start_here,
+    citationSources: parseCitationSources(row.citation_sources),
   };
 }
 
@@ -1323,6 +1324,7 @@ function mapMemoryChange(row: RoleMemoryChangeRow): RoleMemoryChange {
     beforeSnapshot: parseMemorySnapshot(row.before_snapshot),
     afterSnapshot: parseMemorySnapshot(row.after_snapshot),
     supportingProvenance: parseCitationSources(row.supporting_provenance),
+    reasonProvenance: parseCitationSources(row.reason_provenance),
   };
 }
 
@@ -1371,12 +1373,15 @@ export async function listMemoryRoles(): Promise<MemoryRole[]> {
 }
 
 export async function getLatestRoleMemoryComparison(roleId: string): Promise<RoleMemoryComparison | null> {
+  const publications = await listRolePublications(roleId);
+  if (publications.length < 2) return null;
+  const [current, previous] = publications;
   const { data, error } = await requireSupabase()
     .from('role_memory_comparisons')
     .select('*')
     .eq('role_id', roleId)
-    .order('created_at', { ascending: false })
-    .limit(1)
+    .eq('previous_publication_id', previous.id)
+    .eq('current_publication_id', current.id)
     .maybeSingle();
   throwDataError(error);
   return data ? mapMemoryComparison(data) : null;
@@ -1394,7 +1399,15 @@ export async function listRoleMemoryChanges(comparisonId: string): Promise<RoleM
 
 export async function compareRoleHandoffs(roleId: string) {
   const result = await requireSupabase().functions.invoke('compare-handoffs', { body: { roleId } });
-  if (result.error) throw new Error('Relay could not compare these handoffs safely. Please try again.');
+  if (result.error) {
+    let message = 'Relay could not compare these handoffs safely. Please try again.';
+    const context = (result.error as { context?: Response }).context;
+    if (context && typeof context.json === 'function') {
+      const body = await context.json().catch(() => null) as { error?: unknown } | null;
+      if (typeof body?.error === 'string') message = body.error;
+    }
+    throw new Error(message);
+  }
   return String(result.data?.comparisonId ?? '');
 }
 

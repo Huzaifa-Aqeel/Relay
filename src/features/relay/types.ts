@@ -351,6 +351,7 @@ export type PublishedHandoffItem = {
   content: string;
   sortOrder: number;
   isStartHere: boolean;
+  citationSources?: { label: string; locator: string | null }[];
 };
 
 export type HandoffPublication = {
@@ -414,7 +415,7 @@ export type RoleMemoryComparison = {
 export type RoleMemoryChange = {
   id: string;
   comparisonId: string;
-  changeType: 'added' | 'changed' | 'retired';
+  changeType: 'added' | 'changed' | 'retired' | 'resolved';
   title: string;
   summary: string;
   /** One plain-language sentence when the approved evidence explicitly states why this changed; null when no reason is documented. */
@@ -422,6 +423,7 @@ export type RoleMemoryChange = {
   beforeSnapshot: MemorySnapshot | null;
   afterSnapshot: MemorySnapshot | null;
   supportingProvenance: { label: string; locator: string | null }[];
+  reasonProvenance: { label: string; locator: string | null }[];
 };
 
 export type AskRelayCitation = {

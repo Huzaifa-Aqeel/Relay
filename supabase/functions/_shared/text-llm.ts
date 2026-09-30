@@ -214,7 +214,9 @@ export async function requestTextLlmJson({
     temperature,
     messages: contractedMessages,
   };
-  if (config.enableThinking) requestBody.enable_thinking = true;
+  // Hybrid-thinking providers may enable reasoning when this field is omitted.
+  // Always send the configured value so LLM_ENABLE_THINKING=false is honored.
+  requestBody.enable_thinking = config.enableThinking;
   if (config.enableThinking && config.reasoningEffort) {
     requestBody.reasoning_effort = config.reasoningEffort;
   }

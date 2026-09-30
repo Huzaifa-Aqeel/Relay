@@ -270,7 +270,7 @@ export type Database = {
           previous_publication_item_id: string | null; current_publication_item_id: string | null;
           match_basis: string; reason_statement: string | null;
           before_snapshot: Json | null; after_snapshot: Json | null;
-          supporting_provenance: Json; created_at: string;
+          supporting_provenance: Json; reason_provenance: Json; created_at: string;
         },
         {
           id?: string; comparison_id: string; organization_id: string; role_id: string;
@@ -278,7 +278,7 @@ export type Database = {
           previous_publication_item_id?: string | null; current_publication_item_id?: string | null;
           match_basis: string; reason_statement?: string | null;
           before_snapshot?: Json | null; after_snapshot?: Json | null;
-          supporting_provenance?: Json; created_at?: string;
+          supporting_provenance?: Json; reason_provenance?: Json; created_at?: string;
         }
       >;
       organization_subscriptions: Table<

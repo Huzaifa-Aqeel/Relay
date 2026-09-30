@@ -42,10 +42,37 @@ describe('provider-neutral text LLM client', () => {
       apiUrl: 'https://example.test/v1',
       apiKey: 'secret',
       model: 'example-model',
-      enableThinking: true,
+      enableThinking: false,
       reasoningEffort: null,
       thinkingBudget: null,
     });
+  });
+
+  it('explicitly disables thinking instead of relying on the provider default', async () => {
+    let requestBody: Record<string, unknown> | null = null;
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
+      requestBody = JSON.parse(String(init?.body));
+      return Response.json({ choices: [{ message: { content: '{"ok":true}' } }] });
+    }));
+
+    await requestTextLlmJson({
+      config: {
+        apiUrl: 'https://example.test/v1',
+        apiKey: 'secret',
+        model: 'example-model',
+        enableThinking: false,
+        reasoningEffort: null,
+        thinkingBudget: null,
+        maxOutputTokens: null,
+        requestTimeoutMs: 120_000,
+      },
+      messages: [{ role: 'user', content: 'Return the result.' }],
+      schema: { type: 'object' },
+    });
+
+    expect(requestBody).toMatchObject({ enable_thinking: false });
+    expect(requestBody).not.toHaveProperty('thinking_budget');
+    expect(requestBody).not.toHaveProperty('reasoning_effort');
   });
 
   it('sends a thinking budget while omitting reasoning effort, provider JSON mode, and output limits', async () => {

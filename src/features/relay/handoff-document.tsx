@@ -31,7 +31,7 @@ function actionsFromContact(content: string) {
   return actions.slice(0, 3);
 }
 
-function KnowledgeCard({ item }: { item: PublishedHandoffItem }) {
+function KnowledgeCard({ item, showProvenance }: { item: PublishedHandoffItem; showProvenance: boolean }) {
   const meta = KNOWLEDGE_META[item.knowledgeType];
   const category = broadKnowledgeType(item.knowledgeType);
   const warning = category === 'warning_lesson';
@@ -44,6 +44,16 @@ function KnowledgeCard({ item }: { item: PublishedHandoffItem }) {
       <View style={styles.itemCopy}>
         <AppText variant="label" accessibilityRole="header">{item.title}</AppText>
         <AppText color={colors.inkMuted}>{item.content}</AppText>
+        {showProvenance && item.citationSources?.length ? (
+          <View style={styles.itemSources}>
+            <AppText variant="caption" color={colors.moss}>SOURCES</AppText>
+            {item.citationSources.map((source, index) => (
+              <AppText key={`${source.label}:${source.locator ?? ''}:${index}`} variant="caption" color={colors.inkMuted}>
+                {source.label}{source.locator ? ` · ${source.locator}` : ''}
+              </AppText>
+            ))}
+          </View>
+        ) : null}
         {contactActions.length ? (
           <View style={styles.contactActions}>
             {contactActions.map((action) => (
@@ -72,6 +82,7 @@ export function HandoffDocument({
   publishedAt,
   items,
   preview = false,
+  showProvenance = false,
 }: {
   organizationName: string;
   organizationInstitution: string;
@@ -81,6 +92,7 @@ export function HandoffDocument({
   publishedAt?: string | null;
   items: PublishedHandoffItem[];
   preview?: boolean;
+  showProvenance?: boolean;
 }) {
   const [selectedType, setSelectedType] = useState<BroadKnowledgeType | 'all'>('all');
   const groups = useMemo(() => KNOWLEDGE_TYPES
@@ -197,7 +209,9 @@ export function HandoffDocument({
               <AppText variant="caption" color={colors.inkMuted}>{group.items.length} {group.items.length === 1 ? 'item' : 'items'}</AppText>
             </View>
           </View>
-          <View style={styles.itemList}>{group.items.map((item) => <KnowledgeCard item={item} key={item.id} />)}</View>
+          <View style={styles.itemList}>{group.items.map((item) => (
+            <KnowledgeCard item={item} key={item.id} showProvenance={showProvenance} />
+          ))}</View>
         </View>
       ))}
 
@@ -223,6 +237,7 @@ const styles = StyleSheet.create({
   sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   sectionIcon: { width: 46, height: 46, alignItems: 'center', justifyContent: 'center', borderRadius: radii.md, backgroundColor: colors.mossSoft },
   itemCopy: { flex: 1, gap: spacing.xxs },
+  itemSources: { gap: spacing.xxs, marginTop: spacing.xs, paddingTop: spacing.xs, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.line },
   summaryRow: { flexDirection: 'row', gap: spacing.sm },
   summaryMetric: { flex: 1, gap: spacing.xxs, padding: spacing.md, borderRadius: radii.md, backgroundColor: colors.canvas },
   transitionSection: { gap: spacing.sm, paddingTop: spacing.sm, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.line },
