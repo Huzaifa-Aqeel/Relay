@@ -12,11 +12,13 @@ A Role Holder captures what they learn throughout their term, Relay organizes th
 
 Over time, those published handoffs become the Role's history. Wake Forest University specifically recommends preserving transition information so future incoming boards can review previous Transition Guides, retain institutional knowledge, and build on what earlier leaders learned.
 
-
 ## 🎥 Demo Video
-[▶️ Watch the demo on YouTube](https://youtube.com/shorts/jgp_f2aqoUI?feature=share)## How Relay works
 
-**Capture → Organize → Review → Publish → Ask → Remember**
+[▶️ Watch the demo on YouTube](https://youtube.com/shorts/jgp_f2aqoUI?feature=share)
+
+## How Relay works
+
+**Capture → Organize → Review → Publish → Ask → Organization Memory**
 
 ### 1. Capture
 
@@ -72,7 +74,7 @@ When the incoming leader accepts:
 - the outgoing service period ends
 - the incoming leader becomes the active Role Holder
 - the incoming leader receives a clean handoff workspace for their own term
-- the previous published handoff remains unchanged in History which he can access it.
+- the previous published handoff remains unchanged and accessible in History
 
 ### 5. Ask Relay
 
@@ -82,7 +84,7 @@ Relay answers from approved handoff knowledge and its provenance, allowing the s
 
 ### 6. Organization Memory
 
-Once the avalabity of two subsequent years handoff for same role, Relay shows what materially changed since the previous service period: **Added**, **Changed** So the next Event Lead can immediately see what’s different this year, with the original handoffs and sources still attached.
+Once the same Role has two successive published handoffs, Relay shows what materially changed between service periods: **Added**, **Changed**. The incoming Role Holder can immediately see what is different, with the original handoffs and sources still attached.
 
 ## Built for real leadership transitions
 
