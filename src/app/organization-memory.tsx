@@ -268,7 +268,7 @@ export default function OrganizationMemoryScreen() {
           {comparison.runStatus === 'processing' ? <AppText>Comparing published knowledge…</AppText> : null}
           {comparison.status === 'ready' && comparison.coveredItemCount < comparison.totalItemCount ? <AppText>Partial comparison: compared {comparison.coveredItemCount} of {comparison.totalItemCount} items. New topics are hidden until coverage is complete.</AppText> : null}
           {comparison.omittedChangeCount > 0 ? <AppText>+{comparison.omittedChangeCount} more changes. Showing the 100 highest-priority changes.</AppText> : null}
-          {(comparison.runStatus === 'failed' || comparison.pipelineVersion !== 2 || comparison.coveredItemCount < comparison.totalItemCount) ? <Button disabled={compareMutation.isPending || comparison.runStatus === 'processing' || plan.data?.plan !== 'pro'} icon="refresh" label="Retry comparison" tone="secondary" onPress={() => compareMutation.mutate({ roleId })} /> : null}
+          {(comparison.runStatus === 'failed' || comparison.pipelineVersion !== 3 || comparison.coveredItemCount < comparison.totalItemCount) ? <Button disabled={compareMutation.isPending || comparison.runStatus === 'processing' || plan.data?.plan !== 'pro'} icon="refresh" label="Retry comparison" tone="secondary" onPress={() => compareMutation.mutate({ roleId })} /> : null}
         </View>
       )}
 

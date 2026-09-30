@@ -36,7 +36,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const PIPELINE_VERSION = 2;
+const PIPELINE_VERSION = 3;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const ORGANIZATION_MEMORY_MATERIALITY_PROMPT = `You evaluate already-linked atomic operational claims from two adjacent, immutable, human-approved Handoffs for the same Organization and Role.
@@ -48,12 +48,14 @@ Include a pair only when the difference could materially change what the next Ro
 Include material changes to procedures, responsibilities, lead times, requirements, approvals, thresholds, limits, risks, contacts, systems, resources, dependencies, access instructions, and unresolved obligations.
 
 Omit:
-- punctuation, formatting, sentence order, synonymous wording, or grammatical cleanup
+- punctuation, formatting, synonymous wording, grammatical cleanup, or reordered wording only when the actor, action, object, modality, quantities, timing, and operational meaning remain unchanged
 - a routine move from one service year's calendar date to the corresponding date in the next year when no changed rule, cadence, lead time, or constraint is explicitly documented
 - a generic document-scope or resource-list update that is not independently actionable
 - any comparison whose operational meaning is uncertain
 
 Do not infer that an annual date changed materially merely because its day, month, or year differs. An explicitly documented new scheduling constraint is material; the ordinary yearly event date itself is not.
+
+A changed actor, owner, approver, recipient, direction of responsibility, requirement strength, quantity, threshold, lead time, system, or access path is material even when the wording was reordered or the service year also changed.
 
 Return changed when the same operational fact has a material new value. Return resolved only when the previous claim explicitly says the matter was pending/open and the current claim explicitly says it was completed/closed. Return retired only when the current claim explicitly says the prior practice was discontinued, replaced, or no longer applies.
 
@@ -241,8 +243,15 @@ async function ensureClaimIndexes({
           config: config.textLlm, schema: organizationMemoryClaimSchema,
           timeoutMs: Math.min(35_000, deadline - Date.now() - 10_000),
           messages: [
-            { role: 'system', content: ORGANIZATION_MEMORY_CLAIM_SYSTEM_PROMPT + '\nReference every supplied item in at least one claim. Do not invent facts to meet coverage.' },
-            { role: 'user', content: memoryClaimPrompt({ roleTitle, previousPeriod: previous.service_period, currentPeriod: current.service_period, sources: batch, priorTopics }) },
+            { role: 'system', content: ORGANIZATION_MEMORY_CLAIM_SYSTEM_PROMPT },
+            { role: 'user', content: memoryClaimPrompt({
+              roleTitle,
+              previousPeriod: previous.service_period,
+              currentPeriod: current.service_period,
+              targetPeriod: publication.id === previous.id ? 'previous' : 'current',
+              sources: batch,
+              priorTopics,
+            }) },
           ],
         }) as { claims?: unknown[] };
         if (Array.isArray(value?.claims)) rawClaims.push(...value.claims);

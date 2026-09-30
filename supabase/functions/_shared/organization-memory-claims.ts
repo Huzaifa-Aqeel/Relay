@@ -22,7 +22,7 @@ function broadMemoryKnowledgeType(type: string) {
   return type;
 }
 
-export const MEMORY_CLAIM_INDEX_VERSION = 2;
+export const MEMORY_CLAIM_INDEX_VERSION = 3;
 
 export type ClaimSourceItem = PublicationMemoryItem & {
   publication_id: string;
@@ -151,9 +151,9 @@ TOPIC IDENTITY
 
 topic_key is a short lowercase dotted identifier for the operational subject and aspect, such as "venue.capacity" or "risk_assessment.lead_time". It is internal and never shown to users.
 
-For a two-publication backfill, use exactly the same topic_key in PREVIOUS and CURRENT only when both claims concern the same operational subject and aspect. Different values do not prevent continuity.
+When indexing PREVIOUS, create a stable topic_key for each operational subject and aspect.
 
-When PRIOR MEMORY TOPICS are supplied, reuse a prior topic only by setting prior_topic_ref to that exact T reference. Reuse it only for the same operational subject and aspect. Copy its topic_key exactly. Otherwise set prior_topic_ref to null and create a new topic_key.
+When indexing CURRENT and PRIOR MEMORY TOPICS are supplied, reuse a prior topic only by setting prior_topic_ref to that exact T reference. Reuse it only for the same operational subject and aspect. Copy its topic_key exactly. Otherwise set prior_topic_ref to null and create a new topic_key.
 
 Never match solely because two claims mention the same event, venue, person, or document. If continuity is uncertain, do not reuse the prior topic.
 
@@ -173,6 +173,8 @@ PROVENANCE
 
 Every claim must cite one or more supplied source_refs from its own publication. A citation must support the actual claim. Use no invented references.
 
+For every supplied Knowledge Item that contains qualifying operational knowledge, return at least one claim that cites it. One item may support multiple atomic claims. If an item contains no qualifying operational fact, do not invent a claim merely to cite it.
+
 Return only the required JSON.`;
 
 function sourceBlock(items: ClaimSourceItem[]) {
@@ -190,12 +192,14 @@ export function memoryClaimPrompt({
   roleTitle,
   previousPeriod,
   currentPeriod,
+  targetPeriod,
   sources,
   priorTopics,
 }: {
   roleTitle: string;
   previousPeriod: string;
   currentPeriod: string;
+  targetPeriod: 'previous' | 'current';
   sources: ClaimSourceItem[];
   priorTopics: PriorMemoryTopic[];
 }) {
@@ -209,7 +213,7 @@ export function memoryClaimPrompt({
       `Previous comparison value: ${topic.comparisonValue}`,
       `Previous content: ${topic.content}`,
     ].join('\n')).join('\n\n')
-    : 'None. Establish topic keys across PREVIOUS and CURRENT together.';
+    : 'None.';
 
   return [
     'ROLE:',
@@ -218,6 +222,7 @@ export function memoryClaimPrompt({
     'SERVICE PERIODS:',
     `PREVIOUS: ${previousPeriod}`,
     `CURRENT: ${currentPeriod}`,
+    `TARGET PUBLICATION: ${targetPeriod.toUpperCase()}`,
     '',
     'PRIOR MEMORY TOPICS:',
     topicBlock,
@@ -225,9 +230,10 @@ export function memoryClaimPrompt({
     'APPROVED IMMUTABLE KNOWLEDGE:',
     sourceBlock(sources),
     '',
-    priorTopics.length
-      ? 'Index CURRENT only. Reuse a T reference only for the same atomic operational subject and aspect.'
-      : 'Index both PREVIOUS and CURRENT. Use the same topic_key across periods only for the same atomic operational subject and aspect.',
+    `Index only the supplied ${targetPeriod.toUpperCase()} publication. Never produce claims for the other publication.`,
+    targetPeriod === 'current'
+      ? 'Reuse a T reference only for the same atomic operational subject and aspect. Otherwise create a new topic_key.'
+      : 'Create a stable topic_key for each atomic operational subject and aspect.',
     '',
     'Return only the required JSON.',
   ].join('\n');
