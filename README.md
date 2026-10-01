@@ -147,3 +147,37 @@ Existing approved knowledge and published handoffs are preserved if an Organizat
 | Retrieval | Astra DB, BM25F | Powers grounded answers in Ask Relay |
 | Subscriptions | RevenueCat | Relay Plus billing and entitlements |
 | AI | Provider-neutral LLM integration | Organizes Captures and answers questions |
+
+## Repository Map
+
+```text
+.
+├── assets/
+│   ├── brand/                  # Editable Relay brand artwork
+│   └── images/                 # App icons, splash image, and favicon
+├── patches/                    # Required dependency patches applied after install
+├── public/.well-known/         # Android verified-link metadata
+├── src/
+│   ├── app/                    # Expo Router screens and route layouts
+│   ├── components/ui/          # Shared interface components
+│   ├── features/
+│   │   ├── auth/               # Authentication and session UI
+│   │   ├── billing/            # RevenueCat subscription state
+│   │   ├── notifications/      # Push registration and routing
+│   │   └── relay/              # Capture, handoff, Ask, and memory domain logic
+│   ├── lib/                    # Shared service clients
+│   ├── theme/                  # Design tokens
+│   └── types/                  # Generated database and domain types
+├── supabase/
+│   ├── functions/
+│   │   ├── _shared/            # Shared retrieval, LLM, and workflow logic
+│   │   └── */index.ts          # Deployed Edge Function entry points
+│   ├── migrations/             # Versioned schema, RLS, and database functions
+│   ├── tests/database/         # Database policy and workflow tests
+│   └── config.toml             # Local Supabase configuration
+├── .env.example                # Public client environment template
+├── app.json                    # Expo application configuration
+├── eas.json                    # EAS build and deployment profiles
+├── package.json                # Dependencies and development commands
+├── tsconfig.json               # TypeScript configuration
+└── vitest.config.mts           # Unit-test configuration
