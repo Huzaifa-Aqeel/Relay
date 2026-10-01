@@ -1,28 +1,34 @@
 # Relay
 
-Student organizations change leaders every year, but the knowledge required to run their roles does not reset with them.
+**Living role memory that survives handoffs, so every successor starts with what their predecessors knew.**
 
-In practice, that knowledge is often scattered across documents, chats, spreadsheets, old event plans, verbal explanations, and individual experience. When it is not transferred well, incoming officers lose previous lessons, spend time reconstructing how the role works, and risk leaving important work unfinished.
+[▶️ Watch the demo](https://youtube.com/shorts/jgp_f2aqoUI?feature=share) · [📱 Download the Android APK](https://github.com/Huzaifa-Aqeel/Relay/releases/tag/v1.0.0)
 
-University transition guidance describes this as a real continuity problem. The University of Northern Iowa warns that weak officer transitions cause previous-year lessons to be lost and force incoming leaders to spend time catching up. Stanford treats leadership transition as a continuous cycle for passing institutional knowledge, operational tools, access, relationships, planning context, and outstanding work to successors.
+## The Problem
 
-**Relay turns that scattered material into a living, role-specific handoff that can survive leadership turnover.**
+Organizations regularly change the people responsible for important roles, but the knowledge needed to perform those roles often leaves with them.
 
-A Role Holder captures what they learn throughout their term, Relay organizes the material into useful operational knowledge, and the leader reviews every suggestion before it becomes part of the handoff. When the role changes hands, the incoming leader receives the published handoff, can ask questions from it, and begins a new handoff for their own service period.
+Picture a student society's treasurer graduating. The new treasurer doesn't know which approvals the budget needs, which vendor requires a purchase order, or why last year's process was changed. That knowledge lives in old chats, spreadsheets, shared drives, and one person's head.
 
-Over time, those published handoffs become the Role's history. Wake Forest University specifically recommends preserving transition information so future incoming boards can review previous Transition Guides, retain institutional knowledge, and build on what earlier leaders learned.
+When it isn't transferred properly, incoming Role Holders waste time reconstructing processes, lose the context behind past decisions, repeat mistakes, and risk missing important work.
 
-## 🎥 Demo Video
+This continuity problem exists anywhere responsibility changes hands: student organizations, companies, nonprofits, associations, volunteer groups, project teams, committees, and recurring operational roles. Relay starts with student organization leadership transitions and is designed for any role-based handoff.
 
-[▶️ Watch the demo on YouTube](https://youtube.com/shorts/jgp_f2aqoUI?feature=share)
+## The Solution
 
-## How Relay works
+Relay turns scattered operational knowledge into a living, role-specific memory that survives people changing.
+
+Throughout their time in a role, the Role Holder captures what they learn. Relay organizes it into useful operational knowledge (contacts, deadlines, processes, warnings and lessons), and the Role Holder reviews and approves what becomes part of the trusted handoff. When the role changes hands, the successor receives the published handoff, can ask Relay questions about it, and starts a new living handoff of their own. Over time, Relay shows what changed from one period to the next and, when evidence supports it, why.
+
+**Why it's different:** notes apps and wikis store information. Relay adds human-approved knowledge, immutable published handoffs, source provenance, and change tracking across service periods.
+
+## How Relay Works
 
 **Capture → Organize → Review → Publish → Ask → Organization Memory**
 
 ### 1. Capture
 
-The Role Holder captures knowledge throughout the year instead of trying to reconstruct everything during a final transition meeting.
+The Role Holder captures knowledge throughout their term instead of reconstructing everything in a final transition meeting.
 
 A Capture can include:
 
@@ -37,7 +43,7 @@ A Capture can include:
 
 ### 2. Organize
 
-Relay considers the material in the Capture together and proposes useful operational knowledge for the next holder of the Role.
+Relay considers the material in the Capture together and proposes useful operational knowledge for the next Role Holder.
 
 This can include:
 
@@ -65,28 +71,28 @@ Only human-approved knowledge becomes part of the handoff.
 
 ### 4. Publish
 
-When the handoff is ready, Relay creates an immutable published snapshot for that Organization, Role, and service period.
+When the handoff is ready, Relay creates an immutable published snapshot for that Organization, Role, and service period. Relay models continuity around a **Role** rather than around one individual.
 
-The outgoing Role Holder can invite the person taking over the same Role.
-
-When the incoming leader accepts:
+The outgoing Role Holder invites the person taking over the same Role. When the incoming Role Holder accepts:
 
 - the outgoing service period ends
-- the incoming leader becomes the active Role Holder
-- the incoming leader receives a clean handoff workspace for their own term
+- the incoming person becomes the active Role Holder
+- they receive a clean handoff workspace for their own term
 - the previous published handoff remains unchanged and accessible in History
+
+The Organization Owner can also manage Role assignments for administrative recovery, so a Role is never stranded if its current holder becomes unavailable.
 
 ### 5. Ask Relay
 
 The incoming Role Holder can ask questions about the previous published handoff.
 
-Relay answers from approved handoff knowledge and its provenance, allowing the successor to find answers without manually searching through every document or depending on the previous leader to remain available.
+Relay answers from approved handoff knowledge and its provenance, so the successor can find answers without manually searching every document or depending on the previous Role Holder to stay available.
 
 ### 6. Organization Memory
 
-Once the same Role has two successive published handoffs, Relay shows what materially changed between service periods: **Added**, **Changed**. The incoming Role Holder can immediately see what is different, with the original handoffs and sources still attached.
+Once the same Role has two successive published handoffs, Relay shows what materially changed between service periods: what was **Added** and what was **Changed**. The incoming Role Holder sees what is different at a glance, with the original handoffs and sources still attached.
 
-## Built for real leadership transitions
+## Built for Real Leadership Transitions
 
 Relay works with the mixed material student leaders already use:
 
@@ -101,61 +107,43 @@ Relay works with the mixed material student leaders already use:
 - voice explanations
 - typed context
 
-This reflects the information universities already encourage outgoing officers to transfer: responsibilities, important tasks, key contacts, financial information, records, documents, and outstanding work.
+This mirrors what universities already encourage outgoing officers to transfer: responsibilities, important tasks, key contacts, financial information, records, documents, and outstanding work.
 
-## Role succession
-
-Relay models continuity around a Role rather than around one individual.
-
-The current Role Holder can invite the person who will take over that same Role.
-
-When the incoming leader accepts:
-
-- the outgoing assignment ends
-- the incoming leader becomes the active Role Holder
-- a clean handoff workspace begins for the new service period
-- previous published handoffs remain immutable in History
-- the incoming leader can consult the previous handoff through Ask Relay
-
-The Organization Owner can also manage Role assignments for administrative recovery so a Role is not stranded if its current holder becomes unavailable.
-
-## Trust and control
+## Trust and Control
 
 Relay is designed so AI assists the handoff without becoming the authority.
 
 - AI-generated knowledge always requires human review
 - published handoffs are immutable historical records
 - approved knowledge retains source provenance
-- Ask Relay is grounded in published approved knowledge
-- raw Captures and working documents are not exposed as published knowledge
+- Ask Relay is grounded in published, approved knowledge
+- raw Captures and working documents are never exposed as published knowledge
 - access is scoped by Organization and Role
 - database authorization and Row Level Security protect organization data
 - authentication secrets are excluded from extracted handoff knowledge
 
 ## Relay Plus
 
-Relay Plus is an annual organization plan managed through RevenueCat.
+Relay Plus is an annual organization plan managed through [RevenueCat](https://www.revenuecat.com/). Subscription status is verified by Relay's backend, not trusted from the client.
 
-It supports:
+| | Free | Relay Plus |
+|---|---|---|
+| Active Roles | Limited | Multiple |
+| Handoff history | Limited | Expanded |
+| Organization Memory | ❌ | ✅ |
+| Continuity across service periods | ❌ | ✅ |
+| Document allowance | Standard | Larger |
+| Ask Relay allowance | Standard | Larger |
 
-- multiple active Roles
-- expanded organization handoff history
-- Organization Memory
-- continuity across service periods
-- larger document allowances
-- larger Ask Relay allowances
-
-Subscription status is verified by Relay's backend. Existing approved knowledge and published handoffs remain preserved if an Organization later returns to the Free plan.
+Existing approved knowledge and published handoffs are preserved if an Organization later returns to the Free plan.
 
 ## Technology
 
-Relay is built with:
-
-- Expo
-- React Native
-- TypeScript
-- Supabase
-- Unstructured
-- Astra DB
-- RevenueCat
-- provider-neutral language-model integration
+| Layer | Technology | Role in Relay |
+|---|---|---|
+| Mobile app | Expo, React Native, TypeScript | Cross-platform app |
+| Backend | Supabase | Auth, database, storage, Row Level Security |
+| Document parsing | Unstructured | Extracts content from uploaded documents |
+| Retrieval | Astra DB, BM25F | Powers grounded answers in Ask Relay |
+| Subscriptions | RevenueCat | Relay Plus billing and entitlements |
+| AI | Provider-neutral LLM integration | Organizes Captures and answers questions |
