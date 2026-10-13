@@ -30,7 +30,6 @@ import type {
   MembershipSearchResult,
   PendingMembershipRequest,
   RelayAccess,
-  OrganizationPlan,
   OrganizationRole,
   AssignedRole,
   RoleInput,
@@ -67,17 +66,6 @@ const MAX_LOGO_BYTES = 5 * 1024 * 1024;
 const MAX_ORGANIZATION_FILE_BYTES = 25 * 1024 * 1024;
 const MAX_SOURCE_BYTES = 25 * 1024 * 1024;
 
-export type RelayPlanLimit = 'organization' | 'role' | 'role_access' | 'handoff';
-
-export class RelayPlanLimitError extends Error {
-  constructor(public readonly limit: RelayPlanLimit) {
-    super(limit === 'role_access'
-      ? 'Relay Pro is required to open this Role.'
-      : `Relay Pro is required to create another ${limit}.`);
-    this.name = 'RelayPlanLimitError';
-  }
-}
-
 function messageFor(error: { code?: string; message: string }) {
   const normalizedMessage = error.message.toLowerCase();
   if (error.code === '23505' && error.message.includes('roles_active_title_idx')) {
@@ -103,8 +91,6 @@ function messageFor(error: { code?: string; message: string }) {
 
 function throwDataError(error: { code?: string; message: string } | null): asserts error is null {
   if (!error) return;
-  const planLimit = error.message.match(/RELAY_PRO_REQUIRED:(organization|role_access|role|handoff)/)?.[1] as RelayPlanLimit | undefined;
-  if (planLimit) throw new RelayPlanLimitError(planLimit);
   throw new Error(messageFor(error));
 }
 
@@ -303,15 +289,6 @@ const askRelayAnswerSchema = z.object({
     }).strict()).min(1).max(8),
   }).strict()).max(5),
   remaining: z.number().int().min(0),
-}).strict();
-
-const organizationPlanSchema = z.object({
-  organizationId: z.string().uuid(),
-  plan: z.enum(['free', 'pro']),
-  expiresAt: z.string().nullable(),
-  willRenew: z.boolean().nullable(),
-  store: z.string().nullable(),
-  isPurchaser: z.boolean(),
 }).strict();
 
 const relayAccessSchema = z.object({
@@ -585,14 +562,6 @@ export async function updateOrganizationContent(input: OrganizationContentInput)
     if (uploadedPaths.length) await client.storage.from(ORGANIZATION_CONTENT_BUCKET).remove(uploadedPaths);
     throw error;
   }
-}
-
-export async function getOrganizationPlan(organizationId: string): Promise<OrganizationPlan> {
-  const { data, error } = await requireSupabase().rpc('get_organization_plan', {
-    requested_organization_id: organizationId,
-  });
-  throwDataError(error);
-  return organizationPlanSchema.parse(data);
 }
 
 export async function createOrganization(input: OrganizationInput) {

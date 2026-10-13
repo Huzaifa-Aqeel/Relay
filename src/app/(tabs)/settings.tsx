@@ -8,32 +8,9 @@ import { AppText } from '@/components/ui/app-text';
 import { Button } from '@/components/ui/button';
 import { Screen } from '@/components/ui/screen';
 import { useAuth } from '@/features/auth/auth-provider';
-import { useBilling } from '@/features/billing/billing-provider';
-import { useOrganizationPlan, useOrganizations } from '@/features/relay/queries';
-import type { Organization } from '@/features/relay/types';
 import { colors, radii, spacing } from '@/theme/tokens';
 
 type IconName = ComponentProps<typeof MaterialCommunityIcons>['name'];
-
-function OrganizationPlanStatus({ organization }: { organization: Organization }) {
-  const plan = useOrganizationPlan(organization.id);
-  const label = plan.isPending
-    ? 'Checking…'
-    : plan.data?.plan === 'pro'
-      ? 'Relay Pro'
-      : plan.error
-        ? 'Unavailable'
-        : 'Free';
-  const isPro = plan.data?.plan === 'pro';
-  return (
-    <View style={styles.planStatusRow}>
-      <AppText variant="label" style={styles.rowCopy} numberOfLines={1}>{organization.name}</AppText>
-      <View style={[styles.planStatusBadge, isPro && styles.planStatusBadgePro]}>
-        <AppText variant="caption" color={isPro ? colors.moss : colors.inkMuted}>{label}</AppText>
-      </View>
-    </View>
-  );
-}
 
 function SettingRow({
   icon,
@@ -67,16 +44,11 @@ function SettingRow({
 
 export default function SettingsScreen() {
   const auth = useAuth();
-  const billing = useBilling();
-  const organizations = useOrganizations();
   const [showDelete, setShowDelete] = useState(false);
   const [busy, setBusy] = useState(false);
   const [accountError, setAccountError] = useState<string | null>(null);
   const displayName = auth.session?.user.user_metadata.display_name as string | undefined;
   const email = auth.session?.user.email;
-  const canManagePlan = organizations.data?.some(
-    (organization) => organization.createdBy === auth.session?.user.id,
-  ) || billing.subscription?.isActive === true;
 
   async function signOut() {
     if (auth.status === 'demo') {
@@ -114,24 +86,6 @@ export default function SettingsScreen() {
         <View style={styles.headingBlock}>
           <AppText variant="display">Settings</AppText>
         </View>
-
-        <Pressable onPress={() => router.push('/paywall')} style={({ pressed }) => [styles.planCard, pressed && styles.pressed]}>
-          <AppText variant="heading">Organization plans</AppText>
-          <AppText color={colors.inkMuted}>
-            Relay Pro is shared by authorized Role Holders in your organization.
-          </AppText>
-          {organizations.data?.length ? (
-            <View style={styles.planStatuses}>
-              {organizations.data.map((organization) => (
-                <OrganizationPlanStatus key={organization.id} organization={organization} />
-              ))}
-            </View>
-          ) : null}
-          <View style={styles.planLink}>
-            <AppText variant="label" color={colors.moss}>{canManagePlan ? 'Manage plan' : 'View plan'}</AppText>
-            <MaterialCommunityIcons color={colors.moss} name="arrow-right" size={20} />
-          </View>
-        </Pressable>
 
         <AppText variant="caption" color={colors.inkMuted} style={styles.sectionLabel}>ACCOUNT</AppText>
         <View style={styles.group}>
@@ -185,21 +139,6 @@ export default function SettingsScreen() {
 
 const styles = StyleSheet.create({
   headingBlock: { marginBottom: spacing.lg, gap: spacing.xxs },
-  planCard: {
-    gap: spacing.xs, padding: spacing.md + spacing.xxs / 2, borderRadius: radii.lg,
-    backgroundColor: colors.mossSoft, borderWidth: 1, borderColor: '#BED1C3',
-  },
-  planStatuses: { gap: spacing.xs, marginTop: spacing.xs },
-  planStatusRow: {
-    minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
-    paddingHorizontal: spacing.sm, borderRadius: radii.md, backgroundColor: colors.surface,
-  },
-  planStatusBadge: {
-    paddingHorizontal: spacing.sm, paddingVertical: spacing.xxs,
-    borderRadius: radii.pill, backgroundColor: colors.canvas,
-  },
-  planStatusBadgePro: { backgroundColor: colors.mossSoft },
-  planLink: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginTop: spacing.xs },
   sectionLabel: { marginTop: spacing.xl, marginBottom: spacing.xs, letterSpacing: 1.2 },
   group: {
     overflow: 'hidden', borderWidth: 1, borderColor: colors.line,

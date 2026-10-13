@@ -11,7 +11,6 @@ import { FormInput } from '@/components/ui/form-controls';
 import { Screen } from '@/components/ui/screen';
 import { OrganizationMark } from '@/features/relay/organization-mark';
 import { useCreateHandoff, useOrganizations, useRoles } from '@/features/relay/queries';
-import { RelayPlanLimitError } from '@/features/relay/repository';
 import { colors, radii, spacing } from '@/theme/tokens';
 
 function suggestedPeriod() {
@@ -60,10 +59,8 @@ function CreateHandoffForm({
     try {
       const id = await mutation.mutateAsync({ organizationId, roleId, servicePeriod: trimmedPeriod });
       router.replace((`/handoff/${id}`) as Href);
-    } catch (error) {
-      if (error instanceof RelayPlanLimitError) {
-        router.push((`/paywall?reason=handoff&organizationId=${organizationId}`) as Href);
-      }
+    } catch {
+      // The mutation exposes its safe error below.
     }
   }
 

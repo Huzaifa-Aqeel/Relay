@@ -91,18 +91,6 @@ export default function RoleAssignmentScreen() {
   }
 
   const roleTitle = role.data.title;
-  const roleAvailableOnPlan = roleOverview.planAvailable;
-  if (!roleAvailableOnPlan && !overview.data.isOwner) {
-    return (
-      <Screen>
-        <MessageState
-          icon="lock-outline"
-          title="Relay Pro required"
-          body={`This Role's workspace is locked. The Organization Owner can still manage the ${roleTitle} assignment.`}
-        />
-      </Screen>
-    );
-  }
   const inviteUrl = issued ? assignmentInviteUrl(issued.token) : null;
 
   return (
@@ -112,18 +100,6 @@ export default function RoleAssignmentScreen() {
         <AppText variant="display">{roleTitle}</AppText>
         <AppText color={colors.inkMuted}>Invite the next person when this Role is ready to change hands.</AppText>
       </View>
-
-      {!roleAvailableOnPlan ? (
-        <View style={styles.lockedNotice}>
-          <MaterialCommunityIcons color={colors.saffron} name="lock-outline" size={24} />
-          <View style={styles.flex}>
-            <AppText variant="label">Assignment remains available</AppText>
-            <AppText variant="caption" color={colors.inkMuted}>
-              You can assign or replace this Role after Relay Pro expires. Its preserved private workspace remains locked until plan access returns.
-            </AppText>
-          </View>
-        </View>
-      ) : null}
 
       {currentAssignment ? (
         <InfoCard eyebrow="Current holder" title={currentAssignment.name || 'Role Holder'}>

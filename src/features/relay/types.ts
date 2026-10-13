@@ -73,15 +73,6 @@ export type OrganizationContentInput = {
   removedFileIds: string[];
 };
 
-export type OrganizationPlan = {
-  organizationId: string;
-  plan: 'free' | 'pro';
-  expiresAt: string | null;
-  willRenew: boolean | null;
-  store: string | null;
-  isPurchaser: boolean;
-};
-
 export type OrganizationRole = {
   id: string;
   organizationId: string;

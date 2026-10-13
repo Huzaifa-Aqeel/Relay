@@ -42,20 +42,13 @@ select is(
   'the organization creator becomes its admin'
 );
 
-select throws_ok(
-  $$select public.create_organization('Second Free Organization', '', '')$$,
-  'P0001',
-  'RELAY_PRO_REQUIRED:organization',
-  'the free plan permits one owned organization'
-);
-
 select lives_ok(
   $$select public.create_role(
     (select id from public.organizations where name = 'University Robotics Club'),
     'President',
     'Coordinates the organization.'
   )$$,
-  'an organization admin can create the free role through the guarded RPC'
+  'an organization admin can create a role through the guarded RPC'
 );
 
 set local role postgres;
@@ -66,12 +59,6 @@ where title = 'President'
     select organization_id from public.organization_members
     where user_id = '33333333-3333-4333-8333-333333333333'
   );
-update public.organizations
-set free_role_id = '55555555-5555-4555-8555-555555555555'
-where id = (
-  select organization_id from public.organization_members
-  where user_id = '33333333-3333-4333-8333-333333333333'
-);
 insert into public.role_assignments(organization_id,role_id,user_id,service_period,assigned_by)
 select organization_id,id,'33333333-3333-4333-8333-333333333333',period,'33333333-3333-4333-8333-333333333333'
 from public.roles cross join (values ('2026–2027'),('2027–2028')) p(period) where id = '55555555-5555-4555-8555-555555555555';
@@ -79,24 +66,13 @@ set local role authenticated;
 
 select is((select count(*) from public.roles), 1::bigint, 'the admin can read the role');
 
-select throws_ok(
-  $$select public.create_role(
-    (select id from public.organizations where name = 'University Robotics Club'),
-    'Treasurer',
-    ''
-  )$$,
-  'P0001',
-  'RELAY_PRO_REQUIRED:role',
-  'the free plan permits one active role'
-);
-
 select lives_ok(
   $$select public.create_handoff(
     (select organization_id from public.roles where id = '55555555-5555-4555-8555-555555555555'),
     '55555555-5555-4555-8555-555555555555',
     '2026–2027'
   )$$,
-  'an assigned owner can start the free handoff through the guarded RPC'
+  'an assigned owner can start a handoff through the guarded RPC'
 );
 
 set local role postgres;
@@ -104,17 +80,6 @@ update public.handoffs
 set id = '66666666-6666-4666-8666-666666666666'
 where service_period = '2026–2027';
 set local role authenticated;
-
-select throws_ok(
-  $$select public.create_handoff(
-    (select organization_id from public.roles where id = '55555555-5555-4555-8555-555555555555'),
-    '55555555-5555-4555-8555-555555555555',
-    '2027–2028'
-  )$$,
-  'P0001',
-  'RELAY_PRO_REQUIRED:handoff',
-  'the free plan permits one current handoff'
-);
 
 select is(
   (select status from public.handoffs where id = '66666666-6666-4666-8666-666666666666'),
@@ -515,32 +480,6 @@ select is(
   'the document exposes its failed processing state'
 );
 
-set local role postgres;
-insert into public.organization_subscriptions (
-  organization_id, purchaser_user_id, revenuecat_app_user_id, entitlement_id, status,
-  product_identifier, store, revenuecat_checked_at
-) values (
-  (select organization_id from public.handoffs where id = '66666666-6666-4666-8666-666666666666'),
-  '33333333-3333-4333-8333-333333333333',
-  '33333333-3333-4333-8333-333333333333', 'relay_pro', 'active',
-  'relay_pro_annual', 'play_store', now()
-);
-set local role authenticated;
-
-select is((select count(*) from public.organization_subscriptions), 1::bigint, 'a purchaser can read their server-written organization association');
-
-with changed as (
-  update public.organization_subscriptions
-  set status = 'inactive'
-  where purchaser_user_id = '33333333-3333-4333-8333-333333333333'
-  returning 1
-)
-select is(
-  (select count(*) from changed),
-  0::bigint,
-  'a client cannot grant or remove its own entitlement'
-);
-
 select lives_ok(
   $$select public.create_handoff(
     (select organization_id from public.roles where id = '55555555-5555-4555-8555-555555555555'),
@@ -592,12 +531,6 @@ select set_config(
 
 select is((select count(*) from public.profiles), 1::bigint, 'a member cannot read another user profile');
 select is((select count(*) from public.push_tokens), 0::bigint, 'a member cannot read another user device token');
-select is((select count(*) from public.organization_subscriptions), 0::bigint, 'a member cannot read another purchaser billing association');
-select is(
-  public.get_organization_plan((select organization_id from public.organization_members where user_id = '44444444-4444-4444-8444-444444444444'))->>'plan',
-  'pro',
-  'an organization member receives the organization plan without owning the purchase'
-);
 select is((select count(*) from public.organizations), 1::bigint, 'a member can read their organization');
 select is((select count(*) from public.roles), 1::bigint, 'a member can read organization roles');
 select is((select count(*) from public.handoffs), 0::bigint, 'membership alone cannot read private handoffs');
@@ -706,7 +639,6 @@ select set_config('request.jwt.claims', '{"role":"anon"}', true);
 set local role anon;
 select is((select count(*) from public.profiles), 0::bigint, 'anonymous users cannot read profiles');
 select is((select count(*) from public.push_tokens), 0::bigint, 'anonymous users cannot read device tokens');
-select is((select count(*) from public.organization_subscriptions), 0::bigint, 'anonymous users cannot read organization subscription state');
 select is((select count(*) from public.organizations), 0::bigint, 'anonymous users cannot read organizations');
 select is((select count(*) from public.roles), 0::bigint, 'anonymous users cannot read roles');
 select is((select count(*) from public.handoffs), 0::bigint, 'anonymous users cannot read draft handoffs');
@@ -895,7 +827,7 @@ select set_config(
 select is(
   public.complete_role_holder_ask_request(current_setting('relay.test_ask_claim')::uuid, true),
   99,
-  'a successful Ask request consumes one Pro allowance'
+  'a successful Ask request consumes one daily allowance'
 );
 select set_config(
   'relay.test_ask_claim',
@@ -911,13 +843,10 @@ set local role postgres;
 select is((select count(*) from public.ask_role_usage_claims where status = 'succeeded'), 2::bigint, 'only successful Ask claims consume quota');
 select is((select count(*) from public.ask_role_usage_claims where status = 'failed'), 1::bigint, 'failed Ask claims remain auditable without consuming quota');
 
-update public.organization_subscriptions
-set status = 'inactive', expires_at = now() - interval '1 minute', revenuecat_checked_at = now()
-where purchaser_user_id = '33333333-3333-4333-8333-333333333333';
 select is(
   (select count(*) from public.handoffs where created_by = '33333333-3333-4333-8333-333333333333'),
   1::bigint,
-  'a subscription downgrade never deletes an existing handoff'
+  'existing handoffs remain intact'
 );
 
 set local role authenticated;
@@ -925,12 +854,6 @@ select set_config(
   'request.jwt.claims',
   '{"sub":"33333333-3333-4333-8333-333333333333","role":"authenticated"}',
   true
-);
-
-select is(
-  public.get_organization_plan((select id from public.organizations where name = 'University Robotics Club'))->>'plan',
-  'free',
-  'an expired organization subscription resolves to Free without deleting its data'
 );
 
 set local role anon;
@@ -1126,12 +1049,6 @@ select is(
   'link replacement does not create duplicate publication records'
 );
 
-set local role postgres;
-update public.organization_subscriptions
-set status = 'active', expires_at = null, revenuecat_checked_at = now()
-where purchaser_user_id = '33333333-3333-4333-8333-333333333333';
-
-set local role authenticated;
 select set_config(
   'request.jwt.claims',
   '{"sub":"33333333-3333-4333-8333-333333333333","role":"authenticated"}',
@@ -1140,13 +1057,7 @@ select set_config(
 
 select lives_ok(
   $$select public.create_organization('Alumni Council', '', '')$$,
-  'an active purchaser can create another organization'
-);
-
-select is(
-  public.get_organization_plan((select id from public.organizations where name = 'Alumni Council'))->>'plan',
-  'free',
-  'the purchaser subscription does not unlock an unrelated organization'
+  'a creator can create another organization'
 );
 
 select lives_ok(
@@ -1155,18 +1066,7 @@ select lives_ok(
     'Chair',
     ''
   )$$,
-  'the unrelated Free organization can create its included role'
-);
-
-select throws_ok(
-  $$select public.create_role(
-    (select id from public.organizations where name = 'Alumni Council'),
-    'Secretary',
-    ''
-  )$$,
-  'P0001',
-  'RELAY_PRO_REQUIRED:role',
-  'organization-scoped gating blocks a second role in an unrelated Free organization'
+  'another organization can create its first role'
 );
 
 select lives_ok(
@@ -1175,27 +1075,10 @@ select lives_ok(
     'Treasurer',
     ''
   )$$,
-  'the organization associated with Relay Pro can create another role'
+  'an organization admin can create additional roles'
 );
 
 set local role postgres;
-insert into public.organization_subscriptions (
-  organization_id, purchaser_user_id, revenuecat_app_user_id, entitlement_id, status,
-  product_identifier, store, revenuecat_checked_at
-) values (
-  (select id from public.organizations where name = 'University Robotics Club'),
-  '33333333-3333-4333-8333-333333333333',
-  '33333333-3333-4333-8333-333333333333', 'relay_pro', 'active',
-  'relay_pro_annual', 'play_store', now()
-)
-on conflict (revenuecat_app_user_id, entitlement_id) do update
-set revenuecat_checked_at = excluded.revenuecat_checked_at;
-
-select is(
-  (select count(*) from public.organization_subscriptions where revenuecat_app_user_id = '33333333-3333-4333-8333-333333333333'),
-  1::bigint,
-  'reconciliation does not create a duplicate subscription association'
-);
 
 insert into public.handoffs (
   id, organization_id, role_id, created_by, service_period, status, stage

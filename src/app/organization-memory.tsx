@@ -13,7 +13,6 @@ import {
   useOrganization,
   useRole,
   useRolePublications,
-  useOrganizationPlan,
   useRoleMemoryChanges,
   useRoleMemoryComparison,
 } from '@/features/relay/queries';
@@ -131,7 +130,6 @@ export default function OrganizationMemoryScreen() {
   const roleQuery = useRole(roleId);
   const organizationQuery = useOrganization(roleQuery.data?.organizationId);
   const handoffsQuery = useRolePublications(roleId);
-  const plan = useOrganizationPlan(roleQuery.data?.organizationId);
   const comparisonQuery = useRoleMemoryComparison(roleId);
   const changesQuery = useRoleMemoryChanges(comparisonQuery.data?.id, comparisonQuery.data?.runStatus === 'processing', comparisonQuery.data?.completedAt);
   const compareMutation = useCompareRoleHandoffs();
@@ -201,7 +199,6 @@ export default function OrganizationMemoryScreen() {
         ) : null}
       </View>
 
-      {plan.data?.plan !== 'pro' ? <Button label="Organization Memory requires Relay Pro" tone="secondary" onPress={() => router.push(`/paywall?organizationId=${roleQuery.data.organizationId}` as Href)} /> : null}
       {published.length < 2 ? (
         <MessageState
           icon="compare-horizontal"
@@ -213,7 +210,7 @@ export default function OrganizationMemoryScreen() {
           <MaterialCommunityIcons color={colors.moss} name="compare-horizontal" size={32} />
           <AppText variant="heading">Compare the latest adjacent periods</AppText>
           <AppText color={colors.inkMuted}>Relay compares approved operational facts across the two handoffs. Duplicate wording, routine yearly date shifts, and uncertain relationships stay hidden.</AppText>
-          <Button disabled={compareMutation.isPending || plan.data?.plan !== 'pro'} icon="creation-outline" label={compareMutation.isPending ? 'Comparing…' : 'Find material changes'} onPress={() => compareMutation.mutate({ roleId })} />
+          <Button disabled={compareMutation.isPending} icon="creation-outline" label={compareMutation.isPending ? 'Comparing…' : 'Find material changes'} onPress={() => compareMutation.mutate({ roleId })} />
         </View>
       ) : (
         <View style={styles.comparisonSection}>
@@ -268,7 +265,7 @@ export default function OrganizationMemoryScreen() {
           {comparison.runStatus === 'processing' ? <AppText>Comparing published knowledge…</AppText> : null}
           {comparison.status === 'ready' && comparison.coveredItemCount < comparison.totalItemCount ? <AppText>Partial comparison: compared {comparison.coveredItemCount} of {comparison.totalItemCount} items. New topics are hidden until coverage is complete.</AppText> : null}
           {comparison.omittedChangeCount > 0 ? <AppText>+{comparison.omittedChangeCount} more changes. Showing the 100 highest-priority changes.</AppText> : null}
-          {(comparison.runStatus === 'failed' || comparison.pipelineVersion !== 3 || comparison.coveredItemCount < comparison.totalItemCount) ? <Button disabled={compareMutation.isPending || comparison.runStatus === 'processing' || plan.data?.plan !== 'pro'} icon="refresh" label="Retry comparison" tone="secondary" onPress={() => compareMutation.mutate({ roleId })} /> : null}
+          {(comparison.runStatus === 'failed' || comparison.pipelineVersion !== 3 || comparison.coveredItemCount < comparison.totalItemCount) ? <Button disabled={compareMutation.isPending || comparison.runStatus === 'processing'} icon="refresh" label="Retry comparison" tone="secondary" onPress={() => compareMutation.mutate({ roleId })} /> : null}
         </View>
       )}
 

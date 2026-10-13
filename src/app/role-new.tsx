@@ -12,7 +12,6 @@ import { Button } from '@/components/ui/button';
 import { FormInput, FormSection } from '@/components/ui/form-controls';
 import { Screen } from '@/components/ui/screen';
 import { useCreateRole, useOrganization } from '@/features/relay/queries';
-import { RelayPlanLimitError } from '@/features/relay/repository';
 import { colors, radii, spacing } from '@/theme/tokens';
 
 const schema = z.object({
@@ -53,10 +52,8 @@ export default function CreateRoleScreen() {
     try {
       const id = await mutation.mutateAsync({ organizationId, ...values });
       router.replace((`/role/${id}`) as Href);
-    } catch (error) {
-      if (error instanceof RelayPlanLimitError) {
-        router.push((`/paywall?reason=role&organizationId=${organizationId}`) as Href);
-      }
+    } catch {
+      // The mutation exposes its safe error below.
     }
   });
 

@@ -10,7 +10,6 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AppText } from '@/components/ui/app-text';
 import { AuthProvider, useAuth } from '@/features/auth/auth-provider';
-import { BillingProvider } from '@/features/billing/billing-provider';
 import { useNotificationNavigation } from '@/features/notifications/notification-service';
 import { isPublicRootSegment } from '@/features/relay/shell-model';
 import { useRelayAccess } from '@/features/relay/queries';
@@ -67,7 +66,7 @@ function AuthGate({ children }: PropsWithChildren) {
         'handoff-review', 'handoff-preview',
         'approved-knowledge', 'source', 'knowledge',
         'organization-memory', 'published-history',
-        'ownership-transfer', 'paywall',
+        'ownership-transfer',
       ].includes(rootSegment ?? '');
       if (memberOnlyTabBlocked || roleWorkspaceBlocked) router.replace('/');
     }
@@ -93,8 +92,7 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
-          <BillingProvider>
-            <AuthGate>
+          <AuthGate>
               <StatusBar style="dark" />
               <Stack
               screenOptions={{
@@ -130,13 +128,8 @@ export default function RootLayout() {
               <Stack.Screen name="auth/callback" options={{ headerShown: false }} />
               <Stack.Screen name="legal/privacy" options={{ title: 'Privacy' }} />
               <Stack.Screen name="legal/terms" options={{ title: 'Terms' }} />
-              <Stack.Screen
-                name="paywall"
-                options={{ title: 'Relay Pro', presentation: 'modal', animation: 'slide_from_bottom' }}
-              />
               </Stack>
             </AuthGate>
-          </BillingProvider>
         </AuthProvider>
       </QueryClientProvider>
     </SafeAreaProvider>

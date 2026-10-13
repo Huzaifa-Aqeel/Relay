@@ -108,17 +108,6 @@ export default function AssignmentInviteScreen() {
         </View>
       ) : (
         <>
-          {!invitation.planAvailable ? (
-            <View style={styles.lockedNotice}>
-              <MaterialCommunityIcons color={colors.saffron} name="lock-outline" size={22} />
-              <View style={styles.flex}>
-                <AppText variant="label">You can still accept this Role</AppText>
-                <AppText variant="caption" color={colors.inkMuted}>
-                  Its assignment and history will be preserved. The private workspace stays locked until the Organization restores plan access.
-                </AppText>
-              </View>
-            </View>
-          ) : null}
           {auth.status === 'loading' ? (
             <View accessibilityLiveRegion="polite" style={styles.compactState}>
               <AppText color={colors.inkMuted}>Checking your Relay account…</AppText>
@@ -218,9 +207,7 @@ export default function AssignmentInviteScreen() {
               <View style={styles.acceptCopy}>
                 <AppText variant="heading">Ready to continue?</AppText>
                 <AppText color={colors.inkMuted}>
-                  {!invitation.planAvailable
-                    ? `You’ll become the ${invitation.roleTitle} for ${invitation.servicePeriod}. The assignment takes effect now; the preserved workspace opens when plan access returns.`
-                    : invitation.replacement
+                  {invitation.replacement
                     ? `You’ll continue the existing ${invitation.roleTitle} handoff for ${invitation.servicePeriod}. The current holder’s access ends after you accept.`
                     : `You’ll open a new ${invitation.roleTitle} handoff for ${invitation.servicePeriod}. Previous published handoffs remain available in History.`}
                 </AppText>
@@ -241,9 +228,7 @@ export default function AssignmentInviteScreen() {
               <Button
                 disabled={action.isPending}
                 icon="arrow-right"
-                label={action.isPending
-                  ? 'Accepting Role…'
-                  : invitation.planAvailable ? 'Accept and open Relay' : 'Accept Role assignment'}
+                label={action.isPending ? 'Accepting Role…' : 'Accept and open Relay'}
                 onPress={() => void acceptInvite()}
               />
             </>

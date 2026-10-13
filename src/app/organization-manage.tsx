@@ -227,9 +227,6 @@ function ManageOrganizationForm({ organizationId }: { organizationId: string }) 
                   <AppText variant="caption" color={colors.inkMuted}>
                     {holder ? `${holder.name || 'Assigned member'} · ${holder.servicePeriod}` : 'No current holder'}
                   </AppText>
-                  {!role.planAvailable ? (
-                    <AppText variant="caption" color={colors.saffron}>Workspace locked · assignment manageable</AppText>
-                  ) : null}
                 </View>
                 <MaterialCommunityIcons color={colors.inkMuted} name="chevron-right" size={22} />
               </Pressable>

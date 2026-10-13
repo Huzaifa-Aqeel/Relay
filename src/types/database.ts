@@ -37,12 +37,12 @@ export type Database = {
       organizations: Table<
         Timestamped & {
           id: string; created_by: string; name: string; institution: string;
-          description: string; logo_path: string | null; free_role_id: string | null;
+          description: string; logo_path: string | null;
           youtube_video_url: string | null;
         },
         {
           id?: string; created_by: string; name: string; institution?: string;
-          description?: string; logo_path?: string | null; free_role_id?: string | null;
+          description?: string; logo_path?: string | null;
           youtube_video_url?: string | null;
           created_at?: string; updated_at?: string;
         }
@@ -284,21 +284,6 @@ export type Database = {
           supporting_provenance?: Json; reason_provenance?: Json; created_at?: string;
         }
       >;
-      organization_subscriptions: Table<
-        Timestamped & {
-          id: string; organization_id: string | null; purchaser_user_id: string | null;
-          revenuecat_app_user_id: string; entitlement_id: string; status: 'active' | 'inactive';
-          product_identifier: string | null; store: string | null;
-          expires_at: string | null; will_renew: boolean | null; revenuecat_checked_at: string;
-        },
-        {
-          id?: string; organization_id?: string | null; purchaser_user_id?: string | null;
-          revenuecat_app_user_id: string; entitlement_id: string; status: 'active' | 'inactive';
-          product_identifier?: string | null; store?: string | null;
-          expires_at?: string | null; will_renew?: boolean | null; revenuecat_checked_at?: string;
-          created_at?: string; updated_at?: string;
-        }
-      >;
       ask_usage_daily: Table<
         {
           publication_id: string; usage_date: string; owner_user_id: string;
@@ -369,10 +354,7 @@ export type Database = {
         Args: { requested_organization_id: string; requested_role_id: string; requested_service_period: string };
         Returns: string;
       };
-      organization_has_relay_pro: { Args: { requested_organization_id: string }; Returns: boolean };
       organization_role_is_entitled: { Args: { requested_organization_id: string; requested_role_id: string }; Returns: boolean };
-      purchaser_has_active_relay_pro: { Args: { requested_user_id: string }; Returns: boolean };
-      get_organization_plan: { Args: { requested_organization_id: string }; Returns: Json };
       can_ask_previous_handoff: {
         Args: { requested_handoff_id: string };
         Returns: boolean;

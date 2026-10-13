@@ -46,23 +46,6 @@ export default function RoleScreen() {
   const role = roleQuery.data;
   const organization = organizationQuery.data;
   const overview = continuity.data?.roles.find(r => r.roleId === id);
-  const roleAvailableOnPlan = overview?.planAvailable === true;
-  if (!roleAvailableOnPlan) {
-    const isOwner = organization.createdBy === auth.session?.user.id;
-    return (
-      <Screen>
-        <MessageState
-          icon="lock-outline"
-          title="Relay Pro required"
-          body={isOwner
-            ? `Upgrade ${organization.name} to reopen ${role.title} and its private workspace.`
-            : `This Role is preserved but currently locked. Ask the Organization Owner to upgrade ${organization.name}.`}
-          actionLabel={isOwner ? 'View Relay Pro' : undefined}
-          onAction={isOwner ? () => router.push(`/paywall?reason=role&organizationId=${organization.id}` as Href) : undefined}
-        />
-      </Screen>
-    );
-  }
   const handoffs = handoffsQuery.data ?? [];
   const current = handoffs[0];
   const canPlanSuccession = Boolean(continuity.data?.isOwner || overview?.assignments[0]?.userId === auth.session?.user.id);

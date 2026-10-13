@@ -381,8 +381,6 @@ Deno.serve(async (request) => {
   if (roleError || !role) return json({ error: 'This role is unavailable.' }, 404);
   const { data: canView } = await client.rpc('can_view_role_history', { requested_role_id: role.id });
   if (!canView) return json({ error: 'You do not have permission to compare this role.' }, 403);
-  const { data: plan } = await client.rpc('get_organization_plan', { requested_organization_id: role.organization_id });
-  if (plan?.plan !== 'pro') return json({ error: 'This Organization needs Relay Pro. Its Owner can upgrade it.' }, 403);
 
   const { data: handoffs, error: handoffError } = await client
     .from('handoffs')

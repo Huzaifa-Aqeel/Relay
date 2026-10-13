@@ -14,7 +14,6 @@ import { Button } from '@/components/ui/button';
 import { FormInput, FormSection } from '@/components/ui/form-controls';
 import { Screen } from '@/components/ui/screen';
 import { useCreateOrganization } from '@/features/relay/queries';
-import { RelayPlanLimitError } from '@/features/relay/repository';
 import { colors, radii, spacing } from '@/theme/tokens';
 
 const schema = z.object({
@@ -58,8 +57,8 @@ export default function CreateOrganizationScreen() {
     try {
       const id = await mutation.mutateAsync({ ...values, logo: logo ?? undefined });
       router.replace((`/organization/${id}`) as Href);
-    } catch (error) {
-      if (error instanceof RelayPlanLimitError) router.push('/paywall?reason=organization');
+    } catch {
+      // The mutation exposes its safe error below.
     }
   });
 

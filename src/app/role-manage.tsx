@@ -61,16 +61,14 @@ export default function ManageRoleScreen() {
     <ManageRoleForm
       key={role.data.updatedAt}
       organizationName={organization.data.name}
-      planAvailable={overview.planAvailable}
       role={role.data}
       holder={overview.assignments[0]}
     />
   );
 }
 
-function ManageRoleForm({ organizationName, planAvailable, role, holder }: {
+function ManageRoleForm({ organizationName, role, holder }: {
   organizationName: string;
-  planAvailable: boolean;
   role: OrganizationRole;
   holder?: { name: string; servicePeriod: string };
 }) {
@@ -109,18 +107,6 @@ function ManageRoleForm({ organizationName, planAvailable, role, holder }: {
         <AppText variant="display">Manage Role</AppText>
         <AppText color={colors.inkMuted}>Edit this Role and keep its assignment from becoming orphaned.</AppText>
       </View>
-
-      {!planAvailable ? (
-        <View style={styles.lockedNotice}>
-          <MaterialCommunityIcons color={colors.saffron} name="lock-outline" size={24} />
-          <View style={styles.flex}>
-            <AppText variant="label">Workspace locked · administration available</AppText>
-            <AppText variant="caption" color={colors.inkMuted}>
-              Relay Pro expired for this Role. Its history stays preserved, and you can still edit the Role or assign its next holder.
-            </AppText>
-          </View>
-        </View>
-      ) : null}
 
       <FormSection eyebrow="Role" title="Role details">
         <FormInput

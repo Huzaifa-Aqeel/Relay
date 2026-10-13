@@ -26,7 +26,6 @@ import {
   getKnowledgeItem,
   getLatestRoleMemoryComparison,
   getOrganization,
-  getOrganizationPlan,
   getRole,
   listHandoffSources,
   listHandoffCaptures,
@@ -77,7 +76,6 @@ export const relayKeys = {
   membershipRequests: ['relay', 'membership-requests'] as const,
   pendingMembershipRequests: (organizationId: string) => ['relay', 'pending-membership-requests', organizationId] as const,
   organization: (id: string) => ['relay', 'organization', id] as const,
-  organizationPlan: (id: string) => ['relay', 'organization-plan', id] as const,
   roles: (organizationId: string) => ['relay', 'roles', organizationId] as const,
   role: (id: string) => ['relay', 'role', id] as const,
   organizationHandoffs: (organizationId: string) => ['relay', 'organization-handoffs', organizationId] as const,
@@ -181,14 +179,6 @@ export function useOrganization(id: string | undefined) {
     queryKey: relayKeys.organization(id ?? ''),
     queryFn: () => getOrganization(id!),
     enabled: useCloudQueryEnabled(Boolean(id)),
-  });
-}
-
-export function useOrganizationPlan(organizationId: string | undefined) {
-  return useQuery({
-    queryKey: relayKeys.organizationPlan(organizationId ?? ''),
-    queryFn: () => getOrganizationPlan(organizationId!),
-    enabled: useCloudQueryEnabled(Boolean(organizationId)),
   });
 }
 
