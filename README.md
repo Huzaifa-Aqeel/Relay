@@ -130,12 +130,8 @@ Relay is designed so AI assists the handoff without becoming the authority.
 | Backend | Supabase | Auth, database, storage, Row Level Security |
 | Document parsing | Unstructured | Extracts content from uploaded documents |
 | Retrieval | Astra DB, BM25F | Powers grounded answers in Ask Relay |
-<<<<<<< HEAD
 | Subscriptions | RevenueCat | Relay Plus billing and entitlements |
 | AI | Provider-neutral LLM integration | Organizes Captures and answers questions |
-=======
-| AI | Provider-neutral LLM integration | Organizes Captures and answers questions |
-
 ## Repository Map
 
 ```text
